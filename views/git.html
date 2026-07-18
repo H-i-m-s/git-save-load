@@ -41,8 +41,8 @@ html::-webkit-scrollbar-track{background:transparent!important}
 html::-webkit-scrollbar-thumb{background:var(--hana-scrollbar,rgba(94,106,210,.3))!important;border-radius:2px!important}
 
 :root{
-  --grain-dark:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  --grain-light:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --grain-dark:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22200%22%3E%3Cfilter%20id%3D%22n%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.72%22%20numOctaves%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22matrix%22%20values%3D%220%200%200%200%200%20%200%200%200%200%200%20%200%200%200%200%200%20%200%200%200%200.25%200%22%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23n)%22%2F%3E%3C%2Fsvg%3E");
+  --grain-light:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22200%22%3E%3Cfilter%20id%3D%22n%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.72%22%20numOctaves%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22matrix%22%20values%3D%220%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200.25%200%22%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23n)%22%2F%3E%3C%2Fsvg%3E");
   --grain-bg:var(--grain-dark);
   --grain-blend:multiply;
 }
@@ -60,20 +60,23 @@ body.paper-texture::before{
   pointer-events:none;
   background-image:var(--grain-bg);
   background-size:200px 200px;
-  mix-blend-mode:var(--grain-blend);
+  mix-blend-mode:overlay;
 }
-.theme-dark{--grain-bg:var(--grain-dark);--grain-blend:multiply}
-.theme-midnight{--grain-bg:var(--grain-dark);--grain-blend:multiply}
-.theme-midnight-contrast{--grain-bg:var(--grain-dark);--grain-blend:multiply}
-.theme-warm-paper{--grain-bg:var(--grain-light);--grain-blend:screen}
-.theme-new-warm-paper{--grain-bg:var(--grain-light);--grain-blend:screen}
-.theme-high-contrast{--grain-bg:var(--grain-light);--grain-blend:screen}
-.theme-grass-aroma{--grain-bg:var(--grain-light);--grain-blend:screen}
-.theme-contemplation{--grain-bg:var(--grain-light);--grain-blend:screen}
-.theme-absolutely{--grain-bg:var(--grain-light);--grain-blend:screen}
-.theme-delve{--grain-bg:var(--grain-light);--grain-blend:screen}
-.theme-deep-think{--grain-bg:var(--grain-light);--grain-blend:screen}
-.theme-coral{--grain-bg:var(--grain-light);--grain-blend:screen}
+.theme-dark{--grain-bg:var(--grain-light);--grain-blend:multiply}
+.theme-midnight{--grain-bg:var(--grain-light);--grain-blend:multiply}
+.theme-midnight-contrast{--grain-bg:var(--grain-light);--grain-blend:multiply}
+body.paper-texture.theme-dark{--hana-bg:#070708;--hana-surface:#141517}
+body.paper-texture.theme-midnight{--hana-bg:#33414b;--hana-surface:#3c4c56}
+body.paper-texture.theme-midnight-contrast{--hana-bg:#1e2c35;--hana-surface:#28363f}
+.theme-warm-paper{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-new-warm-paper{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-high-contrast{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-grass-aroma{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-contemplation{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-absolutely{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-delve{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-deep-think{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-coral{--grain-bg:var(--grain-dark);--grain-blend:multiply}
 /* 开关样式 */
 #cfgTexture:checked + span{background:var(--hana-accent,#5e6ad2)}
 #cfgTexture:checked + span + span{transform:translateX(14px)}
