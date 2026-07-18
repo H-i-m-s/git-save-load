@@ -786,8 +786,8 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
 </div>
 
 <!-- 确认弹窗 -->
-<div id="confirmModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:999;background:rgba(0,0,0,0.3);padding:20px;overflow:auto;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif;scrollbar-width:none;-ms-overflow-style:none">
-  <div style="background:var(--hana-surface,#fff);border-radius:12px;max-width:680px;width:92%;margin:5vh auto;padding:22px;text-align:left;color:var(--hana-fg,#1a1d24);box-shadow:0 8px 30px rgba(0,0,0,.2);overflow:hidden">
+<div id="confirmModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:999;background:rgba(0,0,0,0.3);padding:20px;overflow:auto;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif;scrollbar-width:none;-ms-overflow-style:none" onclick="if(event.target===this){this.style.display='none';confirmCallback(false)}">
+  <div style="background:var(--hana-surface,#fff);border-radius:12px;width:94%;margin:5vh auto;padding:22px;text-align:left;color:var(--hana-fg,#1a1d24);box-shadow:0 8px 30px rgba(0,0,0,.2);overflow:hidden">
     <div style="font-size:15px;font-weight:700;margin-bottom:10px">↩️ 回滚到指定版本</div>
     <div id="confirmMsg" style="margin-bottom:16px;font-size:13px;line-height:1.6;color:var(--hana-fg-muted,#6b7280)"></div>
     <!-- 回滚模式选择器（带中文说明）-->
