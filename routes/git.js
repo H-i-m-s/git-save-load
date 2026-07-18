@@ -555,7 +555,15 @@ export default function (app, ctx) {
 
   // ======== API: GitHub 管理 ========
   function ghExec(args) {
-    const result = execSync(`gh ${args.join(" ")}`, { encoding: "utf8", timeout: 30000, windowsHide: true }).trim();
+    // 直接读取Windows用户环境变量，确保代理等配置生效
+    const env = { ...process.env };
+    try {
+      const userHttps = execSync('[System.Environment]::GetEnvironmentVariable("HTTPS_PROXY", "User")', { encoding: 'utf8', shell: 'powershell', windowsHide: true }).trim();
+      const userHttp = execSync('[System.Environment]::GetEnvironmentVariable("HTTP_PROXY", "User")', { encoding: 'utf8', shell: 'powershell', windowsHide: true }).trim();
+      if (userHttps) env.HTTPS_PROXY = userHttps;
+      if (userHttp) env.HTTP_PROXY = userHttp;
+    } catch {}
+    const result = execSync(`gh ${args.join(" ")}`, { encoding: "utf8", timeout: 30000, windowsHide: true, env }).trim();
     return result;
   }
 
