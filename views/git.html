@@ -87,7 +87,7 @@ body{
 .empty-hint{color:var(--hana-fg-muted,#6b7280);font-size:12px;text-align:center;padding:8px 0}
 
 /* 提交区域 */
-.commit-area{display:flex;gap:6px;margin-top:8px}
+.commit-area{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .commit-area input{
   flex:1;padding:6px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;
   font-size:13px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;
@@ -441,7 +441,7 @@ body{
     <span id="stashCount" style="font-size:11px;color:var(--hana-fg-muted,#6b7280)"></span>
   </div>
   <div id="stashPanel">
-    <div style="display:flex;gap:4px;margin-bottom:6px">
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
       <input type="text" id="stashMsg" placeholder="暂存备注（可选）" autocomplete="off" style="flex:1;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none">
       <button id="btnStashPush" onclick="doStashPush()" style="padding:5px 12px;border:0;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;background:var(--hana-accent,#4a8cff);color:#fff;white-space:nowrap">暂存</button>
     </div>
