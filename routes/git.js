@@ -49,7 +49,14 @@ export default function (app, ctx) {
   // ======== 页面 ========
   app.get("/widget", async (c) => {
     const html = await loadHtml();
-    return c.html(html);
+    // 读取 Hana 传递的主题参数
+    const theme = c.req.query("hana-theme") || "";
+    // 在 body 上设置 data-hana-theme 属性，供前端读取
+    const patched = html.replace(
+      /<body([^>]*)>/,
+      `<body data-hana-theme="${theme}"$1>`
+    );
+    return c.html(patched);
   });
 
   // ======== API: 获取状态 ========

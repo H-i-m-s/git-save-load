@@ -1152,26 +1152,52 @@ function applyTheme(theme) {
 
 // 获取Hana当前主题
 function getHanaTheme() {
-  // 从Hana父页面读取data-theme
-  var hanaTheme = "warm-paper";
+  // 优先：读取 body 上的 data-hana-theme（Hana 平台通过 URL 参数传递）
+  var fromAttr = document.body.getAttribute("data-hana-theme");
+  if (fromAttr && fromAttr !== "") {
+    var themeMap = {
+      "warm-paper": "warm-paper", "new-warm-paper": "new-warm-paper",
+      "midnight": "midnight", "midnight-contrast": "midnight-contrast",
+      "high-contrast": "high-contrast", "grass-aroma": "grass-aroma",
+      "contemplation": "contemplation", "absolutely": "absolutely",
+      "delve": "delve", "deep-think": "deep-think", "coral": "coral"
+    };
+    if (themeMap[fromAttr]) return themeMap[fromAttr];
+  }
+
+  // 备选：读 localStorage
   try {
-    hanaTheme = window.parent.document.documentElement.getAttribute("data-theme") || "warm-paper";
+    var stored = localStorage.getItem("hana-theme");
+    if (stored && stored !== "auto" && stored !== "") {
+      var themeMap2 = {
+        "warm-paper": "warm-paper", "new-warm-paper": "new-warm-paper",
+        "midnight": "midnight", "midnight-contrast": "midnight-contrast",
+        "high-contrast": "high-contrast", "grass-aroma": "grass-aroma",
+        "contemplation": "contemplation", "absolutely": "absolutely",
+        "delve": "delve", "deep-think": "deep-think", "coral": "coral"
+      };
+      return themeMap2[stored] || "warm-paper";
+    }
+    if (stored === "auto") {
+      var isDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      return isDark ? "midnight" : "warm-paper";
+    }
   } catch {}
-  // 映射到插件主题名
-  var themeMap = {
-    "warm-paper": "warm-paper",
-    "new-warm-paper": "new-warm-paper",
-    "midnight": "midnight",
-    "midnight-contrast": "midnight-contrast",
-    "high-contrast": "high-contrast",
-    "grass-aroma": "grass-aroma",
-    "contemplation": "contemplation",
-    "absolutely": "absolutely",
-    "delve": "delve",
-    "deep-think": "deep-think",
-    "coral": "coral"
-  };
-  return themeMap[hanaTheme] || "warm-paper";
+
+  // 兜底：计算样式
+  try {
+    var bg = getComputedStyle(document.body).backgroundColor;
+    var bgMap = {
+      "248, 244, 237": "warm-paper", "245, 239, 228": "new-warm-paper",
+      "59, 74, 84": "midnight", "38, 52, 61": "midnight-contrast",
+      "250, 248, 247": "high-contrast", "245, 248, 243": "grass-aroma",
+      "243, 245, 247": "contemplation", "244, 243, 238": "absolutely",
+      "255, 255, 255": "delve", "252, 252, 253": "deep-think",
+      "253, 246, 236": "coral", "1, 1, 2": "dark", "15, 16, 17": "dark"
+    };
+    return bgMap[bg] || "warm-paper";
+  } catch {}
+  return "warm-paper";
 }
 
 async function saveSetting(key, val, silent) {
@@ -3441,14 +3467,14 @@ async function submitIdentitySetup() {
   // 显示三步工作流程提示条
   maybeShowWorkflowGuide();
   
-  // 监听Hana主题变化（自动模式下）
+  // 监听 body 的 data-hana-theme 属性变化（Hana 切换主题时会更新）
   var savedTheme = localStorage.getItem("git-sl-theme") || "auto";
   if (savedTheme === "auto") {
     try {
       var observer = new MutationObserver(function(mutations) {
         applyTheme("auto");
       });
-      observer.observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+      observer.observe(document.body, { attributes: true, attributeFilter: ["data-hana-theme"] });
     } catch {}
   }
 })();
