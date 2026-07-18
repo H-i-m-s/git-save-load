@@ -41,8 +41,8 @@ html::-webkit-scrollbar-track{background:transparent!important}
 html::-webkit-scrollbar-thumb{background:var(--hana-scrollbar,rgba(94,106,210,.3))!important;border-radius:2px!important}
 
 :root{
-  --grain-dark:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22200%22%3E%3Cfilter%20id%3D%22n%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.72%22%20numOctaves%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22matrix%22%20values%3D%220%200%200%200%200%20%200%200%200%200%200%20%200%200%200%200%200%20%200%200%200%200.3%200%22%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23n)%22%2F%3E%3C%2Fsvg%3E");
-  --grain-light:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22200%22%3E%3Cfilter%20id%3D%22n%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.72%22%20numOctaves%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22matrix%22%20values%3D%220%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200.3%200%22%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23n)%22%2F%3E%3C%2Fsvg%3E");
+  --grain-dark:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22200%22%3E%3Cfilter%20id%3D%22n%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.72%22%20numOctaves%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22matrix%22%20values%3D%220%200%200%200%200%20%200%200%200%200%200%20%200%200%200%200%200%20%200%200%200%200.15%200%22%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23n)%22%2F%3E%3C%2Fsvg%3E");
+  --grain-light:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22200%22%3E%3Cfilter%20id%3D%22n%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.72%22%20numOctaves%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22matrix%22%20values%3D%220%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200.15%200%22%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23n)%22%2F%3E%3C%2Fsvg%3E");
   --grain-bg:var(--grain-dark);
   --grain-blend:multiply;
 }
@@ -77,6 +77,15 @@ body.paper-texture.theme-midnight-contrast{--hana-bg:#1e2c35;--hana-surface:#283
 .theme-delve{--grain-bg:var(--grain-dark);--grain-blend:multiply}
 .theme-deep-think{--grain-bg:var(--grain-dark);--grain-blend:multiply}
 .theme-coral{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+body.paper-texture.theme-warm-paper{--hana-bg:#FCF9F2;--hana-surface:#FEFDF9}
+body.paper-texture.theme-new-warm-paper{--hana-bg:#F9F3E9;--hana-surface:#FEFAF3}
+body.paper-texture.theme-high-contrast{--hana-bg:#FDFCFB;--hana-surface:#FFFFFF}
+body.paper-texture.theme-grass-aroma{--hana-bg:#F9FCF7;--hana-surface:#FFFFFD}
+body.paper-texture.theme-contemplation{--hana-bg:#F7F9FB;--hana-surface:#FCFDFE}
+body.paper-texture.theme-absolutely{--hana-bg:#F8F7F3;--hana-surface:#FEFDFB}
+body.paper-texture.theme-delve{--hana-bg:#FFFFFF;--hana-surface:#FCFCFC}
+body.paper-texture.theme-deep-think{--hana-bg:#FFFFFF;--hana-surface:#FCFCFE}
+body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
 /* 开关样式 */
 #cfgTexture:checked + span{background:var(--hana-accent,#5e6ad2)}
 #cfgTexture:checked + span + span{transform:translateX(14px)}
@@ -3546,3 +3555,5 @@ async function submitIdentitySetup() {
 </script>
 </body>
 </html>
+
+
