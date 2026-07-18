@@ -1,0 +1,3379 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Save/Load</title>
+<style>
+:root{color-scheme:light}
+/* Linear 设计系统 — 浅色默认 */
+:root{--hana-bg:#f5f6f6;--hana-fg:#000;--hana-surface:#fff;--hana-border:#e2e5ea;--hana-accent:#5e6ad2;--hana-bg-muted:#f6f7f7;--hana-fg-muted:#6b7280;--hana-fg-subtle:#9ca3af;--hana-border-strong:#d0d5dd;--hana-scrollbar:rgba(94,106,210,.2)}
+/* 深色主题 */
+.theme-dark{--hana-bg:#010102;--hana-fg:#f7f8f8;--hana-surface:#0f1011;--hana-border:#23252a;--hana-accent:#5e6ad2;--hana-bg-muted:#141516;--hana-fg-muted:#8a8f98;--hana-fg-subtle:#62666d;--hana-border-strong:#34343a;--hana-scrollbar:rgba(94,106,210,.3)}
+*{box-sizing:border-box;margin:0;padding:0}
+/* 滚动条 */
+html,body{height:100%;margin:0}
+html{scrollbar-width:thin!important;scrollbar-color:var(--hana-scrollbar,rgba(94,106,210,.3)) transparent!important}
+html::-webkit-scrollbar{width:3px!important}
+html::-webkit-scrollbar-track{background:transparent!important}
+html::-webkit-scrollbar-thumb{background:var(--hana-scrollbar,rgba(94,106,210,.3))!important;border-radius:2px!important}
+
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:13px;line-height:1.5;
+  background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);
+  padding:12px;min-height:100vh;
+  overflow-y:auto;
+}
+/* 头部 */
+.header{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.header h1{font-size:15px;font-weight:600;flex:1}
+.branch{
+  font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  padding:2px 8px;border-radius:4px;
+  background:var(--hana-accent,#4a8cff);color:#fff;
+}
+.btn-refresh{
+  width:28px;height:28px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;
+  background:var(--hana-surface,#fff);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;
+  color:var(--hana-fg,#1a1d24);transition:background .15s;
+}
+.btn-refresh:hover{background:var(--hana-border,#d0d5dd)}
+.btn-refresh.spinning{animation:spin .6s linear}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* 状态卡片 */
+.card{
+  background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#e2e5ea);border-radius:8px;
+  padding:10px 12px;margin-bottom:10px;
+}
+.card-title{font-size:12px;font-weight:600;color:var(--hana-fg-muted,#6b7280);margin-bottom:6px}
+.card.dragging{opacity:.5;border-color:var(--hana-accent,#5e6ad2)}
+.card.drag-over{border-color:var(--hana-accent,#5e6ad2);border-style:dashed}
+
+/* 变更列表 */
+.file-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.file-list li{padding:3px 0;display:flex;gap:6px;align-items:baseline}
+.file-status{font-weight:600;width:20px;flex-shrink:0}
+.file-status.M{color:#e67e22}
+.file-status.A{color:#27ae60}
+.file-status.D{color:#e74c3c}
+.file-status.R{color:#3498db}
+.file-status.U{color:#e74c3c;font-weight:700}
+.file-status.UNTRACKED{color:#95a5a6}
+.file-status.\?\?{color:#95a5a6}
+.empty-hint{color:var(--hana-fg-muted,#6b7280);font-size:12px;text-align:center;padding:8px 0}
+
+/* 提交区域 */
+.commit-area{display:flex;gap:6px;margin-top:8px}
+.commit-area input{
+  flex:1;padding:6px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;
+  font-size:13px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;
+}
+.commit-area input:focus{border-color:var(--hana-accent,#4a8cff)}
+.commit-area button{
+  padding:6px 14px;border:0;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;
+  background:var(--hana-accent,#4a8cff);color:#fff;white-space:nowrap;transition:opacity .15s;
+}
+.commit-area button:disabled{opacity:.5;cursor:not-allowed}
+.commit-area button:hover:not(:disabled){opacity:.85}
+
+/* 提交历史 */
+.commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:240px;overflow-y:auto}
+.commit-list li{
+  display:flex;align-items:center;gap:6px;padding:5px 0;
+  border-bottom:1px solid var(--hana-border,#e2e5ea);position:relative;
+}
+.commit-list li:last-child{border-bottom:0}
+.commit-hash{color:var(--hana-accent,#4a8cff);cursor:pointer;font-weight:500}
+.commit-msg{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+.commit-date{font-size:11px;color:var(--hana-fg-muted,#6b7280);white-space:nowrap}
+.btn-rollback{
+  padding:2px 8px;border:1px solid #e74c3c;border-radius:4px;
+  background:transparent;color:#e74c3c;font-size:11px;cursor:pointer;transition:all .15s;
+}
+.btn-rollback:hover{background:#e74c3c;color:#fff}
+
+/* 自定义 tooltip */
+.commit-list li .tip{
+  display:none;position:fixed;z-index:9999;
+  background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24);
+  border:1px solid var(--hana-border,#e2e5ea);
+  border-radius:6px;padding:8px 10px;font-size:11px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  white-space:pre-wrap;word-break:break-all;
+  line-height:1.6;max-width:320px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.15);
+}
+.commit-list li .tip.show{display:block}
+
+/* diff 颜色 */
+.diff-add{background:#e6ffed;color:#1a7f37;padding:0 4px}
+.diff-del{background:#ffeef0;color:#cf222e;padding:0 4px}
+.diff-hunk{background:#f0f4ff;color:#4a8cff;padding:0 4px}
+
+/* 分支树 */
+.branch-tree{display:none}
+.branch-tree.show{display:block;animation:fadeIn .2s}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.branch-card{
+  border:1px solid var(--hana-border,#e2e5ea);border-radius:8px;
+  background:var(--hana-surface,#fff);
+  padding:8px 10px;margin:0 0 6px 0;
+  font-size:12px;
+}
+.branch-card.current{background:var(--hana-accent,#4a8cff);color:#fff;border-color:var(--hana-accent,#4a8cff)}
+.branch-card.current .branch-commit{color:rgba(255,255,255,0.7)}
+.branch-card .branch-row{display:flex;align-items:center;gap:6px}
+.branch-card .branch-name{font-weight:600;font-family:monospace}
+.branch-card .branch-commit{font-size:11px;color:var(--hana-fg-muted,#6b7280);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.branch-card .branch-actions{display:flex;gap:3px;flex-shrink:0}
+.branch-card .branch-actions button{
+  padding:2px 8px;border:1px solid currentColor;border-radius:4px;
+  background:transparent;cursor:pointer;font-size:10px;transition:all .15s;
+}
+.branch-card .branch-actions button:hover{opacity:.7}
+.br-block{
+  border:2px solid var(--hana-border,#d0d5dd);border-radius:10px;
+  background:var(--hana-surface,#fff);
+  padding:12px;margin:8px auto;width:200px;
+  text-align:center;cursor:pointer;user-select:none;
+  transition:border-color .1s;
+}
+.br-block:hover{border-color:var(--hana-accent,#4a8cff)}
+.br-block.current{background:var(--hana-accent,#4a8cff);color:#fff;border-color:var(--hana-accent,#4a8cff)}
+.br-block .name{font-size:13px;font-weight:700;font-family:monospace}
+.br-block .meta{font-size:10px;color:var(--hana-fg-muted,#6b7280);margin-top:2px}
+.br-block.current .meta{color:rgba(255,255,255,.7)}
+/* 分支颜色标识 */
+.bc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;flex-shrink:0;vertical-align:middle}
+/* 分支颜色三角 */
+.bc-tri{position:absolute;top:0;right:0;width:0;height:0;border-style:solid;border-width:0 18px 18px 0;z-index:3}
+.br-block.current .bc-tri,.bblk.current .bc-tri{border-top-color:#fff!important;border-right-color:#fff!important}
+/* ======== 分支画布 ======== */
+#branchCanvas{flex:1;position:relative;overflow:hidden;background:var(--hana-bg,#f5f6f8);border-radius:8px;border:1px solid var(--hana-border,#e2e5ea)}
+#branchCanvas svg .conn-label{cursor:pointer;pointer-events:auto}
+#branchCanvas svg .conn-label rect{fill:#fff;stroke:var(--hana-border,#d0d5dd);stroke-width:1;rx:4;transition:stroke .15s}
+#branchCanvas svg .conn-label:hover rect{stroke:var(--hana-accent,#4a8cff)}
+#branchCanvas svg .conn-label text{font-size:10px;fill:var(--hana-fg-muted,#6b7280);text-anchor:middle;dominant-baseline:central;cursor:pointer;pointer-events:auto}
+#branchCanvas svg .conn-path:hover{stroke:var(--hana-accent,#4a8cff)!important;stroke-width:2!important}
+.bc-block{
+  position:absolute;z-index:2;width:160px;padding:8px 10px;
+  border:2px solid var(--hana-border,#d0d5dd);border-radius:8px;
+  background:var(--hana-surface,#fff);
+  text-align:center;cursor:grab;user-select:none;
+  transition:box-shadow .15s,border-color .1s;
+  font-size:11px;
+}
+.bc-block:hover{box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.bc-block.dragging{cursor:grabbing;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:100}
+.bc-block.current{background:var(--hana-accent,#4a8cff);color:#fff;border-color:var(--hana-accent,#4a8cff)}
+.bc-block.current .bc-meta{color:rgba(255,255,255,.7)}
+.bc-block .bc-name{font-weight:700;font-family:monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-block .bc-meta{font-size:9px;color:var(--hana-fg-muted,#6b7280);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-block .bc-note{font-size:9px;color:var(--hana-accent,#4a8cff);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic}
+.bc-block.current .bc-note{color:rgba(255,255,255,.85)}
+
+
+#ctxMenu{
+  display:none;position:fixed;z-index:999;min-width:150px;
+  background:var(--hana-surface,#fff);
+  border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;
+  padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,.12);
+}
+#ctxMenu .item{padding:7px 14px;font-size:12px;cursor:pointer;transition:background .1s}
+#ctxMenu .item:hover{background:var(--hana-bg,#f5f6f8)}
+#ctxMenu .item.danger{color:#e74c3c}
+#ctxMenu .item.danger:hover{background:#fee2e2}
+/* 多级子菜单 */
+#ctxMenu .has-sub{position:relative}
+#ctxMenu .has-sub>.sub{display:none;position:fixed;min-width:160px;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:2001}
+#ctxMenu .has-sub>.item{padding-right:24px}
+#ctxMenu .has-sub::after{content:">";position:absolute;right:8px;top:7px;font-size:10px;color:var(--hana-fg-muted,#6b7280);pointer-events:none}
+#ghCtxMenu{display:none;position:fixed;z-index:999;min-width:180px;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,.12)}
+#ghCtxMenu .item{padding:7px 14px;font-size:12px;cursor:pointer;transition:background .1s}
+#ghCtxMenu .item:hover{background:var(--hana-bg,#f5f6f8)}
+#ghCtxMenu .item.danger{color:#e74c3c}
+#ghCtxMenu .item.danger:hover{background:#fee2e2}
+
+/* 折叠方块（仅动画容器，无样式） */
+#collapseBlock{
+  display:none;
+  transform-origin:center center;
+}
+#collapseBlock.show{display:flex;animation:blockSpawn .3s cubic-bezier(.34,1.56,.64,1) forwards}
+@keyframes blockSpawn{
+  0%{transform:scale(.08);opacity:0}
+  100%{transform:scale(1);opacity:1}
+}
+
+/* 面板收拢 — 朝黑洞吸入 */
+#panelsArea{
+  transition:transform .3s cubic-bezier(.4,0,.2,1),opacity .25s;
+  transform-origin:50% 0; /* 朝顶部中心缩放 */
+}
+#panelsArea.collapsing{
+  transform:scale(.1) translateY(-80px);
+  opacity:0;
+}
+
+/* 消息 */
+.msg-toast{
+  position:fixed;top:12px;right:12px;left:12px;z-index:999;
+  padding:8px 12px;border-radius:6px;font-size:12px;display:none;
+}
+.msg-toast.info{background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe}
+.msg-toast.err{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
+.msg-toast.success{background:#d1fae5;color:#065f46;border:1px solid #a7f3d0}
+.hist-row:hover{background:var(--hana-border,#e2e5ea)}.hist-row:hover .hist-del{display:block!important}
+
+/* ======== 新手引导弹窗 ======== */
+@keyframes wtPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(94,106,210,.6), 0 0 0 9999px rgba(0,0,0,.45); }
+  50%     { box-shadow: 0 0 0 8px rgba(94,106,210,0), 0 0 0 9999px rgba(0,0,0,.45); }
+}
+#walkthroughSpot { animation: wtPulse 1.6s ease-in-out infinite; }
+
+@keyframes wtHighlightKeyframe {
+  0%,100% { background: var(--hana-accent,#5e6ad2); color: #fff; transform: scale(1); }
+  50%     { background: #7e8af0; color: #fff; transform: scale(1.05); }
+}
+.wt-highlight-target {
+  position: relative;
+  z-index: 3001 !important;
+  animation: wtHighlightKeyframe 1.4s ease-in-out infinite !important;
+  box-shadow: 0 0 0 4px rgba(94,106,210,.4) !important;
+  border-radius: 6px !important;
+}
+
+/* 文件状态 emoji 标签（替换原 file-status 字母） */
+.file-status {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif !important;
+  width: auto !important;
+  flex-shrink: 0;
+}
+.file-status.M { background: #fff3e0; color: #e67e22; }
+.file-status.A { background: #e8f5e9; color: #27ae60; }
+.file-status.D { background: #fee2e2; color: #e74c3c; }
+.file-status.R { background: #e3f2fd; color: #3498db; }
+.file-status.U { background: #fee2e2; color: #e74c3c; font-weight: 700; }
+.file-status.UNTRACKED, .file-status.\?\? { background: #f0f1f3; color: #6b7280; }
+
+/* 存档区按钮加副标题样式 */
+.commit-subtitle {
+  font-size: 11px;
+  color: var(--hana-fg-muted,#6b7280);
+  margin-top: -2px;
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+</style>
+</head>
+<body>
+
+<div id="toast" class="msg-toast"></div>
+
+
+<!-- 折叠方块（主分支 + 子分支方块） -->
+<div id="collapseBlock" style="color:var(--hana-fg,#1a1d24);user-select:none;flex-direction:column;height:100%;min-height:300px">
+  <div style="text-align:center;padding:6px 0 8px;flex-shrink:0;cursor:pointer" onclick="exitBranchTree()">
+    <span style="font-size:12px;font-weight:600;color:var(--hana-fg-muted,#6b7280)">🌳 分支列表</span>
+    <span id="blockBranchCount" style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-left:6px"></span>
+    <div style="font-size:10px;color:var(--hana-fg-muted,#9ca3af);margin-top:2px">拖拽方块排列 · 右键方块管理分支 · 拖拽空白处平移</div>
+  </div>
+  <div id="branchCanvas" style="flex:1;position:relative;overflow:hidden;background:var(--hana-bg,#f5f6f8);border-radius:8px;border:1px solid var(--hana-border,#e2e5ea);margin:0 4px 4px 4px">
+    <div id="bcInner" style="position:absolute;top:0;left:0;transform-origin:0 0">
+      <svg id="branchSvg" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1"></svg>
+      <div id="branchBlocks" style="position:relative;z-index:2"></div>
+    </div>
+  </div>
+</div>
+
+<div id="mainInterface">
+
+<div class="header">
+  <h1>Save/Load <span style="font-size:11px;font-weight:400;color:var(--hana-fg-muted,#6b7280)">v1.0</span></h1>
+  <span class="branch" id="branch" onclick="toggleBranchTree()" style="cursor:pointer" title="点击查看分支树">—</span>
+  <button class="btn-refresh" id="btnRefresh" onclick="doRefreshAll()">↻</button>
+  
+</div>
+
+<div id="panelsArea">
+
+<!-- 工作流程提示条（仅在未关闭时显示） -->
+<div id="workflowGuide" style="display:none;background:linear-gradient(135deg,var(--hana-bg-muted,#f6f7f7) 0%,var(--hana-surface,#fff) 100%);border:1px solid var(--hana-accent,#5e6ad2);border-radius:10px;padding:14px 16px;margin-bottom:12px;font-size:13px;color:var(--hana-fg,#1a1d24)">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+    <span style="font-size:16px">🔄</span>
+    <span style="font-weight:700;font-size:14px">三步走完一次保存</span>
+    <span style="flex:1"></span>
+    <button onclick="dismissWorkflowGuide()" style="border:none;background:transparent;cursor:pointer;font-size:18px;color:var(--hana-fg-muted,#6b7280);padding:0 4px;line-height:1" title="永久关闭">×</button>
+  </div>
+  <div style="display:flex;align-items:stretch;gap:0;font-size:12px">
+    <div style="flex:1;text-align:center;padding:8px;border-right:1px dashed var(--hana-border,#e2e5ea)">
+      <div style="font-size:24px;margin-bottom:4px">✏️</div>
+      <div style="font-weight:600;margin-bottom:2px">第一步</div>
+      <div style="color:var(--hana-fg-muted,#6b7280)">在编辑器里改文件</div>
+    </div>
+    <div style="flex:1;text-align:center;padding:8px;border-right:1px dashed var(--hana-border,#e2e5ea)">
+      <div style="font-size:24px;margin-bottom:4px">💾</div>
+      <div style="font-weight:600;margin-bottom:2px">第二步</div>
+      <div style="color:var(--hana-fg-muted,#6b7280)">点「存档」按钮</div>
+    </div>
+    <div style="flex:1;text-align:center;padding:8px">
+      <div style="font-size:24px;margin-bottom:4px">📤</div>
+      <div style="font-weight:600;margin-bottom:2px">第三步（可选）</div>
+      <div style="color:var(--hana-fg-muted,#6b7280)">点「推送」同步到云</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title" style="display:flex;align-items:center;gap:6px">
+    📁 仓库
+    <button onclick="editPath()" style="margin-left:auto;font-size:11px;padding:1px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">切换</button>
+  </div>
+  <div id="repoPathDisplay" style="font-size:11px;font-family:monospace;word-break:break-all;color:var(--hana-fg-muted,#6b7280)">加载中...</div>
+  <div id="repoPathEdit" style="display:none;margin-top:6px">
+    <div style="display:flex;gap:6px">
+      <input type="text" id="pathInput" style="flex:1;padding:6px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;font-family:monospace;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none" placeholder="输入 git 仓库完整路径">
+      <button onclick="savePath()" style="padding:4px 10px;border:0;border-radius:6px;font-size:12px;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">确定</button>
+      <button onclick="cancelEditPath()" style="padding:4px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">取消</button>
+    </div>
+    <div id="repoHistory" style="margin-top:6px;max-height:150px;overflow-y:auto"></div>
+  </div>
+</div>
+
+<div class="card" id="initArea" style="display:none">
+  <div class="card-title">🚀 初始化仓库</div>
+  <div style="margin-bottom:6px;font-size:12px;color:var(--hana-fg-muted,#6b7280)">该目录还不是 git 仓库</div>
+    <div style="font-size:11px;color:var(--hana-fg-muted,#9ca3af);margin-bottom:10px">💡 点下面「初始化仓库」按钮把它变成一个 Git 项目，或者点上面的「切换」选一个已有仓库</div>
+
+  <!-- 模板选择 -->
+  <div style="margin-bottom:8px">
+    <label style="font-size:12px;color:var(--hana-fg-muted,#6b7280)">.gitignore 模板：</label>
+    <select id="gitignoreSelect" onchange="applyTemplate()" style="margin-left:6px;padding:4px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:12px;background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24)">
+      <option value="">无</option>
+      <option value="node">Node.js</option>
+      <option value="python">Python</option>
+      <option value="java">Java</option>
+    </select>
+  </div>
+
+  <!-- 排除项表格 -->
+  <div style="margin-bottom:8px">
+    <div style="font-size:12px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px">排除项（可编辑）：</div>
+    <div id="ignoreTable" style="border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;overflow:hidden">
+      <div id="ignoreList" style="overflow-y:auto;resize:vertical;min-height:80px;max-height:300px"></div>
+      <div style="display:flex;border-top:1px solid var(--hana-border,#d0d5dd)">
+        <input type="text" id="newIgnoreInput" placeholder="添加排除项"
+          onkeydown="if(event.key==='Enter')addIgnoreItem()"
+          style="flex:1;padding:6px 8px;border:0;font-size:12px;font-family:monospace;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none">
+        <button onclick="addIgnoreItem()" style="padding:6px 12px;border:0;border-left:1px solid var(--hana-border,#d0d5dd);font-size:12px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-accent,#4a8cff);font-weight:500">+</button>
+      </div>
+    </div>
+  </div>
+
+  <button onclick="doInit()" style="padding:8px 16px;border:0;border-radius:6px;font-size:13px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">初始化仓库</button>
+  <div id="initResult" style="margin-top:6px;font-size:12px"></div>
+</div>
+
+<div class="card" id="fileCard" style="resize:vertical;overflow:auto;min-height:60px;max-height:400px">
+  <div class="card-title" style="display:flex;align-items:center;gap:6px">
+    📄 变更文件
+    <span style="flex:1"></span>
+    <button onclick="showStatusHelp()" style="width:18px;height:18px;border:1px solid var(--hana-border,#d0d5dd);border-radius:50%;background:var(--hana-surface,#fff);cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;color:var(--hana-fg-muted,#6b7280);line-height:1">?</button>
+    <button id="diffModeBtn" onclick="toggleGlobalDiffMode()" style="font-size:10px;padding:1px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">详细</button>
+  </div>
+  <ul class="file-list" id="fileList">
+    <li class="empty-hint">加载中...</li>
+  </ul>
+</div>
+
+<div class="card" id="commitCard">
+  <div class="card-title">💾 存档 <span style="font-size:10px;font-weight:400;color:var(--hana-fg-muted,#9ca3af)">把修改保存到本地 Git</span></div>
+  <div class="commit-subtitle">写一句说明 · 描述你这次改了什么</div>
+  <div style="margin-bottom:6px">
+    <input type="text" id="commitMsg" placeholder="例：feat: 添加了登录页" autocomplete="off" style="width:100%;padding:6px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:13px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
+  </div>
+  <div class="commit-subtitle">留空不打 tag · 不懂可不管</div>
+  <div class="commit-area">
+    <input type="text" id="versionInput" placeholder="可选" value="0.0.1" autocomplete="off" style="width:80px;padding:6px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;font-family:monospace;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;flex-shrink:0">
+    <button id="btnCommit" onclick="doCommit()" style="padding:6px 14px;border:0;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:var(--hana-accent,#4a8cff);color:#fff;white-space:nowrap;transition:opacity .15s">存档</button>
+    <button onclick="doPush(this)" style="padding:6px 14px;border:1px solid #27ae60;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:#27ae60;white-space:nowrap" title="把本地存档发送到云端 GitHub">📤 推送</button>
+    <button onclick="doPull(this)" style="padding:6px 14px;border:1px solid var(--hana-accent,#4a8cff);border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:var(--hana-accent,#4a8cff);white-space:nowrap" title="从云端 GitHub 拉取最新存档">📥 拉取</button>
+  </div>
+</div>
+
+<div class="card" id="stashCard">
+  <div class="card-title" style="display:flex;align-items:center;gap:6px">
+    📦 暂存
+    <span style="flex:1"></span>
+    <span id="stashCount" style="font-size:11px;color:var(--hana-fg-muted,#6b7280)"></span>
+  </div>
+  <div id="stashPanel">
+    <div style="display:flex;gap:4px;margin-bottom:6px">
+      <input type="text" id="stashMsg" placeholder="暂存备注（可选）" autocomplete="off" style="flex:1;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none">
+      <button id="btnStashPush" onclick="doStashPush()" style="padding:5px 12px;border:0;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;background:var(--hana-accent,#4a8cff);color:#fff;white-space:nowrap">暂存</button>
+    </div>
+    <ul id="stashList" style="list-style:none;padding:0;margin:0;display:none"></ul>
+  </div>
+</div>
+
+<div class="card" id="logCard">
+  <div class="card-title" style="display:flex;align-items:center;gap:6px">
+    📜 提交记录
+    <button onclick="showResetHelp()" style="width:18px;height:18px;margin-left:auto;border:1px solid var(--hana-border,#d0d5dd);border-radius:50%;background:var(--hana-surface,#fff);cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;color:var(--hana-fg-muted,#6b7280);line-height:1">?</button>
+    <button id="toggleHashBtn" onclick="toggleHashDisplay()" style="font-size:10px;padding:1px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">tag</button>
+    <button id="compareToggleBtn" onclick="toggleCompareMode()" style="font-size:10px;padding:1px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">对比</button>
+  </div>
+  <ul class="commit-list" id="commitList">
+    <li class="empty-hint">加载中...</li>
+  </ul>
+  <div id="compareResult" style="display:none;margin-top:8px;border-top:1px solid var(--hana-border,#e2e5ea);padding-top:8px">
+    <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px">
+      <span id="compareLabel"></span>
+      <span style="float:right"><button onclick="closeCompare()" style="padding:1px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:transparent;cursor:pointer;color:var(--hana-fg-muted,#6b7280)">关闭</button></span>
+    </div>
+    <pre id="compareOutput" style="font-size:11px;font-family:monospace;line-height:1.5;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all"></pre>
+  </div>
+</div>
+
+
+<div class="card" id="settingsCard">
+  <div class="card-title" style="display:flex;align-items:center;gap:6px;margin-bottom:0;cursor:pointer" onclick="toggleSettings()">
+    ⚙ 设置
+    <span style="flex:1"></span>
+    <span id="settingsToggle" style="color:var(--hana-accent,#5e6ad2);font-size:11px">▸</span>
+  </div>
+  <div id="settingsBody" style="font-size:12px;max-height:0;overflow:hidden;transition:max-height .2s ease">
+    <label style="display:block;margin:6px 0">暂存模式
+      <select id="cfgStashMode" onchange="saveSetting('stashMode',this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
+        <option value="normal">仅跟踪文件</option>
+        <option value="untracked">包含未跟踪</option>
+        <option value="all">包含全部</option>
+      </select>
+    </label>
+    <label style="display:block;margin:6px 0">推送模式
+      <select id="cfgPushMode" onchange="saveSetting('pushMode',this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
+        <option value="normal">普通推送</option>
+        <option value="force-with-lease">安全强制</option>
+        <option value="force">强制覆盖</option>
+      </select>
+    </label>
+    <label style="display:block;margin:6px 0">拉取模式
+      <select id="cfgPullMode" onchange="saveSetting('pullMode',this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
+        <option value="merge">合并</option>
+        <option value="rebase">变基 (把提交接到最新)</option>
+        <option value="ff-only">仅快进 (禁止合并)</option>
+      </select>
+    </label>
+    <label style="display:block;margin:6px 0">Diff 模式
+      <select id="cfgDiffMode" onchange="saveSetting('defaultDiffMode',this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
+        <option value="detail">详细</option>
+        <option value="simple">精简</option>
+      </select>
+    </label>
+    <label style="display:block;margin:6px 0">主题
+      <select id="cfgTheme" onchange="switchTheme(this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
+        <option value="light">浅色</option>
+        <option value="dark">深色</option>
+      </select>
+    </label>
+    <label style="display:block;margin:6px 0">GitHub 打开
+      <select id="cfgGhOpen" onchange="saveSetting('ghOpenMode',this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
+        <option value="internal">内部窗口</option>
+        <option value="external">外部浏览器</option>
+      </select>
+    </label>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="card" id="ghCard">
+  <div class="card-title" style="display:flex;align-items:center;gap:6px;margin-bottom:0;cursor:pointer" onclick="toggleGhPanel()">
+    <svg viewBox="0 0 512 512" fill="var(--hana-accent,#5e6ad2)" stroke="none" style="width:14px;height:14px;flex-shrink:0"><path d="M 241.5 54 L 270.5 54 L 271.5 55 L 288.5 56 L 314.5 62 L 339.5 71 Q 383.3 90.7 413 124.5 Q 436.3 150.2 450 185.5 L 455 200.5 L 460 222.5 L 461 236.5 L 462 237.5 L 462 248.5 L 463 249.5 L 463 271.5 L 462 272.5 L 461 291.5 L 456 314.5 L 444 346.5 Q 428.1 378.1 403.5 401 Q 376.2 426.7 338.5 442 L 302.5 453 L 279.5 457 L 272.5 457 L 271.5 458 L 258.5 458 L 256 453.5 L 257 451 L 259.5 450 L 277.5 449 L 300.5 445 L 319.5 440 L 345.5 430 Q 383.8 412.3 410 382.5 Q 435.7 354.2 448 312.5 L 454 279.5 L 454 241.5 L 453 240.5 L 451 219.5 L 446 199.5 Q 439.7 179.3 430 162.5 Q 412.6 131.9 386.5 110 Q 361.3 88.2 327.5 75 L 312.5 70 L 285.5 64 L 267.5 63 L 266.5 62 L 246.5 62 L 245.5 63 L 226.5 64 L 203.5 69 Q 184.1 74.6 167.5 83 Q 135.5 99.5 112 124.5 L 110 127.5 Q 82.7 155.2 68 195.5 L 62 216.5 L 59 232.5 L 59 241.5 L 58 242.5 L 58 272.5 L 59 273.5 L 59 281.5 L 60 282.5 L 62 299.5 Q 66.5 320 74 337.5 Q 89.8 374.2 117.5 399 Q 136.1 415.9 159.5 428 L 194.5 443 L 205 445 L 205 438.5 L 206 437.5 L 206 410 L 203.5 411 L 190.5 411 L 179.5 409 L 168.5 404 L 156 392.5 Q 144.4 378.6 136 361.5 L 131.5 357 L 118.5 352 L 114 348.5 L 112 341.5 L 115.5 337 L 117.5 336 L 130.5 336 Q 156.3 343.3 171 361.5 L 179.5 371 Q 185.7 376.3 197.5 376 L 208 371.5 L 210 362.5 L 216 352 Q 174.1 347.8 153 321.5 Q 142.4 309.1 137 291.5 L 134 276.5 L 134 255.5 L 140 231.5 Q 145.6 217.6 155 207.5 L 152 200.5 L 150 182.5 L 153 166.5 L 157.5 158 L 169.5 158 L 180.5 160 L 197.5 166 L 213.5 176 L 225.5 172 L 243.5 170 L 244.5 169 L 272.5 169 L 302.5 175 Q 320.3 157.8 352.5 155 L 355 156 Q 359.8 164 362 175.5 L 362 193.5 L 358 206.5 Q 370.1 220.9 376 241.5 L 379 257.5 L 379 278.5 L 375 296.5 L 368 311.5 Q 360.4 324.9 348.5 334 L 325.5 346 L 295 352 L 304 368.5 L 309 386.5 L 309 395.5 L 310 396.5 L 310 429.5 L 307.5 433 Q 303 434 302 431.5 L 301 426.5 L 302 425.5 L 302 402.5 L 301 401.5 L 301 389.5 L 299 379.5 L 286 353.5 L 286 348.5 L 291.5 344 L 312.5 341 L 328.5 336 Q 342.4 329.9 352 319.5 Q 364 307 369 287.5 L 370 274.5 L 371 273.5 L 371 260.5 L 370 259.5 L 369 247.5 L 365 234.5 Q 359.7 220.3 350 210.5 L 349 206.5 L 352 200.5 L 354 191.5 L 354 178.5 L 350 164 L 332.5 167 Q 315.6 172.6 304.5 184 L 299.5 184 L 292.5 181 L 277.5 178 L 247.5 177 L 246.5 178 L 238.5 178 L 227.5 180 L 215.5 184 L 210.5 184 Q 192.6 168.2 162 166 L 159 176.5 L 159 193.5 L 164 209.5 Q 152.9 220.4 147 236.5 L 142 258.5 L 142 273.5 L 145 289.5 L 152 305.5 Q 159.3 318.3 170.5 327 L 190.5 338 L 224 346 L 226 352.5 L 219 362.5 L 216 376.5 L 214.5 378 L 199.5 384 L 188.5 384 Q 173.9 380.1 166 369.5 L 154.5 357 L 135.5 346 L 128.5 344 L 123.5 344 L 123.5 345 L 130.5 347 L 140 353 L 159 383.5 L 171.5 396 L 181.5 401 L 196.5 402 L 197.5 403 L 198.5 402 Q 206.7 403.7 210.5 401 L 213 402 L 214 404.5 L 214 441.5 L 212 449.5 L 208.5 453 L 203.5 454 Q 173.9 445.6 149.5 432 L 130.5 420 L 105 399 L 81 368.5 L 63 332.5 Q 56.1 313.4 52 291.5 L 51 277.5 L 50 276.5 L 49 252.5 L 50 251.5 L 50 237.5 L 51 236.5 L 53 218.5 Q 57.5 198 65 180.5 Q 85.5 134.5 121.5 104 Q 146 82.5 178.5 69 L 213.5 58 L 230.5 56 L 231.5 55 L 240.5 55 L 241.5 54 Z"/></svg> GitHub
+    <span style="flex:1"></span>
+    <button onclick="event.stopPropagation();showGhHelp(event)" style="width:18px;height:18px;border:1px solid var(--hana-border,#d0d5dd);border-radius:50%;background:var(--hana-surface,#fff);cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;color:var(--hana-fg-muted,#6b7280);line-height:1;flex-shrink:0">?</button>
+    <span id="ghToggle" style="color:var(--hana-accent,#5e6ad2);font-size:11px">▸</span>
+  </div>
+  <div id="ghBody" style="max-height:0;overflow:hidden;transition:max-height .2s ease">
+    <div id="ghNotInstalled" style="display:none;width:100%;margin-bottom:8px;padding:8px 10px;background:#fff3e0;border:1px solid #e67e22;border-radius:6px;font-size:11px;color:#c77900;line-height:1.5;box-sizing:border-box">
+      ⚠️ 未检测到 GitHub CLI (<code>gh</code>)。需要先安装 gh 才能使用 GitHub 功能。<br>
+      前往 <a href="https://cli.github.com/" target="_blank" style="color:#5e6ad2;text-decoration:underline">cli.github.com</a> 下载安装后重启 Hana。
+    </div>
+    <div style="display:flex;gap:2px;margin-bottom:8px">
+      <button class="gh-tab" data-tab="create" onclick="switchGhTab('create')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">创建</button>
+      <button class="gh-tab" data-tab="clone" onclick="switchGhTab('clone')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">克隆</button>
+      <button class="gh-tab" data-tab="list" onclick="switchGhTab('list')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">列表</button>
+      <button class="gh-tab" data-tab="search" onclick="switchGhTab('search')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">搜索</button>
+    </div>
+
+
+  <!-- 创建 -->
+  <div class="gh-tab-content" id="ghTabCreate">
+    <div style="display:flex;gap:4px;margin-bottom:6px">
+      <input type="text" id="ghRepoName" placeholder="仓库名" autocomplete="off" style="flex:1;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none">
+      <select id="ghRepoPrivacy" style="padding:5px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:11px;background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24)">
+        <option value="0">公开</option>
+        <option value="1">私有</option>
+      </select>
+    </div>
+    <input type="text" id="ghRepoDesc" placeholder="描述（可选）" autocomplete="off" style="width:100%;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
+    <button onclick="ghCreateRepo()" style="margin-top:6px;width:100%;padding:6px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">在 GitHub 创建</button>
+    <div id="ghCreateResult" style="margin-top:6px;font-size:11px"></div>
+  </div>
+
+  <!-- 克隆 -->
+  <div class="gh-tab-content" id="ghTabClone" style="display:none">
+    <input type="text" id="ghCloneUrl" placeholder="仓库 URL" autocomplete="off" style="width:100%;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
+    <input type="text" id="ghCloneDir" placeholder="留空则克隆到仓库路径所在目录" autocomplete="off" style="width:100%;margin-top:4px;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
+    <button onclick="ghCloneRepo()" style="margin-top:6px;width:100%;padding:6px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">克隆</button>
+    <div id="ghCloneResult" style="margin-top:6px;font-size:11px"></div>
+  </div>
+
+  <!-- 列表 -->
+  <div class="gh-tab-content" id="ghTabList" style="display:none">
+    <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px">你的 GitHub 仓库</div>
+    <div id="ghRepoList" style="max-height:240px;overflow-y:auto">加载中...</div>
+  </div>
+
+  <!-- 搜索 -->
+  <div class="gh-tab-content" id="ghTabSearch" style="display:none">
+    <div style="display:flex;gap:4px;margin-bottom:6px">
+      <input type="text" id="ghSearchQuery" placeholder="搜仓库，如 openhanako" autocomplete="off" style="flex:1;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none" onkeydown="ghSearchEnter(event)">
+      <button onclick="ghSearch()" style="padding:5px 10px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">搜索</button>
+    </div>
+    <div id="ghSearchStatus" style="font-size:11px;color:var(--hana-fg-muted,#6b7280);padding:4px 0;display:none"></div>
+    <div id="ghSearchResult" style="max-height:210px;overflow-y:auto"></div>
+  </div>
+</div><!-- end ghBody -->
+  </div>
+
+<!-- 分支颜色帮助气泡 -->
+<div id="branchColorBubble" style="display:none;position:fixed;z-index:1000;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:10px 12px;font-size:11px;line-height:2;box-shadow:0 4px 12px rgba(0,0,0,.12);max-width:220px">
+  <div style="font-weight:600;margin-bottom:6px;font-size:12px">🎨 分支颜色说明</div>
+  <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 8px;font-size:11px;line-height:1.8">
+    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#27a644"></span><span><b>master / main</b> — 稳定主分支</span>
+    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#5e6ad2"></span><span><b>feature/*</b> — 新功能开发</span>
+    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e67e22"></span><span><b>fix/* / bugfix/*</b> — Bug 修复</span>
+    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e74c3c"></span><span><b>hotfix/*</b> — 紧急修复</span>
+    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#8b5cf6"></span><span><b>release/*</b> — 发布准备</span>
+    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#06b6d4"></span><span><b>develop</b> — 日常开发</span>
+  </div>
+  <div style="margin-top:6px;font-size:10px;color:var(--hana-fg-muted,#6b7280)">⚫ 灰色 = 其他未分类分支</div>
+</div>
+
+<!-- GitHub 帮助气泡 -->
+<div id="ghHelpBubble" style="display:none;position:fixed;z-index:1000;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.8;box-shadow:0 4px 12px rgba(0,0,0,0.12);max-width:300px">
+  <div style="font-weight:600;margin-bottom:4px">GitHub 卡片</div>
+  <div style="margin-bottom:6px;font-size:11px;color:var(--hana-fg-muted,#6b7280)">
+    此卡片的功能依赖 GitHub CLI (<code>gh</code>) 工具。
+  </div>
+  <div style="margin-bottom:4px;font-size:11px">
+    <b>安装指南：</b>
+  </div>
+  <div style="font-size:10px;font-family:monospace;background:var(--hana-bg,#f5f6f8);padding:6px 8px;border-radius:4px;margin-bottom:6px">
+    winget install --id GitHub.cli<br>
+    # 或从下面链接下载安装包
+  </div>
+  <a href="https://cli.github.com/" target="_blank" style="font-size:11px;color:var(--hana-accent,#5e6ad2);text-decoration:none">https://cli.github.com/ →</a>
+</div>
+
+<!-- 右键菜单 -->
+<div id="ctxMenu" oncontextmenu="return false"></div>
+<div id="ghCtxMenu" oncontextmenu="return false"></div>
+
+<!-- 新手引导弹窗（6 步） -->
+<div id="walkthroughModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:3000;background:rgba(0,0,0,.55);align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif">
+  <div id="walkthroughCard" style="background:var(--hana-surface,#fff);border-radius:14px;padding:24px;width:520px;max-width:92vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);color:var(--hana-fg,#1a1d24)">
+    <!-- 顶部进度条 -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:18px">
+      <div id="wtDots" style="display:flex;gap:4px;flex:1">
+        <div class="wt-dot" data-step="0" style="flex:1;height:4px;border-radius:2px;background:var(--hana-accent,#5e6ad2);transition:background .2s"></div>
+        <div class="wt-dot" data-step="1" style="flex:1;height:4px;border-radius:2px;background:var(--hana-border,#e2e5ea);transition:background .2s"></div>
+        <div class="wt-dot" data-step="2" style="flex:1;height:4px;border-radius:2px;background:var(--hana-border,#e2e5ea);transition:background .2s"></div>
+        <div class="wt-dot" data-step="3" style="flex:1;height:4px;border-radius:2px;background:var(--hana-border,#e2e5ea);transition:background .2s"></div>
+        <div class="wt-dot" data-step="4" style="flex:1;height:4px;border-radius:2px;background:var(--hana-border,#e2e5ea);transition:background .2s"></div>
+        <div class="wt-dot" data-step="5" style="flex:1;height:4px;border-radius:2px;background:var(--hana-border,#e2e5ea);transition:background .2s"></div>
+      </div>
+      <span id="wtStepLabel" style="font-size:11px;color:var(--hana-fg-muted,#6b7280);min-width:36px;text-align:right">1 / 6</span>
+    </div>
+
+    <!-- 步骤内容 -->
+    <div id="wtIcon" style="font-size:42px;line-height:1;margin-bottom:12px">👋</div>
+    <h2 id="wtTitle" style="font-size:20px;font-weight:700;margin:0 0 10px 0;line-height:1.3">欢迎使用 Git Save/Load</h2>
+    <p id="wtDesc" style="font-size:14px;line-height:1.7;color:var(--hana-fg-muted,#6b7280);margin:0 0 14px 0">这是一个帮你管理 Git 仓库的小工具。下面我们用 6 步带你走完一遍核心功能，2 分钟就能上手。</p>
+    <div id="wtBox" style="background:var(--hana-bg-muted,#f6f7f7);border-left:3px solid var(--hana-accent,#5e6ad2);border-radius:6px;padding:12px 14px;font-size:13px;line-height:1.7;margin-bottom:18px;color:var(--hana-fg,#1a1d24)"></div>
+
+    <!-- 底部按钮 -->
+    <div style="display:flex;gap:8px;align-items:center">
+      <button onclick="dismissWalkthrough()" style="padding:8px 14px;border:0;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:13px;cursor:pointer;border-radius:6px">跳过引导</button>
+      <span style="flex:1"></span>
+      <button id="wtPrevBtn" onclick="prevWalkthroughStep()" style="padding:8px 16px;border:1px solid var(--hana-border,#d0d5dd);background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24);font-size:13px;cursor:pointer;border-radius:6px;display:none">← 上一步</button>
+      <button id="wtNextBtn" onclick="nextWalkthroughStep()" style="padding:8px 20px;border:0;background:var(--hana-accent,#5e6ad2);color:#fff;font-size:13px;font-weight:500;cursor:pointer;border-radius:6px">下一步 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- 引导高亮遮罩（用于突出某个按钮） -->
+<div id="walkthroughSpotlight" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:2999;pointer-events:none;background:transparent">
+  <div id="walkthroughSpot" style="position:absolute;border:2px solid var(--hana-accent,#5e6ad2);border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);transition:all .3s cubic-bezier(.4,0,.2,1);pointer-events:none"></div>
+</div>
+
+<!-- Git 身份配置弹窗（首次提交时未配置身份会触发） -->
+<div id="identitySetupModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:2500;background:rgba(0,0,0,.4);align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif">
+  <div style="background:var(--hana-surface,#fff);border-radius:12px;padding:22px;width:460px;max-width:92vw;box-shadow:0 12px 40px rgba(0,0,0,.25);color:var(--hana-fg,#1a1d24)">
+    <div style="font-size:34px;line-height:1;margin-bottom:8px">🔐</div>
+    <h3 style="font-size:17px;font-weight:700;margin:0 0 8px 0">先设个身份再提交</h3>
+    <p style="font-size:13px;line-height:1.7;color:var(--hana-fg-muted,#6b7280);margin:0 0 16px 0">
+      Git 要知道<strong style="color:var(--hana-fg,#1a1d24)">“谁”</strong>提交了这次修改。填下面两项，只保存在当前仓库里，不会上传到任何地方。
+    </p>
+
+    <div style="margin-bottom:12px">
+      <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--hana-fg,#1a1d24)">你的姓名或昵称</label>
+      <input type="text" id="identityName" placeholder="例：XX哥" style="width:100%;padding:9px 12px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:13px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box" autocomplete="off">
+    </div>
+
+    <div style="margin-bottom:6px">
+      <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--hana-fg,#1a1d24)">邮箱地址</label>
+      <input type="text" id="identityEmail" placeholder="例：xx@example.com" style="width:100%;padding:9px 12px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:13px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box" autocomplete="off">
+    </div>
+    <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:14px;line-height:1.5">📌 邮箱不会验证真假，只是个标识符。你可以使用不存在的邮箱。</div>
+
+    <div id="identitySetupResult" style="font-size:12px;margin-bottom:10px;min-height:16px"></div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">
+      <button onclick="closeIdentitySetup()" style="padding:8px 14px;border:0;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:13px;cursor:pointer;border-radius:6px">稍后</button>
+      <button id="identitySubmitBtn" onclick="submitIdentitySetup()" style="padding:8px 20px;border:0;background:var(--hana-accent,#5e6ad2);color:#fff;font-size:13px;font-weight:500;cursor:pointer;border-radius:6px">保存并重试提交</button>
+    </div>
+  </div>
+</div>
+
+<!-- 我的工作流程提示条已移入 panelsArea 顶部，此处不再重复 -->
+
+<!-- 自定义输入弹框 -->
+<div id="promptModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000;background:rgba(0,0,0,.3);align-items:center;justify-content:center">
+  <div style="background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:10px;padding:16px;min-width:260px;max-width:90%;box-shadow:0 8px 24px rgba(0,0,0,.15)">
+    <div id="promptTitle" style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--hana-fg,#1a1d24)"></div>
+    <input type="text" id="promptInput" style="width:100%;padding:8px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box" autocomplete="off" onkeydown="if(event.key==='Enter')confirmPrompt();if(event.key==='Escape')cancelPrompt()">
+    <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
+      <button onclick="cancelPrompt()" style="padding:6px 14px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">取消</button>
+      <button onclick="confirmPrompt()" style="padding:6px 14px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 状态帮助气泡 -->
+<div id="statusHelpBubble" style="display:none;position:fixed;z-index:1001;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:10px 12px;font-size:12px;line-height:2;box-shadow:0 4px 12px rgba(0,0,0,0.12);max-width:260px">
+  <div style="font-weight:600;margin-bottom:4px">📂 变更文件 — 文件状态说明</div>
+  <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:6px">点击文件名可查看具体变更内容（diff）</div>
+  <div style="display:grid;grid-template-columns:auto 1fr;gap:0 8px">
+    <span style="font-weight:700;color:#95a5a6">??</span><span>未跟踪（新文件）</span>
+    <span style="font-weight:700;color:#e67e22">M</span><span>已修改</span>
+    <span style="font-weight:700;color:#27ae60">A</span><span>已暂存的新文件</span>
+    <span style="font-weight:700;color:#e74c3c">D</span><span>已删除</span>
+    <span style="font-weight:700;color:#3498db">R</span><span>重命名</span>
+    <span style="font-weight:700;color:#e74c3c">U</span><span>合并冲突</span>
+  </div>
+</div>
+
+<!-- reset 帮助气泡 -->
+<div id="resetHelpBubble" style="display:none;position:fixed;z-index:1000;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.8;box-shadow:0 4px 12px rgba(0,0,0,0.12);max-width:320px">
+  <div style="font-weight:600;margin-bottom:4px">📜 提交记录 — 回滚模式说明</div>
+  <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:6px">点击 commit hash 或回滚按钮可选择回滚模式</div>
+  <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 8px">
+    <span style="font-weight:600;color:#e67e22">soft</span>
+    <span>仅移动 HEAD 指针，代码和暂存区不变</span>
+    <span style="font-weight:600;color:#3498db">mixed</span>
+    <span>移动 HEAD + 清空暂存区，代码保留</span>
+    <span style="font-weight:600;color:#e74c3c">hard</span>
+    <span>⚠ 彻底还原，未提交的修改全部丢失</span>
+  </div>
+</div>
+
+<!-- 确认弹窗 -->
+<div id="confirmModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:999;background:rgba(0,0,0,0.3);padding:20px;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif">
+  <div style="background:var(--hana-surface,#fff);border-radius:12px;max-width:400px;margin:20vh auto;padding:22px;text-align:left;color:var(--hana-fg,#1a1d24);box-shadow:0 8px 30px rgba(0,0,0,.2)">
+    <div style="font-size:15px;font-weight:700;margin-bottom:10px">↩️ 回滚到指定版本</div>
+    <div id="confirmMsg" style="margin-bottom:16px;font-size:13px;line-height:1.6;color:var(--hana-fg-muted,#6b7280)"></div>
+    <!-- 回滚模式选择器（带中文说明）-->
+    <div id="modeSelector" style="display:none;margin-bottom:8px">
+      <div style="font-size:12px;font-weight:600;color:var(--hana-fg,#1a1d24);margin-bottom:8px">回滚到什么程度？</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <!-- soft -->
+        <div class="reset-mode-option" data-mode="soft" onclick="pickResetMode('soft')" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:2px solid var(--hana-border,#e2e5ea);border-radius:8px;cursor:pointer;transition:all .15s;background:var(--hana-surface,#fff)">
+          <div style="width:28px;height:28px;border-radius:6px;background:#fff3e0;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;color:#e67e22">🟡</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:#e67e22">soft — 轻撤回（推荐）</div>
+            <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-top:2px;line-height:1.5">只撤回 commit 记录，代码和暂存区不变。<br>适合：提交后发现消息写错了，或想合并成一次提交。</div>
+          </div>
+        </div>
+        <!-- mixed -->
+        <div class="reset-mode-option" data-mode="mixed" onclick="pickResetMode('mixed')" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:2px solid var(--hana-border,#e2e5ea);border-radius:8px;cursor:pointer;transition:all .15s;background:var(--hana-surface,#fff)">
+          <div style="width:28px;height:28px;border-radius:6px;background:#e3f2fd;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;color:#3498db">🔵</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:#3498db">mixed — 清暂存（最常用）</div>
+            <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-top:2px;line-height:1.5">撤回 commit 并清空暂存区，代码保留在工作区。<br>适合：提交后发现漏了文件，清暂存后重新 add 再提交。默认选项。</div>
+          </div>
+        </div>
+        <!-- hard -->
+        <div class="reset-mode-option" data-mode="hard" onclick="pickResetMode('hard')" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:2px solid #fee2e2;border-radius:8px;cursor:pointer;transition:all .15s;background:#fef2f2">
+          <div style="width:28px;height:28px;border-radius:6px;background:#fee2e2;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;color:#e74c3c">🔴</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:#e74c3c">hard — 硬重置 ⚠️ 慎用</div>
+            <div style="font-size:11px;color:#b91c1c;margin-top:2px;line-height:1.5">彻底回到目标版本，未提交的修改全部丢失。<br>除非你确定不要这些修改了，否则不要选这个！</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button id="confirmCancelBtn" onclick="document.getElementById('confirmModal').style.display='none';confirmCallback(false)" style="padding:6px 18px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:13px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">取消</button>
+      <button id="confirmOkBtn" onclick="document.getElementById('confirmModal').style.display='none';confirmCallback(true)" style="padding:6px 18px;border:0;border-radius:6px;font-size:13px;font-weight:500;background:#e74c3c;color:#fff;cursor:pointer">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 冲突解决弹窗 -->
+<div id="conflictModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:1000;background:rgba(0,0,0,0.4);padding:20px;overflow-y:auto">
+  <div style="background:var(--hana-surface,#fff);border-radius:10px;max-width:700px;margin:20px auto;padding:16px">
+    <div style="display:flex;align-items:center;margin-bottom:12px">
+      <span style="font-size:14px;font-weight:600">解决冲突：<span id="conflictFileName"></span></span>
+      <button onclick="closeConflictModal()" style="margin-left:auto;border:0;background:transparent;font-size:18px;cursor:pointer;color:var(--hana-fg-muted,#6b7280)">×</button>
+    </div>
+    <div id="conflictBlocks" style="max-height:400px;overflow-y:auto"></div>
+    <div style="margin-top:12px;text-align:right;display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="closeConflictModal()" style="padding:6px 14px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:13px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">取消</button>
+      <button id="btnResolve" onclick="applyConflictResolve()" style="padding:6px 14px;border:0;border-radius:6px;font-size:13px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">应用选择</button>
+    </div>
+    <div id="conflictResult" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</div>
+
+<script>
+const BASE = window.location.pathname.replace(/\/widget\/?$/, "");
+let currentPath = "";
+// ======== 事件总线（卡片间通信） ========
+var Bus = {
+  _handlers: {},
+  on: function(event, fn) {
+    if (!this._handlers[event]) this._handlers[event] = [];
+    this._handlers[event].push(fn);
+    return fn;
+  },
+  off: function(event, fn) {
+    var list = this._handlers[event];
+    if (list) this._handlers[event] = list.filter(function(f) { return f !== fn; });
+  },
+  emit: function(event, data) {
+    var list = this._handlers[event];
+    if (list) list.forEach(function(fn) { try { fn(data); } catch {} });
+    // 同时触发 '*' 通配监听
+    var all = this._handlers['*'];
+    if (all) all.forEach(function(fn) { try { fn(event, data); } catch {} });
+  }
+};
+
+// ======== 卡片注册系统 ========
+var Cards = {};
+
+Cards.register = function(id, config) {
+  var card = {
+    id: id,
+    el: document.getElementById(id),
+    refresh: config.refresh || function(){},
+    events: config.events || [],
+    collapsed: config.collapsed !== false,
+    onCollapse: config.onCollapse || null,
+  };
+  // 订阅事件
+  card.events.forEach(function(ev) {
+    Bus.on(ev, function() {
+      card.refresh();
+    });
+  });
+  Cards[id] = card;
+  return card;
+};
+
+Cards.refreshAll = function() {
+  for (var id in Cards) {
+    if (Cards[id].refresh) Cards[id].refresh();
+  }
+};
+
+// ======== 缓存机制（避免重复请求，10秒有效） ========
+var CACHE_TTL = 10000;
+function cacheSet(key, data) {
+  try { localStorage.setItem("gsl-cache-" + key, JSON.stringify({ t: Date.now(), d: data })); } catch {}
+}
+function cacheGet(key) {
+  try {
+    var raw = JSON.parse(localStorage.getItem("gsl-cache-" + key));
+    if (raw && Date.now() - raw.t < CACHE_TTL) return raw.d;
+  } catch {}
+  return null;
+}
+function cacheClear() {
+  try {
+    var keys = Object.keys(localStorage).filter(function(k) { return k.startsWith("gsl-cache-"); });
+    keys.forEach(function(k) { localStorage.removeItem(k); });
+  } catch {}
+}
+
+// ======== 卡片拖拽排序 ========
+var CARD_ORDER_KEY = "gsl-card-order";
+var _dragSrc = null;
+var _dropTarget = null;
+var _dropPos = ""; // "before" or "after"
+
+function initCardDrag() {
+  var container = document.getElementById("panelsArea");
+  if (!container) return;
+  // 先把 ghCard 移入 panelsArea（如果不在里面）
+  var ghCard = document.getElementById("ghCard");
+  if (ghCard && ghCard.parentElement !== container) {
+    var refCard = document.getElementById("settingsCard");
+    if (refCard && refCard.nextSibling) { container.insertBefore(ghCard, refCard.nextSibling); }
+    else { container.appendChild(ghCard); }
+    ghCard.draggable = true;
+    var ghHdr = ghCard.querySelector(".card-title");
+    if (ghHdr && !ghHdr.querySelector(".drag-handle")) {
+      var ghHandle = document.createElement("span");
+      ghHandle.className = "drag-handle";
+      ghHandle.textContent = "\u2630";
+      ghHandle.style.cssText = "cursor:grab;color:var(--hana-fg-subtle,#62666d);font-size:11px;flex-shrink:0;user-select:none;margin-right:4px";
+      ghHdr.insertBefore(ghHandle, ghHdr.firstChild);
+    }
+  }
+  // 恢复保存的顺序
+  try {
+    var order = JSON.parse(localStorage.getItem(CARD_ORDER_KEY));
+    if (order && order.length > 0) {
+      var cardMap = {};
+      container.querySelectorAll(".card").forEach(function(c) { cardMap[c.id] = c; });
+      order.forEach(function(id) { if (cardMap[id]) container.appendChild(cardMap[id]); });
+    }
+  } catch {}
+  // 创建指示线
+  var dropLine = document.createElement("div");
+  dropLine.id = "dragDropLine";
+  dropLine.style.cssText = "display:none;height:2px;background:var(--hana-accent,#5e6ad2);margin:2px 0;border-radius:1px;pointer-events:none;position:relative;z-index:10";
+  container.appendChild(dropLine);
+  // 元素级事件
+  container.addEventListener("dragstart", function(e) {
+    var card = e.target.closest(".card");
+    if (!card) return;
+    _dragSrc = card;
+    card.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+  });
+  container.addEventListener("dragend", function(e) {
+    dropLine.style.display = "none";
+    container.querySelectorAll(".card").forEach(function(c) { c.classList.remove("dragging"); });
+    _dragSrc = null; _dropTarget = null;
+  });
+  container.addEventListener("dragover", function(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    var cr = container.getBoundingClientRect();
+    var cards = container.querySelectorAll(".card:not(.dragging)");
+    // 检查是否在最上方或最下方
+    if (cards.length > 0) {
+      var firstRect = cards[0].getBoundingClientRect();
+      var lastRect = cards[cards.length - 1].getBoundingClientRect();
+      if (e.clientY < firstRect.top) {
+        // 最上方
+        container.insertBefore(dropLine, cards[0]);
+        dropLine.style.display = "block";
+        _dropTarget = cards[0]; _dropPos = "before";
+        return;
+      }
+      if (e.clientY > lastRect.bottom) {
+        // 最下方
+        container.appendChild(dropLine);
+        dropLine.style.display = "block";
+        _dropTarget = cards[cards.length - 1]; _dropPos = "after";
+        return;
+      }
+    }
+    var target = e.target.closest(".card");
+    if (!target || target === _dragSrc) return;
+    _dropTarget = target;
+    var rect = target.getBoundingClientRect();
+    _dropPos = e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+    if (_dropPos === "before") {
+      container.insertBefore(dropLine, target);
+    } else {
+      container.insertBefore(dropLine, target.nextSibling);
+    }
+    dropLine.style.display = "block";
+  });
+  container.addEventListener("drop", function(e) {
+    e.preventDefault();
+    dropLine.style.display = "none";
+    if (!_dragSrc || !_dropTarget || _dragSrc === _dropTarget) return;
+    if (_dropPos === "before") {
+      container.insertBefore(_dragSrc, _dropTarget);
+    } else {
+      container.insertBefore(_dragSrc, _dropTarget.nextSibling);
+    }
+    saveCardOrder();
+  });
+  // 每个卡片加拖拽把手
+  container.querySelectorAll(".card").forEach(function(c) {
+    c.draggable = true;
+    var hdr = c.querySelector(".card-title");
+    if (hdr && !hdr.querySelector(".drag-handle")) {
+      var handle = document.createElement("span");
+      handle.className = "drag-handle";
+      handle.textContent = "\u2630";
+      handle.style.cssText = "cursor:grab;color:var(--hana-fg-subtle,#62666d);font-size:11px;flex-shrink:0;user-select:none;margin-right:4px";
+      hdr.insertBefore(handle, hdr.firstChild);
+    }
+  });
+}
+
+function saveCardOrder() {
+  var container = document.getElementById("panelsArea");
+  if (!container) return;
+  var ids = [];
+  container.querySelectorAll(".card").forEach(function(c) { ids.push(c.id); });
+  try { localStorage.setItem(CARD_ORDER_KEY, JSON.stringify(ids)); } catch {}
+}
+
+const STORAGE_KEY = "git-tools-repo-path";
+
+// 保存/读取仓库路径
+
+function getSavedPath() {
+  try { return localStorage.getItem(STORAGE_KEY) || ""; } catch(e) { return ""; }
+}
+function savePathToStorage(p) {
+  try { localStorage.setItem(STORAGE_KEY, p); } catch(e) {}
+}
+
+// 仓库历史记录（最多 10 条）
+const HISTORY_KEY = "git-sl-repo-history";
+function getRepoHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch { return []; }
+}
+function addRepoHistory(path) {
+  if (!path) return;
+  let history = getRepoHistory();
+  history = history.filter(p => p !== path); // 去重
+  history.unshift(path);
+  if (history.length > 20) history = history.slice(0, 20);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch {}
+}
+
+// 渲染仓库历史
+function renderRepoHistory() {
+  const el = document.getElementById("repoHistory");
+  const history = getRepoHistory();
+  if (history.length === 0) { el.innerHTML = ""; return; }
+  el.innerHTML = history.map((p, i) =>
+    '<div class="hist-row" style="display:flex;align-items:center;gap:4px;padding:3px 4px;font-size:11px;font-family:monospace;border-radius:4px">' +
+      '<span data-idx="' + i + '" class="hist-path" style="flex:1;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg-muted,#6b7280)">' + escapeHtml(p) + '</span>' +
+      '<button data-del="' + i + '" class="hist-del" style="flex-shrink:0;padding:0 4px;border:0;background:none;cursor:pointer;color:#e74c3c;font-size:12px">×</button>' +
+    '</div>'
+  ).join("");
+  el.onclick = function(e) {
+    var span = e.target.closest("span[data-idx]");
+    if (span) {
+      var idx = parseInt(span.getAttribute("data-idx"));
+      var h = getRepoHistory();
+      if (h[idx]) document.getElementById("pathInput").value = h[idx];
+    }
+  };
+  el.addEventListener("click", function(e) {
+    var btn = e.target.closest("button[data-del]");
+    if (btn) {
+      e.stopPropagation();
+      var idx = parseInt(btn.getAttribute("data-del"));
+      var h = getRepoHistory();
+      h.splice(idx, 1);
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch {}
+      renderRepoHistory();
+    }
+  });
+}
+
+// 从插件配置读取仓库路径
+async function fetchConfigPath() {
+  try {
+    const res = await fetch(apiUrl("/api/repo"));
+    const data = await res.json();
+    if (data.ok && data.repoPath) return data.repoPath;
+  } catch {}
+  return "";
+}
+
+// 保存仓库路径到插件配置
+async function saveConfigPath(p) {
+  try {
+    await fetch(apiUrl("/api/repo"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoPath: p }),
+    });
+  } catch {}
+}
+
+// Toast 消息
+function toast(msg, type = "info") {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "msg-toast " + type;
+  el.style.display = "block";
+  setTimeout(() => { el.style.display = "none"; }, 3000);
+}
+
+// 获取命令路径（带 token，正确处理已有 query 的情况）
+function apiUrl(path) {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token") || "";
+  if (!token) return BASE + path;
+  const sep = path.includes("?") ? "&" : "?";
+  return BASE + path + sep + "token=" + encodeURIComponent(token);
+}
+
+// 编辑/保存路径
+function editPath() {
+  document.getElementById("repoPathDisplay").style.display = "none";
+  document.getElementById("repoPathEdit").style.display = "block";
+  document.getElementById("pathInput").value = currentPath;
+  document.getElementById("pathInput").focus();
+  renderRepoHistory();
+}
+function cancelEditPath() {
+  document.getElementById("repoPathDisplay").style.display = "";
+  document.getElementById("repoPathEdit").style.display = "none";
+}
+// ======== 设置 ========
+function toggleSettings() {
+  var body = document.getElementById("settingsBody");
+  var toggle = document.getElementById("settingsToggle");
+  if (!body) return;
+  var open = body.style.maxHeight !== "0px" && body.style.maxHeight !== "";
+  if (open) {
+    body.style.maxHeight = "0px";
+    if (toggle) toggle.textContent = "▸";
+  } else {
+    loadSettingsUI();
+    body.style.maxHeight = body.scrollHeight + "px";
+    if (toggle) toggle.textContent = "▾";
+  }
+}
+
+async function loadSettingsUI() {
+  try {
+    const res = await fetch(apiUrl("/api/config"));
+    const data = await res.json();
+    if (!data.ok || !data.config) return;
+    const c = data.config;
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+    set("cfgStashMode", c.stashMode);
+    set("cfgPushMode", c.pushMode);
+    set("cfgPullMode", c.pullMode);
+    set("cfgDiffMode", c.defaultDiffMode);
+    set("cfgGhOpen", c.ghOpenMode || "internal");
+  } catch {}
+  // 应用保存的主题
+  var savedTheme = localStorage.getItem("git-sl-theme");
+  if (savedTheme) {
+    applyTheme(savedTheme);
+    var themeSel = document.getElementById("cfgTheme");
+    if (themeSel) themeSel.value = savedTheme;
+  }
+}
+
+function switchTheme(val) {
+  applyTheme(val);
+  localStorage.setItem("git-sl-theme", val);
+  saveSetting("theme", val);
+}
+
+function applyTheme(theme) {
+  document.body.classList.toggle("theme-dark", theme === "dark");
+  document.documentElement.style.colorScheme = theme === "dark" ? "dark" : "light";
+}
+
+async function saveSetting(key, val, silent) {
+  try {
+    await fetch(apiUrl("/api/config"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [key]: val }),
+    });
+    if (!silent) toast("✅ 设置已保存", "success");
+  } catch { if (!silent) toast("保存失败", "err"); }
+}
+
+// ======== GitHub 面板 ========
+function toggleGhPanel() {
+  var body = document.getElementById("ghBody");
+  var toggle = document.getElementById("ghToggle");
+  if (!body) return;
+  var open = body.style.maxHeight !== "0px" && body.style.maxHeight !== "";
+  if (open) {
+    body.style.maxHeight = "0px";
+    if (toggle) toggle.textContent = "▸";
+  } else {
+    body.style.maxHeight = body.scrollHeight + "px";
+    if (toggle) toggle.textContent = "▾";
+    switchGhTab("create");
+    loadGhList();
+  }
+}
+
+function showBranchColorHelp() {
+  var bubble = document.getElementById("branchColorBubble");
+  if (bubble.style.display !== "none") { bubble.style.display = "none"; return; }
+  bubble.style.left = "50%";
+  bubble.style.top = "50%";
+  bubble.style.transform = "translate(-50%, -50%)";
+  bubble.style.display = "block";
+  bubble.style.position = "fixed";
+  bubble.style.zIndex = "3000";
+  var cl = function(ev) {
+    if (!bubble.contains(ev.target)) {
+      bubble.style.display = "none";
+      document.removeEventListener("click", cl);
+      window.removeEventListener("scroll", sc, true);
+    }
+  };
+  var sc = function() { bubble.style.display = "none"; window.removeEventListener("scroll", sc, true); document.removeEventListener("click", cl); };
+  setTimeout(function() { document.addEventListener("click", cl); window.addEventListener("scroll", sc, true); }, 0);
+}
+
+function showGhHelp(e) {
+  if (!e) e = window.event;
+  var btn = e.target;
+  var bubble = document.getElementById("ghHelpBubble");
+  if (bubble.style.display !== "none") { bubble.style.display = "none"; return; }
+  var rect = btn.getBoundingClientRect();
+  bubble.style.left = Math.max(4, rect.right - 280) + "px";
+  // 如果下方空间不够，显示在按钮上方
+  if (rect.bottom + 200 > window.innerHeight) {
+    bubble.style.top = (rect.top - 4) + "px";
+    bubble.style.transform = "translateY(-100%)";
+  } else {
+    bubble.style.top = (rect.bottom + 4) + "px";
+    bubble.style.transform = "";
+  }
+  bubble.style.display = "";
+  var closeListener = function(ev) {
+    if (!bubble.contains(ev.target) && ev.target !== btn) {
+      bubble.style.display = "none";
+      document.removeEventListener("click", closeListener);
+    }
+  };
+  setTimeout(function() { document.addEventListener("click", closeListener); }, 0);
+  // 滚动时关闭气泡
+  var scrollClose = function() { bubble.style.display = "none"; document.removeEventListener("click", closeListener); window.removeEventListener("scroll", scrollClose, true); };
+  setTimeout(function() { window.addEventListener("scroll", scrollClose, true); }, 0);
+}
+
+function switchGhTab(tab) {
+  ensureGhOpen();
+  document.querySelectorAll(".gh-tab-content").forEach(el => el.style.display = "none");
+  document.querySelectorAll(".gh-tab").forEach(btn => {
+    btn.style.background = "var(--hana-surface,#fff)";
+    btn.style.color = "var(--hana-fg-muted,#6b7280)";
+  });
+  const tabEl = document.getElementById("ghTab" + tab.charAt(0).toUpperCase() + tab.slice(1));
+  if (tabEl) tabEl.style.display = "";
+  const btn = document.querySelector(`.gh-tab[data-tab="${tab}"]`);
+  if (btn) { btn.style.background = "var(--hana-accent,#4a8cff)"; btn.style.color = "#fff"; }
+  if (tab === "list") loadGhList();
+}
+
+function validateGhRepoName(name) {
+  if (!name) return "仓库名不能为空";
+  if (name.length > 100) return "仓库名不能超过 100 个字符";
+  if (!/^[a-zA-Z0-9_\-.]+$/.test(name)) return "仓库名只能包含字母、数字、连字符(-)、下划线(_)和点(.)";
+  if (!/[a-zA-Z0-9]$/.test(name)) return "仓库名不能以连字符(-)或点(.)结尾";
+  if (/^\./.test(name) || /^\-/.test(name)) return "仓库名不能以连字符(-)或点(.)开头";
+  if (/\.\./.test(name)) return "仓库名不能包含连续的点(..)";
+  // GitHub 允许 .git 结尾但不推荐
+  if (/[.]git$/i.test(name)) return "仓库名不能以 .git 结尾";
+  return null;
+}
+
+async function ghCreateRepo() {
+  const name = document.getElementById("ghRepoName").value.trim();
+  const nameErr = validateGhRepoName(name);
+  if (nameErr) { toast(nameErr, "err"); return; }
+  const priv = document.getElementById("ghRepoPrivacy").value === "1";
+  const desc = document.getElementById("ghRepoDesc").value.trim();
+  const p = currentPath || getSavedPath();
+  const el = document.getElementById("ghCreateResult");
+  el.textContent = "创建中...";
+  try {
+    const res = await fetch(apiUrl("/api/gh/create"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, private: priv, description: desc, localPath: p }),
+    });
+    const data = await res.json();
+    el.textContent = data.ok ? "✅ " + data.message : "❌ " + data.message;
+    if (data.ok) { document.getElementById("ghRepoName").value = ""; document.getElementById("ghRepoDesc").value = ""; loadGhList(); }
+  } catch (e) { el.textContent = "❌ " + e.message; }
+}
+
+async function ghCloneRepo() {
+  const url = document.getElementById("ghCloneUrl").value.trim();
+  if (!url) { toast("请输入仓库 URL", "err"); return; }
+  let dir = document.getElementById("ghCloneDir").value.trim();
+  if (!dir) {
+    const saved = currentPath || getSavedPath();
+    if (saved) {
+      const parent = saved.replace(/[\\/][^\\/]*$/, "");
+      // 从 URL 提取仓库名作为子目录
+      const name = url.replace(/\/?$/, "").split("/").pop() || "repo";
+      dir = parent + "/" + name;
+    }
+  }
+  const el = document.getElementById("ghCloneResult");
+  el.textContent = "克隆中...（可能较慢）";
+  try {
+    const res = await fetch(apiUrl("/api/gh/clone"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, dir }),
+    });
+    const data = await res.json();
+    el.textContent = data.ok ? "✅ " + data.message : "❌ " + data.message;
+  } catch (e) { el.textContent = "❌ " + e.message; }
+}
+
+async function loadGhList() {
+  const el = document.getElementById("ghRepoList");
+  if (!el) return;
+  el.innerHTML = "加载中...";
+  try {
+    const res = await fetch(apiUrl("/api/gh/list"));
+    const data = await res.json();
+    if (!data.ok || !data.repos) {
+      if (data.message && data.message.match(/gh.*(not found|not recognized|not installed|install)/i)) {
+        document.getElementById("ghNotInstalled").style.display = "";
+      }
+      el.innerHTML = "加载失败"; return;
+    }
+    // 检测成功，隐藏未安装提示
+    document.getElementById("ghNotInstalled").style.display = "none";
+    if (data.repos.length === 0) { el.innerHTML = '<div style="padding:8px;text-align:center;font-size:12px;color:var(--hana-fg-muted,#6b7280)">暂无仓库</div>'; return; }
+    el.innerHTML = data.repos.map(r =>
+      `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--hana-border,#eef0f2);font-size:12px" oncontextmenu="showGhCtxMenu(event,'${escapeAttr(r.owner?.login || '')}/${escapeAttr(r.name)}')">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <span style="font-weight:600">${escapeHtml(r.name)}</span>
+          <span style="color:var(--hana-fg-muted,#6b7280);margin-left:4px">${escapeHtml(r.owner?.login || '')}</span>
+          ${r.isPrivate ? '<span style="font-size:10px;color:#e67e22">🔒</span>' : ''}
+        </span>
+      </div>`
+    ).join('');
+    // 重新计算卡片高度
+    var ghBody = document.getElementById("ghBody");
+    if (ghBody && ghBody.style.maxHeight !== "0px" && ghBody.style.maxHeight !== "") {
+      ghBody.style.maxHeight = ghBody.scrollHeight + "px";
+    }
+  } catch { el.innerHTML = "加载失败"; }
+}
+
+// GitHub 右键菜单
+let ghCtxRepo = null;
+
+function escapeAttr(s) {
+  return s.replace(/"/g, '&quot;').replace(/'/g, "&#39;");
+}
+
+function showGhCtxMenu(e, repoName) {
+  e.preventDefault();
+  ghCtxRepo = repoName;
+  const menu = document.getElementById("ghCtxMenu");
+  menu.innerHTML = `
+    <div class="item danger" onclick="ghDeleteRepo()">??? 删除 ${escapeHtml(repoName)}</div>
+  `;
+  menu.style.display = "block";
+  menu.style.left = Math.min(e.clientX, window.innerWidth - 180) + "px";
+  menu.style.top = Math.min(e.clientY, window.innerHeight - 80) + "px";
+}
+
+async function ghDeleteRepo() {
+  document.getElementById("ghCtxMenu").style.display = "none";
+  if (!ghCtxRepo) return;
+  toast("删除中...", "info");
+  try {
+    const res = await fetch(apiUrl("/api/gh/delete"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: ghCtxRepo }),
+    });
+    const data = await res.json();
+    if (data.ok) { toast(`已删除 ${ghCtxRepo}`, "success"); loadGhList(); }
+    else toast("❌ " + data.message, "err");
+  } catch (e) { toast("❌ " + e.message, "err"); }
+}
+
+function ensureGhOpen() {
+  var body = document.getElementById("ghBody");
+  var toggle = document.getElementById("ghToggle");
+  if (!body) return;
+  if (body.style.maxHeight === "0px" || body.style.maxHeight === "") {
+    body.style.maxHeight = "500px";
+    if (toggle) toggle.textContent = "▾";
+  }
+}
+
+function ghSearchEnter(e) {
+  if (e.key === "Enter") ghSearch();
+}
+
+var _searchCount = 0;
+async function ghSearch() {
+  _searchCount++;
+  console.log("[search #" + _searchCount + "] start, ghBody maxHeight:", (document.getElementById("ghBody")||{}).style?.maxHeight);
+  ensureGhOpen();
+  switchGhTab("search");
+  console.log("[search #" + _searchCount + "] after switchGhTab, ghBody maxHeight:", (document.getElementById("ghBody")||{}).style?.maxHeight);
+  const q = document.getElementById("ghSearchQuery").value.trim();
+  if (!q) { toast("请输入搜索关键词", "err"); return; }
+  var st = document.getElementById("ghSearchStatus");
+  var el = document.getElementById("ghSearchResult");
+  st.textContent = "搜索中..."; st.style.display = "";
+  el.innerHTML = "";
+  // 等待浏览器渲染状态文字后再发起请求
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => setTimeout(r, 50));
+  try {
+    const res = await fetch(apiUrl("/api/gh/search?q=" + encodeURIComponent(q)));
+    const data = await res.json();
+    if (!data.ok || !data.repos) { el.innerHTML = "搜索失败"; st.style.display = "none"; return; }
+    if (data.repos.length === 0) { el.innerHTML = '<div style="padding:8px;text-align:center;font-size:12px;color:var(--hana-fg-muted,#6b7280)">未找到匹配的仓库</div>'; st.style.display = "none"; return; }
+    el.innerHTML = data.repos.map(r =>
+      `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--hana-border,#eef0f2);font-size:12px">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <span style="font-weight:600">${escapeHtml(r.name)}</span>
+          <span style="color:var(--hana-fg-muted,#6b7280);margin-left:4px">${escapeHtml(r.owner?.login || '')}</span>
+        </span>
+        <button class="gh-open-btn" data-url="${escapeHtml(r.url)}" style="padding:1px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:none;cursor:pointer;color:var(--hana-accent,#4a8cff);font-family:inherit">打开</button>
+      </div>`
+    ).join('');
+    st.style.display = "none";
+    el.querySelectorAll(".gh-open-btn").forEach(function(b) {
+      b.onclick = function() {
+        var url = b.getAttribute("data-url");
+        if (!url) return;
+        var mode = document.getElementById("cfgGhOpen")?.value || "internal";
+        if (mode === "external") {
+          fetch(apiUrl("/api/open-external?url=" + encodeURIComponent(url)));
+        } else {
+          window.open(url, "_blank");
+        }
+      };
+    });
+  } catch { el.innerHTML = "搜索失败"; st.style.display = "none"; }
+  // 搜索结果渲染后重新计算 ghBody 高度
+  var ghBody = document.getElementById("ghBody");
+  if (ghBody && ghBody.style.maxHeight !== "0px" && ghBody.style.maxHeight !== "") {
+    ghBody.style.maxHeight = ghBody.scrollHeight + "px";
+  }
+  // 聚焦输入框
+  var inp = document.getElementById("ghSearchQuery");
+  if (inp) { inp.focus(); inp.select(); }
+}
+
+function savePath() {
+  const p = document.getElementById("pathInput").value.trim();
+  if (!p) { toast("请输入仓库路径", "err"); return; }
+  compareCleanup();
+  addRepoHistory(p);
+  savePathToStorage(p);
+  saveConfigPath(p);
+  currentPath = p;
+  cancelEditPath();
+  refresh();
+}
+
+// ======== 分支画布（拖拽流程图） ========
+let branchMode = false;
+let bcData = null;
+let bcBlocks = [];
+let bcLabels = {};
+let bcPan = { x: 0, y: 0 };
+let dragState = null;
+
+function bcKey() { return "bc-layout-v2-" + (currentPath || getSavedPath() || "default"); }
+function bcLabelKey() { return "bc-labels-v2-" + (currentPath || getSavedPath() || "default"); }
+
+function toggleBranchTree() {
+  branchMode = !branchMode;
+  const block = document.getElementById("collapseBlock");
+  const panels = document.getElementById("panelsArea");
+  const main = document.getElementById("mainInterface");
+  if (branchMode) {
+    document.querySelector(".header").style.opacity = "0";
+    panels.classList.add("collapsing");
+    block.classList.add("show");
+    block.style.animation = "none";
+    void block.offsetHeight;
+    block.style.animation = "blockSpawn .3s cubic-bezier(.34,1.56,.64,1) forwards";
+    setTimeout(function() {
+      main.style.display = "none";
+      panels.classList.remove("collapsing");
+      renderBranchCanvas();
+    }, 350);
+  } else {
+    main.style.display = "";
+    document.querySelector(".header").style.opacity = "";
+    panels.style.display = "";
+    panels.style.transform = "scale(.1) translateY(-80px)";
+    panels.style.opacity = "0";
+    block.classList.remove("show");
+    requestAnimationFrame(function() { panels.style.transform = ""; panels.style.opacity = ""; });
+  }
+}
+
+function exitBranchTree() {
+  branchMode = false;
+  document.getElementById("collapseBlock").classList.remove("show");
+  const main = document.getElementById("mainInterface");
+  main.style.display = "";
+  document.querySelector(".header").style.opacity = "";
+  const panels = document.getElementById("panelsArea");
+  panels.style.display = "";
+  panels.style.transform = "scale(.1) translateY(-80px)";
+  panels.style.opacity = "0";
+  requestAnimationFrame(function() { panels.style.transform = ""; panels.style.opacity = ""; });
+}
+
+async function updateBlockInfo() {
+  const p = currentPath || getSavedPath();
+  if (!p) return;
+  try {
+    const res = await fetch(apiUrl("/api/branches?path=" + encodeURIComponent(p)));
+    const data = await res.json();
+    if (!data.ok) return;
+    var el = document.getElementById("blockBranchCount");
+    if (el) el.textContent = (data.branches?.length || 0) + " 个分支";
+  } catch {}
+}
+
+function bcLoadLayout() {
+  try { return JSON.parse(localStorage.getItem(bcKey()) || "null"); } catch { return null; }
+}
+function bcSaveLayout() {
+  var layout = {};
+  for (var i = 0; i < bcBlocks.length; i++) {
+    layout[bcBlocks[i].name] = { x: parseInt(bcBlocks[i].el.style.left), y: parseInt(bcBlocks[i].el.style.top) };
+  }
+  localStorage.setItem(bcKey(), JSON.stringify(layout));
+  localStorage.setItem(bcLabelKey(), JSON.stringify(bcLabels));
+}
+
+async function renderBranchCanvas(focusBranch) {
+  var container = document.getElementById("branchBlocks");
+  var canvas = document.getElementById("branchCanvas");
+  var inner = document.getElementById("bcInner");
+  var p = currentPath || getSavedPath();
+  if (!p) { if (container) container.textContent = ""; return; }
+  try {
+    var res = await fetch(apiUrl("/api/branches?path=" + encodeURIComponent(p)));
+    var data = await res.json();
+    if (!data.ok) { if (container) container.innerHTML = "<div style='padding:20px;text-align:center;color:#e74c3c;font-size:12px'>" + escapeHtml(data.message) + "</div>"; return; }
+    if (!data.branches || data.branches.length === 0) { if (container) container.innerHTML = "<div style='padding:20px;text-align:center;color:var(--hana-fg-muted,#6b7280);font-size:12px'>暂无分支</div>"; return; }
+
+    bcData = data;
+    var current = data.branches.find(function(b) { return b.current; }) || data.branches[0];
+    var others = data.branches.filter(function(b) { return b.name !== current.name; });
+    var allBranches = [current].concat(others);
+    
+    var el = document.getElementById("blockBranchCount");
+    if (el) el.textContent = allBranches.length + " 个分支";
+
+    var savedLayout = bcLoadLayout();
+    try { bcLabels = JSON.parse(localStorage.getItem(bcLabelKey()) || "{}"); } catch { bcLabels = {}; }
+
+    var blockW = 160, blockH = 48, gapX = 30, gapY = 20;
+    var cols = Math.min(allBranches.length, 3);
+    var cw = 300, ch = 300;
+
+    container.innerHTML = allBranches.map(function(b, i) {
+      var col = i % cols, row = Math.floor(i / cols);
+      var x, y;
+      if (savedLayout && savedLayout[b.name]) {
+        x = savedLayout[b.name].x; y = savedLayout[b.name].y;
+      } else {
+        x = 10 + col * (blockW + gapX);
+        y = 10 + row * (blockH + gapY);
+      }
+      cw = Math.max(cw, x + blockW + 20);
+      ch = Math.max(ch, y + blockH + 20);
+      var bc = branchColor(b.name);
+      var cls = "bc-block" + (b.name === current.name ? " current" : "");
+      return '<div class="' + cls + '" style="left:' + x + 'px;top:' + y + 'px;border-left:3px solid ' + bc + '" data-name="' + escapeHtml(b.name) + '">' +
+        '<div class="bc-name" title="' + escapeHtml(b.name) + '">' + escapeHtml(b.name) + '</div>' +
+        '<div class="bc-meta">' + escapeHtml((b.lastCommit || "").slice(0, 24)) + '</div>' +
+        (localStorage.getItem((currentPath || getSavedPath() || "default") + ":note:" + b.name) ? '<div class="bc-note">' + escapeHtml(localStorage.getItem((currentPath || getSavedPath() || "default") + ":note:" + b.name).slice(0, 30)) + '</div>' : '') +
+        '<div class="bc-tri" style="border-color:transparent ' + bc + ' transparent transparent"></div>' +
+        '</div>';
+    }).join("");
+
+    bcBlocks = allBranches.map(function(b) {
+      var el = container.querySelector('.bc-block[data-name="' + CSS.escape(b.name) + '"]');
+      return el ? { name: b.name, el: el } : null;
+    }).filter(function(b) { return b; });
+
+    container.style.width = (cw + 200) + "px";
+    container.style.height = (ch + 200) + "px";
+
+    // Bind block drag
+    for (var bi = 0; bi < bcBlocks.length; bi++) {
+      (function(block) {
+        if (!block || !block.el) return;
+        block.el.onmousedown = function(e) {
+          e.stopPropagation();
+          dragState = { type: "block", block: block, startX: e.clientX, startY: e.clientY, origX: parseInt(block.el.style.left), origY: parseInt(block.el.style.top) };
+          block.el.classList.add("dragging");
+        };
+      })(bcBlocks[bi]);
+    }
+
+    // Canvas drag (pan)
+    canvas.onmousedown = function(e) {
+      // 点击方块或删除按钮不触发画布拖拽
+      if (e.target.closest(".bc-block")) return;
+      e.preventDefault();
+      dragState = { type: "canvas", startX: e.clientX, startY: e.clientY, origX: bcPan.x, origY: bcPan.y, moved: false };
+      canvas.style.cursor = "grabbing";
+    };
+
+    // Global mousemove/mouseup
+    document.onmousemove = function(e) {
+      if (!dragState) return;
+      var dx = e.clientX - dragState.startX;
+      var dy = e.clientY - dragState.startY;
+      if (dragState.type === "block") {
+        dragState.block.el.style.left = Math.max(0, dragState.origX + dx) + "px";
+        dragState.block.el.style.top = Math.max(0, dragState.origY + dy) + "px";
+      } else if (dragState.type === "canvas") {
+        bcPan.x = dragState.origX + dx;
+        bcPan.y = dragState.origY + dy;
+        inner.style.transform = "translate(" + bcPan.x + "px," + bcPan.y + "px)";
+      }
+      drawConnections();
+    };
+
+    document.onmouseup = function() {
+      if (dragState) {
+        if (dragState.type === "block") {
+          dragState.block.el.classList.remove("dragging");
+          bcSaveLayout();
+        } else if (dragState.type === "canvas") {
+          canvas.style.cursor = "";
+        }
+        dragState = null;
+      }
+    };
+
+    // Apply saved pan
+    inner.style.transform = "translate(" + bcPan.x + "px," + bcPan.y + "px)";
+
+    drawConnections();
+    setupCanvasEvents();
+    // 创建分支后自动聚焦
+    if (focusBranch) {
+      var fbEl = container.querySelector('.bc-block[data-name="' + CSS.escape(focusBranch) + '"]');
+      if (fbEl) {
+        var cr2 = canvas.getBoundingClientRect();
+        var fbX = parseInt(fbEl.style.left), fbY = parseInt(fbEl.style.top);
+        bcPan.x = cr2.width / 2 - fbX - 80;
+        bcPan.y = cr2.height / 2 - fbY - 24;
+        inner.style.transform = "translate(" + bcPan.x + "px," + bcPan.y + "px)";
+        drawConnections();
+      }
+    }
+  } catch (e) {
+    if (container) container.innerHTML = "<div style='padding:20px;text-align:center;color:#e74c3c;font-size:12px'>加载失败</div>";
+  }
+}
+
+function calcEdges() {
+  var branches = bcBlocks.map(function(b) { return b.name; });
+  var ed = [];
+  // 按前缀推断（支持 / 和 - 分隔）
+  for (var ei = 0; ei < branches.length; ei++) {
+    var name = branches[ei];
+    var found = false;
+    // 先试 / 分隔
+    var parts = name.split("/");
+    if (parts.length > 1) {
+      for (var pi = parts.length - 1; pi > 0; pi--) {
+        var parent = parts.slice(0, pi).join("/");
+        if (branches.indexOf(parent) >= 0) {
+          ed.push({ from: parent, to: name });
+          found = true; break;
+        }
+      }
+    }
+    if (found) continue;
+    // 再试 - 分隔
+    var dashParts = name.split("-");
+    if (dashParts.length > 1) {
+      for (var di = dashParts.length - 1; di > 0; di--) {
+        var dashParent = dashParts.slice(0, di).join("-");
+        if (branches.indexOf(dashParent) >= 0) {
+          ed.push({ from: dashParent, to: name });
+          break;
+        }
+      }
+    }
+  }
+  // 剩下的连到根（master/main）
+  var root = branches.indexOf("master") >= 0 ? "master" : (branches.indexOf("main") >= 0 ? "main" : (branches[0] || ""));
+  for (var ei2 = 0; ei2 < branches.length; ei2++) {
+    if (branches[ei2] === root) continue;
+    if (!ed.some(function(e) { return e.to === branches[ei2]; })) {
+      ed.push({ from: root, to: branches[ei2] });
+    }
+  }
+  return ed;
+}
+
+function drawConnections() {
+  var container = document.getElementById("branchBlocks");
+  var svg = document.getElementById("branchSvg");
+  if (!svg || !bcBlocks || bcBlocks.length === 0) return;
+
+  var edges = calcEdges();
+  var cr = container.getBoundingClientRect();
+  svg.setAttribute("viewBox", "0 0 " + cr.width + " " + cr.height);
+  svg.style.width = cr.width + "px";
+  svg.style.height = cr.height + "px";
+
+  var pathsHtml = "";
+  for (var ei2 = 0; ei2 < edges.length; ei2++) {
+    var edge = edges[ei2];
+    var fromEl = container.querySelector('.bc-block[data-name="' + CSS.escape(edge.from) + '"]');
+    var toEl = container.querySelector('.bc-block[data-name="' + CSS.escape(edge.to) + '"]');
+    if (!fromEl || !toEl) continue;
+
+    var fromR = fromEl.getBoundingClientRect();
+    var toR = toEl.getBoundingClientRect();
+    var x1 = fromR.left - cr.left + fromR.width / 2;
+    var y1 = fromR.bottom - cr.top;
+    var x2 = toR.left - cr.left + toR.width / 2;
+    var y2 = toR.top - cr.top;
+
+    var dd = Math.abs(y2 - y1) * 0.4;
+    var pathD = "M " + x1 + " " + y1 + " C " + x1 + " " + (y1 + dd) + ", " + x2 + " " + (y2 - dd) + ", " + x2 + " " + y2;
+    pathsHtml += '<path class="conn-path" d="' + pathD + '" fill="none" stroke="var(--hana-border,#d0d5dd)" stroke-width="1.5" stroke-linecap="round"/>';
+
+    // Label
+    var labelKey = edge.from + "->" + edge.to;
+    var labelText = bcLabels[labelKey] || "";
+    if (labelText) {
+      var mx = (x1 + x2) / 2;
+      var my = (y1 + y2) / 2;
+      pathsHtml += '<g class="conn-label" data-from="' + escapeHtml(edge.from) + '" data-to="' + escapeHtml(edge.to) + '" onclick="editLabel(this.dataset.from,this.dataset.to)">';
+      pathsHtml += '<rect x="' + (mx - 60) + '" y="' + (my - 9) + '" width="120" height="18"/>';
+      pathsHtml += '<text x="' + mx + '" y="' + my + '">' + escapeHtml(labelText) + "</text></g>";
+    }
+  }
+  svg.innerHTML = pathsHtml;
+}
+
+function editLabel(from, to) {
+  var key = from + "->" + to;
+  var cur = bcLabels[key] || "";
+  var text = prompt("编辑连线标注（空=删除）:", cur);
+  if (text === null) return;
+  if (text.trim()) bcLabels[key] = text.trim();
+  else delete bcLabels[key];
+  bcSaveLayout();
+  drawConnections();
+}
+
+// 右键菜单：创建分支、删除
+function showBranchCtx(e, branchName) {
+  e.preventDefault();
+  var menu = document.getElementById("ctxMenu");
+  var nameEsc = escapeHtml(branchName);
+  var noteKey = (currentPath || getSavedPath() || "default") + ":note:" + branchName;
+  var curNote = localStorage.getItem(noteKey) || "";
+  var noteLabel = curNote ? "✏ 备注: " + escapeHtml(curNote.slice(0, 20)) : "✏ 添加备注";
+  menu.innerHTML = 
+    '<div class="has-sub"><div class="item">▶ 创建分支</div><div class="sub">' +
+      '<div class="item" data-bc="normal-branch:' + nameEsc + '">普通分支</div>' +
+      '<div class="item" data-bc="child:' + nameEsc + '">基于当前创建</div>' +
+      '<div class="item" data-bc="commit-branch:' + nameEsc + '">基于 commit...</div>' +
+    '</div></div>' +
+    '<div class="item" data-bc="switch:' + nameEsc + '">↑ 切换到该分支</div>' +
+    (branchName === "master" || branchName === "main" ? '' :
+    '<div class="has-sub"><div class="item">🎨 设置颜色</div><div class="sub">' +
+      '<div class="item" data-bc="setcolor:default:' + nameEsc + '"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;border:1px solid var(--hana-border,#d0d5dd);vertical-align:middle;margin-right:5px"></span> 默认</div>' +
+      '<div class="item" data-bc="setcolor:#5e6ad2:' + nameEsc + '"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#5e6ad2;vertical-align:middle;margin-right:5px"></span> 功能</div>' +
+      '<div class="item" data-bc="setcolor:#e67e22:' + nameEsc + '"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e67e22;vertical-align:middle;margin-right:5px"></span> 修复</div>' +
+      '<div class="item" data-bc="setcolor:#e74c3c:' + nameEsc + '"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e74c3c;vertical-align:middle;margin-right:5px"></span> 紧急</div>' +
+      '<div class="item" data-bc="setcolor:#8b5cf6:' + nameEsc + '"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#8b5cf6;vertical-align:middle;margin-right:5px"></span> 发布</div>' +
+      '<div class="item" data-bc="setcolor:#06b6d4:' + nameEsc + '"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#06b6d4;vertical-align:middle;margin-right:5px"></span> 开发</div>' +
+      '<div class="item" data-bc="color-help:' + nameEsc + '">颜色说明</div>' +
+    '</div></div>') +
+    '<div class="item" data-bc="note:' + nameEsc + '">' + noteLabel + '</div>' +
+    '<div class="item danger" data-bc="delete:' + nameEsc + '">✕ 删除分支</div>';
+  menu.style.display = "block";
+  menu.style.left = Math.min(e.clientX, window.innerWidth - 180) + "px";
+  menu.style.top = Math.min(e.clientY, window.innerHeight - 120) + "px";
+  // 点击一级菜单项切换二级菜单（不再依赖 hover）
+  var openSub = null;
+  menu.querySelectorAll(".has-sub > .item").forEach(function(parentItem) {
+    parentItem.onclick = function(ev) {
+      ev.stopPropagation();
+      var hasSub = parentItem.parentElement;
+      var sub = hasSub.querySelector(".sub");
+      if (!sub) return;
+      // 关闭其他子菜单
+      if (openSub && openSub !== sub) openSub.style.display = "none";
+      // 切换当前子菜单
+      if (sub.style.display === "block") {
+        sub.style.display = "none";
+        openSub = null;
+      } else {
+        var mr = menu.getBoundingClientRect();
+        var sw = 170, sh = 240;
+        var subLeft = mr.right + sw > window.innerWidth ? mr.left - sw : mr.right;
+        var subTop = mr.top + sh > window.innerHeight ? window.innerHeight - sh : mr.top;
+        sub.style.left = subLeft + "px";
+        sub.style.top = subTop + "px";
+        sub.style.display = "block";
+        openSub = sub;
+      }
+    };
+  });
+  // 点击子菜单项关闭子菜单（交给事件委托处理）
+}
+
+// 画布事件委托
+function setupCanvasEvents() {
+  // Delete button
+  var blocks = document.getElementById("branchBlocks");
+  if (!blocks) return;
+  blocks.onclick = function(e) {
+  };
+  blocks.oncontextmenu = function(e) {
+    var block = e.target.closest(".bc-block");
+    if (block) {
+      e.preventDefault();
+      var name = block.getAttribute("data-name");
+      if (name) showBranchCtx(e, name);
+    }
+  };
+}
+
+// 右键菜单事件委托
+// ======== 自定义输入弹框 ========
+var _promptCb = null;
+function customPrompt(title, defaultValue, cb) {
+  document.getElementById("promptTitle").textContent = title;
+  document.getElementById("promptInput").value = defaultValue || "";
+  _promptCb = cb;
+  document.getElementById("promptModal").style.display = "flex";
+  setTimeout(function() { document.getElementById("promptInput").focus(); document.getElementById("promptInput").select(); }, 50);
+}
+function confirmPrompt() {
+  var val = document.getElementById("promptInput").value;
+  cleanupPrompt();
+  var cb = _promptCb;
+  _promptCb = null;
+  if (cb) cb(val);
+}
+function cancelPrompt() {
+  cleanupPrompt();
+  if (_promptCb) _promptCb(null);
+  _promptCb = null;
+}
+function cleanupPrompt() {
+  document.getElementById("promptModal").style.display = "none";
+  var ol = document.getElementById("commitListOptions");
+  if (ol) ol.remove();
+  document.getElementById("promptInput").placeholder = "";
+}
+
+// 点击其他地方关闭菜单
+document.addEventListener("click", function(e) {
+  var m = document.getElementById("ctxMenu");
+  if (m && m.style.display !== "none" && !m.contains(e.target)) m.style.display = "none";
+  var gm = document.getElementById("ghCtxMenu");
+  if (gm && gm.style.display !== "none" && !gm.contains(e.target)) gm.style.display = "none";
+});
+
+function setupCtxMenuEvents() {
+  var menu = document.getElementById("ctxMenu");
+  if (!menu) return;
+  menu.onclick = function(e) {
+    var item = e.target.closest(".item");
+    if (!item) return;
+    var bc = item.getAttribute("data-bc");
+    if (!bc) return;
+    var parts = bc.split(":");
+    var action = parts[0];
+    var name = parts.slice(1).join(":");
+    if (action === "delete") deleteBranch(name);
+    else if (action === "switch") switchBranch(name);
+    else if (action === "child") createChildBranch(name);
+    else if (action === "note") setBranchNote(name);
+    else if (action === "normal-branch") createNormalBranch(name);
+    else if (action === "commit-branch") createCommitBranch(name);
+    else if (action === "color-help") { menu.style.display = "none"; showBranchColorHelp(); }
+    else if (action === "setcolor") {
+      menu.style.display = "none";
+      var parts2 = bc.split(":");
+      var color = parts2[1];
+      var branch = parts2.slice(2).join(":");
+      var key = (currentPath || getSavedPath() || "default") + ":color:" + branch;
+      if (color === "default") localStorage.removeItem(key);
+      else localStorage.setItem(key, color);
+      renderBranchCanvas();
+    }
+    else menu.style.display = "none";
+  };
+}
+
+function setBranchNote(name) {
+  var key = (currentPath || getSavedPath() || "default") + ":note:" + name;
+  var cur = localStorage.getItem(key) || "";
+  customPrompt("分支备注（空=删除）:", cur, function(text) {
+    if (text === null) return;
+    if (text.trim()) localStorage.setItem(key, text.trim());
+    else localStorage.removeItem(key);
+    renderBranchCanvas();
+  });
+}
+
+async function deleteBranch(name) {
+  Bus.emit("branch-delete");
+  var p = currentPath || getSavedPath();
+  if (!p) return;
+  try {
+    var res = await fetch(apiUrl("/api/branch/delete"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, path: p }),
+    });
+    var data = await res.json();
+    if (data.ok) { toast("🗑 已删除 " + name, "info"); renderBranchCanvas(); }
+    else toast("❌ " + data.message, "err");
+  } catch (e) { toast("删除失败：" + e.message, "err"); }
+}
+
+function branchColor(name) {
+  // 优先读取自定义颜色
+  var custom = localStorage.getItem((currentPath || getSavedPath() || "default") + ":color:" + name);
+  if (custom) return custom;
+  // 默认按命名约定
+  if (name === "master" || name === "main") return "#27a644";
+  if (name.startsWith("feature/")) return "#5e6ad2";
+  if (name.startsWith("fix/") || name.startsWith("bugfix/")) return "#e67e22";
+  if (name.startsWith("hotfix/")) return "#e74c3c";
+  if (name.startsWith("release/")) return "#8b5cf6";
+  if (name === "develop") return "#06b6d4";
+  return "var(--hana-border,#23252a)";
+}
+
+async function switchBranch(name) {
+  Bus.emit("branch-switch");
+  document.getElementById("ctxMenu").style.display = "none";
+  var p = currentPath || getSavedPath();
+  if (!p) return;
+  try {
+    var res = await fetch(apiUrl("/api/branch/switch"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, path: p }),
+    });
+    var data = await res.json();
+    if (data.ok) { toast("✅ 已切换到 " + name, "success"); exitBranchTree(); refresh(); }
+    else toast("❌ " + data.message, "err");
+  } catch (e) { toast("切换失败：" + e.message, "err"); }
+}
+
+function createNormalBranch(fromName) {
+  customPrompt("新分支名:", "", function(val) {
+    if (!val || !val.trim()) return;
+    var p = currentPath || getSavedPath();
+    if (!p) { toast("请先设置仓库路径", "err"); return; }
+    fetch(apiUrl("/api/branch/create"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: val.trim(), path: p }),
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.ok) { toast("✅ 已创建 " + val.trim(), "success"); renderBranchCanvas(val.trim()); }
+      else toast("❌ " + data.message, "err");
+    }).catch(function(e) { toast("创建失败：" + e.message, "err"); });
+  });
+}
+
+function createCommitBranch(fromName) {
+  var p = currentPath || getSavedPath();
+  if (!p) { toast("请先设置仓库路径", "err"); return; }
+  // 先获取最近 commit 列表
+  fetch(apiUrl("/api/log?count=15&path=" + encodeURIComponent(p))).then(function(r) { return r.json(); }).then(function(data) {
+    var commits = (data.ok && data.commits) ? data.commits : [];
+    // 显示 commit 选择弹框
+    var modal = document.getElementById("promptModal");
+    var title = document.getElementById("promptTitle");
+    var input = document.getElementById("promptInput");
+    title.textContent = "选择 commit 作为起点";
+    input.value = "";
+    input.placeholder = "或手动输入 hash...";
+    // 在 modal 里添加 commit 列表
+    var listDiv = document.createElement("div");
+    listDiv.id = "commitListOptions";
+    listDiv.style.cssText = "max-height:200px;overflow-y:auto;margin:8px 0;border:1px solid var(--hana-border,#e2e5ea);border-radius:6px";
+    if (commits.length === 0) {
+      listDiv.innerHTML = "<div style='padding:8px;font-size:11px;color:var(--hana-fg-muted,#6b7280);text-align:center'>暂无 commit 记录</div>";
+    } else {
+      listDiv.innerHTML = commits.map(function(c) {
+        return '<div class="ci-item" data-hash="' + c.hash + '" style="padding:5px 8px;font-size:11px;font-family:monospace;cursor:pointer;border-bottom:1px solid var(--hana-border,#eef0f2);display:flex;gap:6px">' +
+          '<span style="color:var(--hana-accent,#4a8cff);flex-shrink:0">' + escapeHtml(c.hash) + '</span>' +
+          '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg,#1a1d24)">' + escapeHtml(c.message || "") + '</span></div>';
+      }).join("");
+      // 点击选中
+      setTimeout(function() {
+        listDiv.querySelectorAll(".ci-item").forEach(function(el) {
+          el.onclick = function() {
+            input.value = el.getAttribute("data-hash");
+            listDiv.querySelectorAll(".ci-item").forEach(function(e) { e.style.background = ""; e.style.color = ""; e.querySelectorAll("*").forEach(function(c) { c.style.color = ""; }); });
+            el.style.background = "var(--hana-accent,#4a8cff)";
+            el.style.color = "#fff";
+            var hashSpan = el.querySelector("span");
+            if (hashSpan) hashSpan.style.color = "#fff";
+          };
+        });
+      }, 50);
+    }
+    // 移除旧的列表
+    var oldList = document.getElementById("commitListOptions");
+    if (oldList) oldList.remove();
+    // 插入到 input 后面
+    input.parentNode.insertBefore(listDiv, input.nextSibling);
+    modal.style.display = "flex";
+    setTimeout(function() { input.focus(); }, 50);
+    // 重写确认/取消
+    _promptCb = function(hash) {
+      if (!hash || !hash.trim()) return;
+      // 清理列表
+      var ol = document.getElementById("commitListOptions");
+      if (ol) ol.remove();
+      input.placeholder = "";
+      // 第二步：输入分支名
+      customPrompt("新分支名:", "", function(name) {
+        if (!name || !name.trim()) return;
+        var repo = currentPath || getSavedPath();
+        fetch(apiUrl("/api/branch/create"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name.trim(), path: repo, startPoint: hash.trim() }),
+        }).then(function(r) { return r.json(); }).then(function(d) {
+          if (d.ok) { toast("✅ 已创建 " + name.trim(), "success"); renderBranchCanvas(name.trim()); }
+          else toast("❌ " + d.message, "err");
+        }).catch(function(e) { toast("创建失败：" + e.message, "err"); });
+      });
+    };
+  }).catch(function(e) { toast("获取 commit 列表失败：" + e.message, "err"); });
+}
+
+async function createChildBranch(parentName) {
+  customPrompt("子分支名（无需包含父路径）:", "", function(child) {
+    if (!child || !child.trim()) return;
+    var name = parentName + "-" + child.trim();
+    var p = currentPath || getSavedPath();
+    fetch(apiUrl("/api/branch/create"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, path: p }),
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.ok) { toast("✅ 已创建 " + name, "success"); renderBranchCanvas(name); }
+      else toast("❌ " + data.message, "err");
+    }).catch(function(e) { toast("创建失败：" + e.message, "err"); });
+  });
+}
+
+// 刷新所有状态
+function doRefreshAll() {
+  compareCleanup();
+  var btn = document.getElementById("btnRefresh");
+  if (btn) btn.classList.add("spinning");
+  cacheClear();
+  window._refreshPending = 0;
+  window._refreshDone = 0;
+  // 统计订阅了 refresh-all 的卡片数
+  if (Bus._handlers['refresh-all']) window._refreshPending = Bus._handlers['refresh-all'].length;
+  Bus.emit("refresh-all");
+  loadNextVersion();
+  // 超时兜底
+  setTimeout(function() {
+    if (window._refreshDone < window._refreshPending) {
+      window._refreshDone = window._refreshPending;
+      if (btn) btn.classList.remove("spinning");
+      toast("刷新完成", "success");
+    }
+  }, 3000);
+}
+
+async function refresh() {
+  compareCleanup();
+  const btn = document.getElementById("btnRefresh");
+  btn.classList.add("spinning");
+  cacheClear();
+
+  try {
+    const savedPath = getSavedPath();
+    var cacheKey = "status-" + savedPath;
+    var status = cacheGet(cacheKey);
+    if (!status) {
+      const p = savedPath ? "path=" + encodeURIComponent(savedPath) : "";
+      const statusUrl = p ? apiUrl("/api/status?" + p) : apiUrl("/api/status");
+      const statusRes = await fetch(statusUrl);
+      status = await statusRes.json();
+      cacheSet(cacheKey, status);
+    }
+    renderStatus(status);
+
+    // 历史 + 版本号
+    if (status.ok) {
+      loadNextVersion();
+      var logCached = cacheGet("log-" + currentPath);
+      if (logCached) { renderLog(logCached); }
+      else {
+        const logRes = await fetch(apiUrl("/api/log?count=10&path=" + encodeURIComponent(currentPath)));
+        const log = await logRes.json();
+        cacheSet("log-" + currentPath, log);
+        renderLog(log);
+      }
+    }
+    loadStash();
+  } catch (e) {
+    toast("刷新失败：" + e.message, "err");
+  } finally {
+    btn.classList.remove("spinning");
+  }
+}
+
+// 带指定路径刷新
+async function refreshWithPath(path) {
+  const btn = document.getElementById("btnRefresh");
+  btn.classList.add("spinning");
+  try {
+    const statusRes = await fetch(apiUrl("/api/status?path=" + encodeURIComponent(path)));
+    const status = await statusRes.json();
+    renderStatus(status);
+    if (status.ok) {
+      const logRes = await fetch(apiUrl("/api/log?count=10&path=" + encodeURIComponent(path)));
+      const log = await logRes.json();
+      renderLog(log);
+      loadStash();
+    }
+  } catch (e) {
+    toast("刷新失败：" + e.message, "err");
+  } finally {
+    btn.classList.remove("spinning");
+  }
+}
+
+// 渲染状态
+function renderStatus(data) {
+  if (!data.ok || data.isRepo === false) {
+    document.getElementById("branch").textContent = "✕";
+    document.getElementById("repoPathDisplay").textContent = data.path || currentPath || "未设置仓库路径";
+    document.getElementById("fileList").innerHTML = '<li class="empty-hint">不是 git 仓库<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 点顶部「切换」选一个 Git 项目文件夹</span></li>';
+    // 显示初始化按钮
+    const initArea = document.getElementById("initArea");
+    if (initArea) initArea.style.display = "block";
+    document.getElementById("fileCard").style.display = "none";
+    document.getElementById("commitCard").style.display = "none";
+    document.getElementById("logCard").style.display = "none";
+    document.getElementById("btnCommit").disabled = true;
+    return;
+  }
+
+  // 是 git 仓库，隐藏初始化区域
+  const initArea = document.getElementById("initArea");
+  if (initArea) initArea.style.display = "none";
+  document.getElementById("fileCard").style.display = "";
+  document.getElementById("commitCard").style.display = "";
+  document.getElementById("logCard").style.display = "";
+
+  currentPath = data.path;
+  // 首次打开时自动保存默认路径
+  if (!getSavedPath()) {
+    savePathToStorage(data.path);
+    addRepoHistory(data.path);
+  }
+  document.getElementById("branch").textContent = data.branch;
+  document.getElementById("repoPathDisplay").textContent = data.path;
+
+  const fl = document.getElementById("fileList");
+  fl.innerHTML = "";
+
+  const items = [];
+  // 优先用 changedWithStats（带增删统计），否则回退
+  const changes = data.changedWithStats || (data.changedFiles || []).map(f => {
+    const st = f.slice(0, 2).trim();
+    const name = f.slice(2).trim();
+    return { raw: f, name, status: st, added: 0, deleted: 0 };
+  });
+  for (const f of changes) {
+    items.push({ status: f.status, name: f.name, added: f.added, deleted: f.deleted });
+  }
+  for (const f of data.untrackedFiles || []) {
+    items.push({ status: "??", name: f });
+  }
+
+  if (items.length === 0) {
+    fl.innerHTML = '<li class="empty-hint">工作区干净 ✅<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 可以点「存档」提交，或从「拉取」获取最新版本</span></li>';
+  } else {
+    for (const item of items) {
+      const li = document.createElement("li");
+      const statusClass = item.status === "??" ? "UNTRACKED" : item.status;
+      const isConflict = item.status.includes("U");
+      // 将 git 状态代码转换为带 emoji 的中文标签
+      const statusLabel = (function(st) {
+        const s = st.trim();
+        if (s === "M" || s.includes("M")) return "🟠 已修改";
+        if (s === "A" || s.includes("A")) return "🟢 新增";
+        if (s === "D" || s.includes("D")) return "🔴 已删除";
+        if (s === "R" || s.includes("R")) return "🔄 重命名";
+        if (s === "??" || s === "U") return "⚪ 新文件";
+        if (s.includes("U")) return "⚠ 冲突";
+        return s;
+      })(item.status);
+      const statStr = item.added || item.deleted ? `<span style="margin-left:auto;font-size:11px;white-space:nowrap"><span style="color:#27ae60;font-weight:600">+${item.added}</span>/<span style="color:#e74c3c;font-weight:600">-${item.deleted}</span></span>` : '';
+      li.innerHTML = `<span class="file-status ${statusClass}">${statusLabel}</span><span onclick="toggleDiff('${escapeHtml(item.name)}', this)" style="cursor:pointer;flex:1;overflow:hidden;text-overflow:ellipsis" title="点击查看 diff">${escapeHtml(item.name)}</span>${statStr}`
+        + (isConflict ? `<button onclick="resolveConflict('${escapeHtml(item.name)}')" style="margin-left:auto;padding:1px 6px;border:1px solid #e74c3c;border-radius:4px;font-size:11px;background:transparent;color:#e74c3c;cursor:pointer;white-space:nowrap">解决</button>` : '');
+      fl.appendChild(li);
+    }
+  }
+
+  // 提交按钮状态
+  document.getElementById("btnCommit").disabled = !data.hasChanges;
+}
+
+// 格式化提交时间
+function formatCommitDate(dateStr) {
+  if (!dateStr) return "";
+  // "2026-06-10 20:46:55 +0800" → 手拆
+  const pts = dateStr.split(/\D+/).filter(Boolean).map(Number);
+  if (pts.length < 5) return dateStr.slice(0, 10);
+  const d = new Date(pts[0], pts[1] - 1, pts[2], pts[3], pts[4]);
+  if (isNaN(d)) return dateStr.slice(0, 10);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today - 86400000);
+  const dayBefore = new Date(today - 2 * 86400000);
+  const pad = n => String(n).padStart(2, "0");
+  if (d >= today) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (d >= yesterday) return "昨天";
+  if (d >= dayBefore) return "前天";
+  if (d.getFullYear() === now.getFullYear()) return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// 始终显示完整日期时间（主标识用）：今天显示 HH:MM，昨天显示"昨天 HH:MM"，本年显示 MM-DD HH:MM，更早显示 YYYY-MM-DD
+function formatCommitDateFull(dateStr) {
+  if (!dateStr) return "";
+  const pts = dateStr.split(/\D+/).filter(Boolean).map(Number);
+  if (pts.length < 5) return dateStr.slice(0, 10);
+  const d = new Date(pts[0], pts[1] - 1, pts[2], pts[3], pts[4]);
+  if (isNaN(d)) return dateStr.slice(0, 10);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today - 86400000);
+  const dayBefore = new Date(today - 2 * 86400000);
+  const pad = n => String(n).padStart(2, "0");
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (d >= today) return `今天 ${hm}`;
+  if (d >= yesterday) return `昨天 ${hm}`;
+  if (d >= dayBefore) return `前天 ${hm}`;
+  if (d.getFullYear() === now.getFullYear()) return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hm}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// ======== 版本对比 ========
+let compareMode = false;
+let compareFrom = null;
+let compareTo = null;
+
+function toggleCompareMode() {
+  compareMode = !compareMode;
+  compareFrom = null;
+  compareTo = null;
+  document.getElementById("compareToggleBtn").textContent = compareMode ? "取消" : "对比";
+  document.getElementById("compareResult").style.display = "none";
+  const cl = document.getElementById("commitList");
+  const commits = cl._commits;
+  if (commits) renderLog({ ok: true, commits });
+}
+
+function pickCompare(hash) {
+  if (!compareFrom) {
+    compareFrom = hash;
+  } else if (!compareTo && hash !== compareFrom) {
+    compareTo = hash;
+    doCompare();
+  } else {
+    // 重新选第一个
+    compareFrom = hash;
+    compareTo = null;
+  }
+  const cl = document.getElementById("commitList");
+  const commits = cl._commits;
+  if (commits) renderLog({ ok: true, commits });
+}
+
+async function doCompare() {
+  const p = currentPath || getSavedPath();
+  const el = document.getElementById("compareOutput");
+  const label = document.getElementById("compareLabel");
+  // from 是旧版本，to 是新版本，确保方向正确
+  const older = compareFrom;
+  const newer = compareTo;
+  label.textContent = `对比 ${older}..${newer}`;
+  el.textContent = "加载中...";
+  document.getElementById("compareResult").style.display = "";
+  try {
+    const res = await fetch(apiUrl(`/api/compare?path=${encodeURIComponent(p)}&from=${older}&to=${newer}`));
+    const data = await res.json();
+    if (data.ok) {
+      const lines = (data.detail || '').split('\n');
+      const colored = lines.map(line => {
+        let cls = '';
+        if (line.startsWith('+')) cls = 'diff-add';
+        else if (line.startsWith('-')) cls = 'diff-del';
+        else if (line.startsWith('@@')) cls = 'diff-hunk';
+        const esc = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        return `<div style="${cls ? 'padding:0 2px' : ''}" class="${cls}">${esc}</div>`;
+      }).join('');
+      el.innerHTML = `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(data.stat)}</div>\n${colored}`;
+    } else {
+      el.textContent = "❌ " + data.message;
+    }
+  } catch (e) {
+    el.textContent = "加载失败：" + e.message;
+  }
+}
+
+function closeCompare() {
+  document.getElementById("compareResult").style.display = "none";
+}
+
+function compareCleanup() {
+  compareMode = false;
+  compareFrom = null;
+  compareTo = null;
+  const btn = document.getElementById("compareToggleBtn");
+  if (btn) btn.textContent = "对比";
+  const r = document.getElementById("compareResult");
+  if (r) r.style.display = "none";
+}
+
+// 渲染提交历史
+function renderLog(data) {
+  const cl = document.getElementById("commitList");
+  cl.innerHTML = "";
+
+  if (!data.ok || !data.commits || data.commits.length === 0) {
+    cl.innerHTML = '<li class="empty-hint">暂无提交记录<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 改一下文件，然后点上面的「存档」按钮</span></li>';
+    return;
+  }
+
+  // 存数据供切换时重新渲染
+  cl._commits = data.commits;
+
+  for (const c of data.commits) {
+    const li = document.createElement("li");
+    const display = showTag && c.tag ? c.tag : c.hash;
+
+    // 1. 日期时间（主标识）- 始终显示 "MM-DD HH:MM" 或 "昨天 HH:MM" 或 "MM-DD"
+    const dateSpan = document.createElement("span");
+    dateSpan.className = "commit-date-primary";
+    dateSpan.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:600;color:var(--hana-accent,#5e6ad2);background:rgba(94,106,210,.08);padding:2px 7px;border-radius:4px;flex-shrink:0;white-space:nowrap;min-width:78px;text-align:center;cursor:pointer";
+    dateSpan.textContent = formatCommitDateFull(c.date);
+    dateSpan.title = c.date || "";
+    dateSpan.onclick = () => doReset(c.hash);
+
+    // 2. 提交消息
+    const msgSpan = document.createElement("span");
+    msgSpan.className = "commit-msg";
+    msgSpan.textContent = c.message;
+    msgSpan.style.flex = "1";
+
+    // 3. 增删行数
+    const statSpan = document.createElement("span");
+    if (c.added || c.deleted) {
+      statSpan.style.cssText = "font-size:10px;white-space:nowrap;margin:0 4px";
+      statSpan.innerHTML = `<span style="color:#27ae60;font-weight:600">+${c.added}</span>/<span style="color:#e74c3c;font-weight:600">-${c.deleted}</span>`;
+    } else {
+      statSpan.style.cssText = "font-size:10px;color:var(--hana-fg-muted,#6b7280);margin:0 4px";
+      statSpan.textContent = "—";
+    }
+
+    // 4. hash 缩到辅助位置（小字、淡色、hover 提示）
+    const hashSpan = document.createElement("span");
+    hashSpan.className = "commit-hash-secondary";
+    hashSpan.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--hana-fg-muted,#9ca3af);flex-shrink:0;cursor:pointer;padding:0 4px";
+    hashSpan.textContent = display;
+    hashSpan.title = "点击查看完整 hash / 复制 / 回滚";
+    hashSpan.onclick = (e) => { e.stopPropagation(); doReset(c.hash); };
+
+    // tag 角标（如果有）
+    let tagBadge = null;
+    if (c.tag) {
+      tagBadge = document.createElement("span");
+      tagBadge.style.cssText = "font-size:10px;color:#fff;background:#8b5cf6;padding:1px 5px;border-radius:3px;flex-shrink:0;margin:0 2px";
+      tagBadge.textContent = c.tag;
+    }
+
+    // tooltip 提示完整信息
+    const tip = document.createElement("span");
+    tip.className = "tip";
+    tip.textContent = [
+      `📅 完整时间: ${c.date || ''}`,
+      `🔖 Hash: ${c.hash}`,
+      c.tag ? `🏷️  Tag: ${c.tag}` : null,
+      `✍️  作者: ${c.author || ''}`,
+      `💬 说明: ${c.message}`,
+      ``,
+      `💡 点击左侧日期或 hash 可回滚到该版本`,
+    ].filter(Boolean).join('\n');
+    li.onmouseenter = function(e) {
+      tip.classList.add("show");
+      tip.style.left = (e.clientX - 10) + "px";
+      tip.style.top = (e.clientY - tip.offsetHeight - 8) + "px";
+    };
+    li.onmouseleave = function() {
+      tip.classList.remove("show");
+    };
+
+    // 改说明按钮
+    const amendBtn = document.createElement("button");
+    amendBtn.className = "btn-amend";
+    amendBtn.textContent = "✏️";
+    amendBtn.title = "修改这条提交的说明（仅最近一条可改）";
+    amendBtn.style.cssText = "padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:11px;cursor:pointer;flex-shrink:0;margin:0 2px";
+    amendBtn.onclick = (e) => { e.stopPropagation(); doAmendMessage(c); };
+
+    // 回滚按钮
+    const rbBtn = document.createElement("button");
+    rbBtn.className = "btn-rollback";
+    rbBtn.textContent = "回滚";
+    rbBtn.onclick = (e) => { e.stopPropagation(); doReset(c.hash); };
+
+    // 对比选择按钮
+    let compareBtn = null;
+    if (compareMode) {
+      compareBtn = document.createElement("button");
+      compareBtn.style.cssText = "padding:1px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;cursor:pointer;background:transparent";
+      if (c.hash === compareFrom) {
+        compareBtn.textContent = "←旧";
+        compareBtn.style.borderColor = "#4a8cff";
+        compareBtn.style.color = "#4a8cff";
+      } else if (c.hash === compareTo) {
+        compareBtn.textContent = "→新";
+        compareBtn.style.borderColor = "#e74c3c";
+        compareBtn.style.color = "#e74c3c";
+      } else {
+        compareBtn.textContent = "选";
+        compareBtn.style.color = "var(--hana-fg-muted,#6b7280)";
+      }
+      compareBtn.onclick = (e) => { e.stopPropagation(); pickCompare(c.hash); };
+    }
+
+    // 组装：日期 → 消息 → 增删 → hash → tag → 对比按钮 → 改说明 → 回滚 → tooltip
+    const items = [dateSpan, msgSpan, statSpan, hashSpan];
+    if (tagBadge) items.push(tagBadge);
+    if (compareBtn) items.push(compareBtn);
+    items.push(amendBtn, rbBtn, tip);
+    items.forEach(function(el) { li.appendChild(el); });
+    cl.appendChild(li);
+  }
+}
+
+// 提交
+async function doCommit() {
+  cacheClear();
+  Bus.emit("commit");
+  const msg = document.getElementById("commitMsg").value.trim();
+  if (!msg) { toast("请输入提交消息", "err"); return; }
+
+  const version = document.getElementById("versionInput").value.trim();
+  if (version && !/^\d+\.\d+\.\d+$/.test(version)) {
+    toast("版本号格式错误，正确格式如 0.1.0", "err");
+    return;
+  }
+
+  const btn = document.getElementById("btnCommit");
+  btn.disabled = true;
+  btn.textContent = "提交中...";
+
+  try {
+    const res = await fetch(apiUrl("/api/commit"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: msg, version, path: currentPath }),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      if (data.nothingToCommit) {
+        toast("没有需要提交的变更", "info");
+      } else {
+        const tagInfo = data.tag ? ` v${version}` : "";
+        toast(`✅ ${data.commit}${tagInfo}`, "success");
+        document.getElementById("commitMsg").value = "";
+        loadNextVersion();
+        refresh();
+      }
+    } else if (data.code === "NO_IDENTITY") {
+      // 未配置 git 身份，弹出配置弹窗
+      showIdentitySetup(msg, version);
+    } else {
+      toast("❌ " + data.message, "err");
+    }
+  } catch (e) {
+    toast("提交失败：" + e.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "存档";
+  }
+}
+
+// ======== 推送 ========
+async function doPush(btn) {
+  cacheClear();
+  Bus.emit("push");
+  const p = currentPath || getSavedPath();
+  const orig = btn.textContent;
+  btn.disabled = true; btn.style.opacity = ".5"; btn.textContent = "推送中...";
+  // 安全兜底：30 秒后强制恢复按钮
+  const safeTimer = setTimeout(() => { btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig; }, 30000);
+  try {
+    const res = await fetch(apiUrl("/api/push"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: p }),
+    });
+    const data = await res.json();
+    clearTimeout(safeTimer);
+    if (data.ok) {
+      btn.textContent = "✅ 已推送";
+      btn.style.opacity = "";
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = orig; }, 2000);
+    } else {
+      btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig;
+      toast("❌ " + data.message.split("\n")[0], "err");
+    }
+  } catch (e) {
+    clearTimeout(safeTimer);
+    btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig;
+    toast("推送失败：" + e.message, "err");
+  }
+}
+
+// ======== 拉取 ========
+async function doPull(btn) {
+  cacheClear();
+  Bus.emit("pull");
+  const p = currentPath || getSavedPath();
+  const orig = btn.textContent;
+  btn.disabled = true; btn.style.opacity = ".5"; btn.textContent = "拉取中...";
+  try {
+    const res = await fetch(apiUrl("/api/pull"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: p }),
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig;
+    if (data.ok) toast("✅ " + data.message, "success");
+    else toast("❌ " + data.message, "err");
+    if (data.ok) refresh();
+  } catch (e) { btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig; toast("拉取失败", "err"); }
+}
+
+// ======== Stash ========
+async function doStashPush() {
+  const msg = document.getElementById("stashMsg")?.value?.trim() || "";
+  const btn = document.getElementById("btnStashPush");
+  btn.disabled = true; btn.textContent = "暂存中...";
+  try {
+    const res = await fetch(apiUrl("/api/stash/push"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: msg, path: currentPath }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      toast("📦 已暂存", "success");
+      document.getElementById("stashMsg").value = "";
+      refresh();
+    } else toast("❌ " + data.message, "err");
+  } catch (e) { toast("暂存失败：" + e.message, "err"); }
+  finally { btn.disabled = false; btn.textContent = "暂存"; }
+}
+
+async function doStashPop(index) {
+  try {
+    const res = await fetch(apiUrl("/api/stash/pop"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index, path: currentPath }),
+    });
+    const data = await res.json();
+    if (data.ok) { toast("♻️ 已恢复", "success"); refresh(); }
+    else toast("❌ " + data.message, "err");
+  } catch (e) { toast("恢复失败：" + e.message, "err"); }
+}
+
+async function doStashDrop(index) {
+  try {
+    const res = await fetch(apiUrl("/api/stash/drop"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index, path: currentPath }),
+    });
+    const data = await res.json();
+    if (data.ok) { toast("🗑️ 已删除", "info"); refresh(); }
+    else toast("❌ " + data.message, "err");
+  } catch (e) { toast("删除失败：" + e.message, "err"); }
+}
+
+async function loadStash() {
+  const list = document.getElementById("stashList");
+  const count = document.getElementById("stashCount");
+  if (!list) return;
+  const p = currentPath || getSavedPath();
+  if (!p) { list.style.display = "none"; count.textContent = ""; return; }
+  try {
+    const res = await fetch(apiUrl("/api/stash/list?path=" + encodeURIComponent(p)));
+    const data = await res.json();
+    if (data.ok && data.stashes && data.stashes.length > 0) {
+      list.style.display = "";
+      count.textContent = data.stashes.length + " 条";
+      list.innerHTML = data.stashes.map(s =>
+        `<li style="display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid var(--hana-border,#eef0f2);font-size:12px">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(s.message)}">${escapeHtml(s.message || "(无备注)")}</span>
+          <button onclick="doStashPop(${s.index})" style="padding:1px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:var(--hana-surface,#fff);cursor:pointer;font-size:10px;color:#27ae60">恢复</button>
+          <button onclick="doStashDrop(${s.index})" style="padding:1px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:var(--hana-surface,#fff);cursor:pointer;font-size:10px;color:#e74c3c">删除</button>
+        </li>`
+      ).join("");
+    } else {
+      list.style.display = "none";
+      count.textContent = "";
+    }
+  } catch { list.style.display = "none"; count.textContent = ""; }
+}
+
+// ======== 修改提交说明（git commit --amend） ========
+async function doAmendMessage(commit) {
+  // 调后端检查这条 commit 是不是当前 HEAD（防用户点错）
+  let isHead = false;
+  try {
+    const res = await fetch(apiUrl("/api/log?count=1&path=" + encodeURIComponent(currentPath || getSavedPath())));
+    const data = await res.json();
+    if (data.ok && data.commits && data.commits.length > 0) {
+      const headHash = data.commits[0].hash;
+      isHead = headHash.startsWith(commit.hash) || commit.hash.startsWith(headHash);
+    }
+  } catch (e) {}
+
+  if (!isHead) {
+    toast("⚠️ 只能修改最近一条提交。\n这条提交不是最新的，如需修改请在终端用 git rebase -i （高级操作）", "err");
+    return;
+  }
+
+  // 弹输入框预填原消息
+  customPrompt("修改这条提交的说明", commit.message, async function(newMsg) {
+    if (newMsg === null) return; // 用户取消
+    const trimmed = newMsg.trim();
+    if (!trimmed) { toast("提交消息不能为空", "err"); return; }
+    if (trimmed === (commit.message || "").trim()) {
+      toast("未修改", "info");
+      return;
+    }
+    try {
+      const res = await fetch(apiUrl("/api/commit-amend"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: trimmed, path: currentPath, expectedHash: commit.hash }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        toast(`✅ ${data.commit}`, "success");
+        refresh();
+      } else if (data.code === "NO_IDENTITY") {
+        // 未配置身份：复用已有的弹窗
+        showIdentitySetupForAmend(trimmed, commit.hash);
+      } else if (data.code === "NOT_HEAD") {
+        toast("⚠️ " + data.message, "err");
+      } else if (data.code === "DIRTY") {
+        toast("⚠️ " + data.message, "err");
+      } else {
+        toast("❌ " + data.message, "err");
+      }
+    } catch (e) {
+      toast("❌ " + e.message, "err");
+    }
+  });
+}
+
+// 修改提交说明时的身份配置（复用 showIdentitySetup 的逻辑，但完成后重试 amend）
+function showIdentitySetupForAmend(message, hash) {
+  _pendingAmendMsg = message;
+  _pendingAmendHash = hash;
+  document.getElementById("identitySetupResult").textContent = "";
+  document.getElementById("identitySetupResult").style.color = "";
+  document.getElementById("identityName").value = "";
+  document.getElementById("identityEmail").value = "";
+  document.getElementById("identitySetupModal").style.display = "flex";
+  setTimeout(function() { document.getElementById("identityName").focus(); }, 50);
+  // 身份设置完后，走 amend 路径（而不是 commit 路径）
+  window._identitySetupAfter = "amend";
+}
+
+let _pendingAmendMsg = "";
+let _pendingAmendHash = "";
+
+// 回滚
+function doReset(hash) {
+  showConfirm(
+    `确定要回滚到 ${hash} 吗？`,
+    "回滚",
+    (ok) => {
+      document.getElementById("confirmModal").style.display = "none";
+      if (!ok) return;
+      doResetExecute(hash, selectedResetMode);
+    },
+    true
+  );
+}
+
+async function doResetExecute(hash, mode) {
+  cacheClear();
+  Bus.emit("reset");
+  try {
+    const res = await fetch(apiUrl("/api/reset"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commit: hash, mode, path: currentPath }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      let msg = `✅ 已回滚到 ${hash}（${data.mode}）`;
+      if (data.cleanedTags && data.cleanedTags.length > 0) {
+        msg += `\n已清理 ${data.cleanedTags.length} 个旧 tag`;
+      }
+      toast(msg, "success");
+      refresh();
+    } else {
+      toast("❌ " + data.message, "err");
+    }
+  } catch (e) {
+    toast("回滚失败：" + e.message, "err");
+  }
+}
+
+// .gitignore 模板数据（每项一组排除条目）
+const IGNORE_TEMPLATES = {
+  node: ["node_modules/", "npm-debug.log*", "yarn-debug.log*", "yarn-error.log*", ".vite/", "dist/", ".env*"],
+  python: ["__pycache__/", "*.py[cod]", "*.so", "venv/", ".venv/", "*.egg-info/", "dist/", "build/"],
+  java: ["target/", "*.class", "*.jar", "*.war", "*.log", ".settings/", ".project", ".classpath", ".idea/", "*.iml"],
+};
+
+// 全局 diff 模式
+let diffMode = localStorage.getItem('git-sl-diff-mode') || 'detail';
+
+try { document.getElementById('diffModeBtn').textContent = diffMode === 'detail' ? '详细' : '精简'; } catch {}
+
+function toggleGlobalDiffMode() {
+  diffMode = diffMode === 'detail' ? 'simple' : 'detail';
+  document.getElementById('diffModeBtn').textContent = diffMode === 'detail' ? '详细' : '精简';
+  localStorage.setItem('git-sl-diff-mode', diffMode);
+  saveSetting('defaultDiffMode', diffMode, true);
+  document.querySelectorAll('.diff-inline').forEach(container => {
+    if (container._diffLines) {
+      const body = container.querySelector('.diff-body');
+      if (body) renderDiffLines(body, container._diffLines, diffMode);
+    }
+  });
+}
+
+// 渲染 diff 行
+function renderDiffLines(el, lines, mode) {
+  const filtered = mode === 'simple'
+    ? lines.filter(l => l.startsWith('+') || l.startsWith('-') || l.startsWith('@@'))
+    : lines;
+  el.innerHTML = (filtered.length === 0 ? '<div style="color:var(--hana-fg-muted,#6b7280);padding:4px">(没有变更)</div>' : filtered.map(line => {
+    let cls = '';
+    let style = '';
+    if (line.startsWith('+')) { cls = 'diff-add'; style = 'padding:0 4px'; }
+    else if (line.startsWith('-')) { cls = 'diff-del'; style = 'padding:0 4px'; }
+    else if (line.startsWith('@@')) { cls = 'diff-hunk'; style = 'padding:0 4px'; }
+    else if (mode === 'detail') { style = 'padding:0 4px;color:var(--hana-fg-muted,#6b7280)'; }
+    const esc = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<div style="${style}" class="${cls}">${esc}</div>`;
+  }).join(''));
+}
+
+// 切换 diff 内联展开
+async function toggleDiff(file, nameEl) {
+  const p = currentPath || getSavedPath();
+  const li = nameEl.closest("li");
+  const existing = li.nextElementSibling;
+  if (existing && existing.classList.contains("diff-inline") && existing.dataset.file === file) {
+    existing.remove();
+    return;
+  }
+
+  const container = document.createElement("div");
+  container.className = "diff-inline";
+  container.dataset.file = file;
+  container.style.cssText = "padding:8px 10px;margin:4px 0;border:1px solid var(--hana-border,#e2e5ea);border-radius:6px;font-size:11px;font-family:monospace;line-height:1.6;background:var(--hana-bg,#f5f6f8);resize:vertical;overflow-x:hidden;overflow-y:auto;min-height:60px;max-height:300px;white-space:pre-wrap;word-break:break-all";
+  container.textContent = "加载中...";
+  li.parentNode.insertBefore(container, li.nextSibling);
+
+  try {
+    const res = await fetch(apiUrl("/api/diff?file=" + encodeURIComponent(file) + "&path=" + encodeURIComponent(p)));
+    const data = await res.json();
+    if (data.ok && data.detail && data.detail !== "(no diff)") {
+      const lines = data.detail.split('\n');
+      container._diffLines = lines;
+      const header = document.createElement("div");
+      header.style.cssText = "font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px";
+      header.textContent = file;
+      const body = document.createElement("div");
+      body.className = "diff-body";
+      renderDiffLines(body, lines, diffMode);
+      container.textContent = '';
+      container.append(header, body);
+    } else {
+      container.textContent = "(没有变更内容)";
+    }
+  } catch (e) {
+    container.textContent = "加载失败：" + e.message;
+  }
+}
+
+// 状态帮助气泡
+let statusHelpListener = null;
+function showStatusHelp() {
+  const bubble = document.getElementById("statusHelpBubble");
+  if (bubble.style.display !== "none") { bubble.style.display = "none"; return; }
+  const btn = event.target;
+  const rect = btn.getBoundingClientRect();
+  bubble.style.right = (window.innerWidth - rect.right) + "px";
+  bubble.style.left = "auto";
+  bubble.style.top = (rect.bottom + 4) + "px";
+  bubble.style.display = "";
+  if (statusHelpListener) document.removeEventListener("click", statusHelpListener);
+  statusHelpListener = (e) => {
+    if (!bubble.contains(e.target) && e.target !== btn) {
+      bubble.style.display = "none";
+      document.removeEventListener("click", statusHelpListener);
+      statusHelpListener = null;
+    }
+  };
+  setTimeout(() => document.addEventListener("click", statusHelpListener), 0);
+  var sc1 = function() { var b=document.getElementById("statusHelpBubble"); if(b)b.style.display="none"; document.removeEventListener("click",statusHelpListener); window.removeEventListener("scroll",sc1,true); };
+  setTimeout(function() { window.addEventListener("scroll", sc1, true); }, 0);
+}
+
+// reset 帮助气泡
+let resetHelpListener = null;
+function showResetHelp() {
+  const bubble = document.getElementById("resetHelpBubble");
+  if (bubble.style.display !== "none") { bubble.style.display = "none"; return; }
+  const btn = event.target;
+  const rect = btn.getBoundingClientRect();
+  bubble.style.right = (window.innerWidth - rect.right) + "px";
+  bubble.style.left = "auto";
+  bubble.style.top = (rect.bottom + 4) + "px";
+  bubble.style.display = "";
+  if (resetHelpListener) document.removeEventListener("click", resetHelpListener);
+  resetHelpListener = (e) => {
+    if (!bubble.contains(e.target) && e.target !== btn) {
+      bubble.style.display = "none";
+      document.removeEventListener("click", resetHelpListener);
+      resetHelpListener = null;
+    }
+  };
+  setTimeout(() => document.addEventListener("click", resetHelpListener), 0);
+  var sc2 = function() { var b=document.getElementById("resetHelpBubble"); if(b)b.style.display="none"; document.removeEventListener("click",resetHelpListener); window.removeEventListener("scroll",sc2,true); };
+  setTimeout(function() { window.addEventListener("scroll", sc2, true); }, 0);
+}
+
+// 确认弹窗
+let confirmCallback = null;
+let selectedResetMode = "soft";
+
+function pickResetMode(mode) {
+  selectedResetMode = mode;
+  document.querySelectorAll(".reset-mode-option").forEach(el => {
+    if (el.dataset.mode === mode) {
+      const accent = mode === 'soft' ? '#e67e22' : mode === 'mixed' ? '#3498db' : '#e74c3c';
+      el.style.borderColor = accent;
+      el.style.boxShadow = '0 0 0 2px rgba(' + (mode === 'soft' ? '230,126,34' : mode === 'mixed' ? '52,152,219' : '231,76,60') + ',.25)';
+    } else {
+      el.style.borderColor = "var(--hana-border,#e2e5ea)";
+      el.style.boxShadow = '';
+    }
+  });
+}
+
+function showConfirm(msg, okText, cb, showMode) {
+  document.getElementById("confirmMsg").textContent = msg;
+  document.getElementById("confirmOkBtn").textContent = okText || "确定";
+  document.getElementById("modeSelector").style.display = showMode ? "" : "none";
+  if (showMode) pickResetMode("soft");
+  confirmCallback = cb;
+  document.getElementById("confirmModal").style.display = "";
+}
+
+// 切换状态帮助气泡
+// 冲突解决状态
+let conflictFile = "";
+let conflictBlocks = [];
+let conflictPicks = [];
+
+// hash/tag 显示切换
+let showTag = localStorage.getItem("git-sl-show-tag") === "1";
+try { document.getElementById("toggleHashBtn").textContent = showTag ? "hash" : "tag"; } catch {}
+
+function toggleHashDisplay() {
+  showTag = !showTag;
+  document.getElementById("toggleHashBtn").textContent = showTag ? "hash" : "tag";
+  localStorage.setItem("git-sl-show-tag", showTag ? "1" : "0");
+  const cl = document.getElementById("commitList");
+  const commits = cl._commits;
+  if (commits) renderLog({ ok: true, commits });
+}
+
+// 打开冲突解决弹窗
+async function resolveConflict(file) {
+  conflictFile = file;
+  const p = currentPath || getSavedPath();
+  try {
+    const res = await fetch(apiUrl("/api/conflicts?path=" + encodeURIComponent(p)));
+    const data = await res.json();
+    if (!data.ok) { toast("获取冲突信息失败", "err"); return; }
+    const cf = data.conflicts.find(c => c.file === file);
+    if (!cf || !cf.blocks.length) { toast("该文件没有冲突", "info"); return; }
+    conflictBlocks = cf.blocks;
+    conflictPicks = cf.blocks.map((_, i) => ({ blockIndex: i, side: "head" }));
+    renderConflictDialog(file);
+    document.getElementById("conflictModal").style.display = "";
+  } catch (e) {
+    toast("获取冲突信息失败：" + e.message, "err");
+  }
+}
+
+function closeConflictModal() {
+  document.getElementById("conflictModal").style.display = "none";
+}
+
+// 渲染冲突解决弹窗内容
+function renderConflictDialog(file) {
+  document.getElementById("conflictFileName").textContent = file;
+  const el = document.getElementById("conflictBlocks");
+  el.innerHTML = conflictBlocks.map((block, i) => `
+    <div style="margin-bottom:10px;border:1px solid var(--hana-border,#e2e5ea);border-radius:6px;overflow:hidden">
+      <div style="padding:6px 10px;font-size:11px;font-weight:600;background:var(--hana-bg,#f5f6f8);border-bottom:1px solid var(--hana-border,#e2e5ea)">
+        冲突块 ${i+1}
+      </div>
+      <div style="display:flex">
+        <div onclick="pickSide(${i},'head')" id="block${i}Head" style="flex:1;padding:8px;cursor:pointer;border-right:1px solid var(--hana-border,#e2e5ea);background:var(--hana-bg,#f5f6f8)">
+          <div style="font-size:11px;font-weight:600;margin-bottom:4px;color:var(--hana-accent,#4a8cff)">⬅ ${escapeHtml(block.headLabel)}</div>
+          <pre style="margin:0;font-size:11px;font-family:monospace;white-space:pre-wrap;word-break:break-all;color:var(--hana-fg-muted,#6b7280)">${escapeHtml(block.headContent.trim() || "(空)")}</pre>
+        </div>
+        <div onclick="pickSide(${i},'their')" id="block${i}Their" style="flex:1;padding:8px;cursor:pointer;background:var(--hana-bg,#f5f6f8)">
+          <div style="font-size:11px;font-weight:600;margin-bottom:4px;color:#e74c3c">➡ ${escapeHtml(block.theirLabel)}</div>
+          <pre style="margin:0;font-size:11px;font-family:monospace;white-space:pre-wrap;word-break:break-all;color:var(--hana-fg-muted,#6b7280)">${escapeHtml(block.theirContent.trim() || "(空)")}</pre>
+        </div>
+      </div>
+    </div>
+  `).join("");
+  // 默认选中 head
+  conflictBlocks.forEach((_, i) => highlightPick(i));
+}
+
+// 选择某一侧
+function pickSide(index, side) {
+  conflictPicks[index] = { blockIndex: index, side };
+  highlightPick(index);
+}
+
+// 高亮当前选择
+function highlightPick(index) {
+  const pick = conflictPicks[index];
+  if (!pick) return;
+  const headEl = document.getElementById(`block${index}Head`);
+  const theirEl = document.getElementById(`block${index}Their`);
+  [headEl, theirEl].forEach(el => {
+    if (el) el.style.outline = "none";
+  });
+  const selected = pick.side === "head" ? headEl : theirEl;
+  if (selected) selected.style.outline = "2px solid var(--hana-accent,#4a8cff)";
+}
+
+// 应用冲突解决
+async function applyConflictResolve() {
+  const p = currentPath || getSavedPath();
+  const btn = document.getElementById("btnResolve");
+  btn.disabled = true; btn.textContent = "处理中...";
+  document.getElementById("conflictResult").textContent = "";
+
+  try {
+    const res = await fetch(apiUrl("/api/conflict-resolve"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: p, file: conflictFile, picks: conflictPicks }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById("conflictResult").textContent = "✅ " + data.message;
+      document.getElementById("conflictResult").style.color = "var(--hana-accent,#4a8cff)";
+      setTimeout(() => { closeConflictModal(); refresh(); }, 800);
+    } else {
+      document.getElementById("conflictResult").textContent = "❌ " + data.message;
+      document.getElementById("conflictResult").style.color = "#e74c3c";
+    }
+  } catch (e) {
+    document.getElementById("conflictResult").textContent = "❌ " + e.message;
+    document.getElementById("conflictResult").style.color = "#e74c3c";
+  } finally {
+    btn.disabled = false; btn.textContent = "应用选择";
+  }
+}
+
+// 当前排除项数组
+let currentIgnores = [];
+
+// 渲染排除项表格
+function renderIgnoreTable() {
+  const el = document.getElementById("ignoreList");
+  if (currentIgnores.length === 0) {
+    el.innerHTML = '<div style="padding:12px;text-align:center;font-size:12px;color:var(--hana-fg-muted,#6b7280)">暂无排除项</div>';
+    return;
+  }
+  el.innerHTML = currentIgnores.map((item, i) =>
+    `<div style="display:flex;align-items:center;padding:4px 8px;border-bottom:1px solid var(--hana-border,#e2e5ea);font-size:12px;font-family:monospace">
+      <input value="${escapeHtml(item)}" onchange="editIgnoreItem(${i}, this.value)" style="flex:1;border:0;background:transparent;color:var(--hana-fg,#1a1d24);outline:none;font-family:monospace;font-size:12px">
+      <button onclick="removeIgnoreItem(${i})" style="padding:2px 6px;border:0;background:transparent;color:#e74c3c;cursor:pointer;font-size:14px">×</button>
+    </div>`
+  ).join("");
+}
+
+// 选择模板时填充表格
+function applyTemplate() {
+  const key = document.getElementById("gitignoreSelect").value;
+  if (key && IGNORE_TEMPLATES[key]) {
+    currentIgnores = [...IGNORE_TEMPLATES[key]];
+  } else {
+    currentIgnores = [];
+  }
+  renderIgnoreTable();
+}
+
+// 编辑排除项
+function editIgnoreItem(index, value) {
+  currentIgnores[index] = value.trim();
+}
+
+// 删除排除项
+function removeIgnoreItem(index) {
+  currentIgnores.splice(index, 1);
+  renderIgnoreTable();
+}
+
+// 添加排除项
+function addIgnoreItem() {
+  const input = document.getElementById("newIgnoreInput");
+  const val = input.value.trim();
+  if (!val) return;
+  currentIgnores.push(val);
+  input.value = "";
+  renderIgnoreTable();
+  // 滚动到底部
+  const list = document.getElementById("ignoreList");
+  list.scrollTop = list.scrollHeight;
+}
+
+// 初始化仓库
+async function doInit() {
+  const btn = document.querySelector("#initArea button:last-of-type");
+  btn.disabled = true;
+  btn.textContent = "初始化中...";
+  document.getElementById("initResult").textContent = "";
+
+  // 从表格收集排除项
+  const gitignore = currentIgnores.filter(Boolean).join("\n");
+  const p = currentPath || getSavedPath();
+
+  if (!p) { toast("请先设置仓库路径", "err"); btn.disabled = false; btn.textContent = "初始化仓库"; return; }
+
+  try {
+    const res = await fetch(apiUrl("/api/init"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: p, gitignore }),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      document.getElementById("initResult").innerHTML = `✅ 已初始化，分支：${escapeHtml(data.branch)}<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 现在可以改文件后在「存档」卡片提交了</span>`;
+      document.getElementById("initResult").style.color = "var(--hana-accent,#4a8cff)";
+      // 保存路径
+      savePathToStorage(data.path);
+      addRepoHistory(data.path);
+      saveConfigPath(data.path);
+      currentPath = data.path;
+      // 手动切换 UI
+      document.getElementById("initArea").style.display = "none";
+      document.getElementById("fileCard").style.display = "";
+      document.getElementById("commitCard").style.display = "";
+      document.getElementById("logCard").style.display = "";
+      toast("仓库初始化成功！", "success");
+      // 带路径刷新
+      setTimeout(() => refreshWithPath(data.path), 600);
+    } else {
+      document.getElementById("initResult").textContent = "❌ " + data.message;
+      document.getElementById("initResult").style.color = "#e74c3c";
+    }
+  } catch (e) {
+    document.getElementById("initResult").textContent = "❌ " + e.message;
+    document.getElementById("initResult").style.color = "#e74c3c";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "初始化仓库";
+  }
+}
+
+// 加载下一个版本号
+async function loadNextVersion() {
+  const p = currentPath || getSavedPath();
+  if (!p) return;
+  try {
+    const res = await fetch(apiUrl("/api/version?path=" + encodeURIComponent(p)));
+    const data = await res.json();
+    if (data.ok) document.getElementById("versionInput").value = data.next;
+  } catch {}
+}
+
+function escapeHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ======== 新手引导弹窗 ========
+const WT_STEPS = [
+  {
+    icon: "👋",
+    title: "欢迎使用 Git Save/Load",
+    desc: "这是一个帮你管理 Git 仓库的小工具。Git 可以把代码的每一次修改都存档,随时可以回退到之前。下面用 6 步带你走完核心功能。",
+    box: "⏱ 约 2 分钟可看完 · 随时可点跳过引导",
+    target: null,
+  },
+  {
+    icon: "📁",
+    title: "第一步:告诉插件你的项目在哪",
+    desc: "点击「📁仓库」卡片里的「切换」按钮,选你电脑上的项目文件夹。之后插件会一直盯这个文件夹里的文件变化。",
+    box: "💡 如果项目还没被 Git 管理过,下面会冒出「初始化仓库」按钮帮你一键启动。",
+    target: "#repoPathDisplay",
+  },
+  {
+    icon: "📄",
+    title: "第二步:看清你改了哪些文件",
+    desc: "「变更文件」区域会列出你所有改动。带颜色的标签代表不同含义。",
+    box: "🟠 已修改 · 🟢 新增 · 🔴 删除 · ⚪ 未跟踪的新文件",
+    target: "#fileCard",
+  },
+  {
+    icon: "💾",
+    title: "第三步:点击「存档」保存进度",
+    desc: "在「存档」卡片的输入框里写一句说明(例:feat: 添加了登录页),然后点「存档」按钮。这一步是把修改保存到本地 Git。",
+    box: "🎮 类比:这就像在游戏里存了一个档,以后随时可以读回来。",
+    target: "#btnCommit",
+  },
+  {
+    icon: "📤",
+    title: "第四步(可选):推送到云端",
+    desc: "「推送」按钮会把你的存档发送到 GitHub(云端服务器)。如果你只是本地玩,不点这个也可以。",
+    box: "📌 「拉取」是从 GitHub 拉取别人发的新存档回来。推送/拉取都是多人协作时使用。",
+    target: "button[onclick*='doPush']",
+  },
+  {
+    icon: "📜",
+    title: "第五步:查看历史 / 随时回退",
+    desc: "「提交记录」区域列出所有存档。点「回滚」按钮可以退回到以前的某个版本。",
+    box: "🛟 回滚默认不会丢未保存的修改;只有「硬重置」才丢,请谨慎。",
+    target: "#logCard",
+  },
+];
+
+let wtCurrentStep = 0;
+const WT_DONE_KEY = "git-sl-walkthrough-done";
+const WT_GUIDE_KEY = "git-sl-workflow-guide-dismissed";
+
+function renderWalkthrough() {
+  const step = WT_STEPS[wtCurrentStep];
+  document.getElementById("wtIcon").textContent = step.icon;
+  document.getElementById("wtTitle").textContent = step.title;
+  document.getElementById("wtDesc").textContent = step.desc;
+  document.getElementById("wtBox").textContent = step.box;
+  document.getElementById("wtStepLabel").textContent = (wtCurrentStep + 1) + " / " + WT_STEPS.length;
+  document.querySelectorAll(".wt-dot").forEach(function(d, i) {
+    d.style.background = i <= wtCurrentStep ? "var(--hana-accent,#5e6ad2)" : "var(--hana-border,#e2e5ea)";
+  });
+  document.getElementById("wtPrevBtn").style.display = wtCurrentStep === 0 ? "none" : "";
+  document.getElementById("wtNextBtn").textContent = wtCurrentStep === WT_STEPS.length - 1 ? "🎉 开始使用" : "下一步 →";
+
+  // 清除旧高亮
+  document.querySelectorAll(".wt-highlight-target").forEach(function(el) { el.classList.remove("wt-highlight-target"); });
+  const spot = document.getElementById("walkthroughSpotlight");
+  const spotEl = document.getElementById("walkthroughSpot");
+  if (step.target) {
+    const target = document.querySelector(step.target);
+    if (target) {
+      target.classList.add("wt-highlight-target");
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(function() {
+        const r = target.getBoundingClientRect();
+        spot.style.display = "block";
+        spotEl.style.left = (r.left - 4) + "px";
+        spotEl.style.top = (r.top - 4) + "px";
+        spotEl.style.width = (r.width + 8) + "px";
+        spotEl.style.height = (r.height + 8) + "px";
+      }, 250);
+    } else {
+      spot.style.display = "none";
+    }
+  } else {
+    spot.style.display = "none";
+  }
+}
+
+function showWalkthrough() {
+  wtCurrentStep = 0;
+  renderWalkthrough();
+  document.getElementById("walkthroughModal").style.display = "flex";
+}
+
+function hideWalkthrough() {
+  document.getElementById("walkthroughModal").style.display = "none";
+  document.getElementById("walkthroughSpotlight").style.display = "none";
+  document.querySelectorAll(".wt-highlight-target").forEach(function(el) { el.classList.remove("wt-highlight-target"); });
+}
+
+function nextWalkthroughStep() {
+  if (wtCurrentStep < WT_STEPS.length - 1) {
+    wtCurrentStep++;
+    renderWalkthrough();
+  } else {
+    completeWalkthrough();
+  }
+}
+
+function prevWalkthroughStep() {
+  if (wtCurrentStep > 0) {
+    wtCurrentStep--;
+    renderWalkthrough();
+  }
+}
+
+function dismissWalkthrough() {
+  hideWalkthrough();
+  try { localStorage.setItem(WT_DONE_KEY, "1"); } catch {}
+}
+
+function completeWalkthrough() {
+  hideWalkthrough();
+  try { localStorage.setItem(WT_DONE_KEY, "1"); } catch {}
+  toast("🎉 引导完成！可以开始使用了", "success");
+}
+
+function showWorkflowGuide() {
+  const el = document.getElementById("workflowGuide");
+  if (el) el.style.display = "block";
+}
+
+function dismissWorkflowGuide() {
+  const el = document.getElementById("workflowGuide");
+  if (el) el.style.display = "none";
+  try { localStorage.setItem(WT_GUIDE_KEY, "1"); } catch {}
+}
+
+function maybeShowWorkflowGuide() {
+  try {
+    if (localStorage.getItem(WT_GUIDE_KEY) === "1") return;
+  } catch {}
+  showWorkflowGuide();
+}
+
+function maybeShowWalkthrough() {
+  try {
+    if (localStorage.getItem(WT_DONE_KEY) === "1") return;
+  } catch {}
+  setTimeout(function() { showWalkthrough(); }, 600);
+}
+
+// ======== Git 身份配置弹窗 ========
+let _pendingCommitMsg = "";
+let _pendingCommitVersion = "";
+
+function showIdentitySetup(msg, version) {
+  _pendingCommitMsg = msg || "";
+  _pendingCommitVersion = version || "";
+  document.getElementById("identitySetupResult").textContent = "";
+  document.getElementById("identitySetupResult").style.color = "";
+  document.getElementById("identityName").value = "";
+  document.getElementById("identityEmail").value = "";
+  document.getElementById("identitySetupModal").style.display = "flex";
+  setTimeout(function() { document.getElementById("identityName").focus(); }, 50);
+}
+
+function closeIdentitySetup() {
+  document.getElementById("identitySetupModal").style.display = "none";
+}
+
+async function submitIdentitySetup() {
+  const name = document.getElementById("identityName").value.trim();
+  const email = document.getElementById("identityEmail").value.trim();
+  const resultEl = document.getElementById("identitySetupResult");
+  const btn = document.getElementById("identitySubmitBtn");
+
+  if (!name) { resultEl.textContent = "❌ 姓名不能为空"; resultEl.style.color = "#e74c3c"; return; }
+  if (!email) { resultEl.textContent = "❌ 邮箱不能为空"; resultEl.style.color = "#e74c3c"; return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    resultEl.textContent = "❌ 邮箱格式不对（例：xx@example.com）";
+    resultEl.style.color = "#e74c3c";
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = "保存中...";
+  resultEl.textContent = "";
+
+  try {
+    const res = await fetch(apiUrl("/api/git-config"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, path: currentPath }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      resultEl.textContent = "✅ " + data.message;
+      resultEl.style.color = "var(--hana-accent,#5e6ad2)";
+      btn.textContent = "重试中...";
+      // 根据场景重试：commit 或 amend
+      const mode = window._identitySetupAfter || "commit";
+      try {
+        let url, body, parseRes;
+        if (mode === "amend") {
+          url = "/api/commit-amend";
+          body = { message: _pendingAmendMsg, path: currentPath, expectedHash: _pendingAmendHash };
+          parseRes = function(d) { return d; };
+        } else {
+          url = "/api/commit";
+          body = { message: _pendingCommitMsg, version: _pendingCommitVersion, path: currentPath };
+          parseRes = function(d) {
+            if (d.ok) {
+              if (d.nothingToCommit) {
+                toast("身份已设置（没有需要提交的变更）", "success");
+              } else {
+                const tagInfo = d.tag ? ` v${_pendingCommitVersion}` : "";
+                toast(`✅ ${d.commit}${tagInfo}`, "success");
+                document.getElementById("commitMsg").value = "";
+                loadNextVersion();
+              }
+            }
+            return d;
+          };
+        }
+        const r2 = await fetch(apiUrl(url), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d2 = await r2.json();
+        if (d2.ok) {
+          if (mode === "amend") {
+            toast("✅ " + (d2.commit || d2.message), "success");
+          } else {
+            parseRes(d2);
+          }
+          window._identitySetupAfter = null;
+          setTimeout(closeIdentitySetup, 400);
+          refresh();
+        } else if (d2.code === "NO_IDENTITY") {
+          resultEl.textContent = "❌ 仍未能配置身份，请重试";
+          resultEl.style.color = "#e74c3c";
+        } else if (d2.code === "NOT_HEAD") {
+          resultEl.textContent = "❌ " + d2.message;
+          resultEl.style.color = "#e74c3c";
+        } else if (d2.code === "DIRTY") {
+          resultEl.textContent = "❌ " + d2.message;
+          resultEl.style.color = "#e74c3c";
+        } else {
+          resultEl.textContent = "❌ " + d2.message;
+          resultEl.style.color = "#e74c3c";
+        }
+      } catch (e) {
+        resultEl.textContent = "❌ 重试失败：" + e.message;
+        resultEl.style.color = "#e74c3c";
+      }
+    } else {
+      resultEl.textContent = "❌ " + data.message;
+      resultEl.style.color = "#e74c3c";
+    }
+  } catch (e) {
+    resultEl.textContent = "❌ " + e.message;
+    resultEl.style.color = "#e74c3c";
+  } finally {
+    btn.disabled = false; btn.textContent = "保存并重试提交";
+  }
+}
+
+// 初始加载：先从插件配置读路径，再刷新状态
+(async function init() {
+  // 应用主题
+  var savedTheme = localStorage.getItem("git-sl-theme") || "light";
+  applyTheme(savedTheme);
+  var configPath = await fetchConfigPath();
+  if (configPath) {
+    savePathToStorage(configPath);
+  }
+  setupCtxMenuEvents();
+  initCardDrag();
+  // 注册卡片（事件驱动的自动刷新）
+  Cards.register("fileCard", { events: ["commit","push","pull","reset","branch-switch","refresh-all"], refresh: function(){
+    var p = currentPath || getSavedPath();
+    if (p) { fetch(apiUrl("/api/status?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){renderStatus(d); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success")}}catch{}}); }
+  }});
+  Cards.register("logCard", { events: ["commit","reset","branch-switch","refresh-all"], refresh: function(){
+    var p = currentPath || getSavedPath();
+    if (p) { fetch(apiUrl("/api/log?count=10&path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){renderLog(d); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success")}}catch{}}); }
+  }});
+  Cards.register("stashCard", { events: ["commit","stash-push","stash-pop","stash-drop","refresh-all"], refresh: function(){
+    var p = currentPath || getSavedPath();
+    if (p) { fetch(apiUrl("/api/stash/list?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){loadStash(); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success")}}catch{}}); }
+  }});
+  refresh();
+
+  loadSettingsUI();
+  loadNextVersion();
+  window.parent.postMessage({ type: "ready" }, "*");
+
+  // 首次打开自动弹新手引导
+  maybeShowWalkthrough();
+  // 显示三步工作流程提示条
+  maybeShowWorkflowGuide();
+})();
+</script>
+</body>
+</html>
