@@ -143,7 +143,7 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
 .commit-area button:hover:not(:disabled){opacity:.85}
 
 /* 提交历史 */
-.commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:240px;overflow-y:auto}
+.commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:200px;overflow-y:auto}
 .commit-list li{
   display:flex;align-items:center;gap:6px;padding:5px 0;
   border-bottom:1px solid var(--hana-border,#e2e5ea);position:relative;
@@ -213,7 +213,7 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
 .bc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;flex-shrink:0;vertical-align:middle}
 /* 分支颜色三角 */
 .bc-tri{position:absolute;top:0;right:0;width:0;height:0;border-style:solid;border-width:0 18px 18px 0;z-index:3}
-.br-block.current .bc-tri,.bblk.current .bc-tri{border-top-color:#fff!important;border-right-color:#fff!important}
+.br-block.current .bc-tri,.bblk.current .bc-tri,.bc-block.current .bc-tri{display:none}
 /* ======== 分支画布 ======== */
 #branchCanvas{flex:1;position:relative;overflow:hidden;background:var(--hana-bg,#f5f6f8);border-radius:8px;border:1px solid var(--hana-border,#e2e5ea)}
 #branchCanvas svg .conn-label{cursor:pointer;pointer-events:auto}
@@ -275,6 +275,7 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
 #panelsArea{
   transition:transform .3s cubic-bezier(.4,0,.2,1),opacity .25s;
   transform-origin:50% 0; /* 朝顶部中心缩放 */
+  padding-bottom:3px;
 }
 #panelsArea.collapsing{
   transform:scale(.1) translateY(-80px);
@@ -1686,11 +1687,12 @@ async function renderBranchCanvas(focusBranch) {
       ch = Math.max(ch, y + blockH + 20);
       var bc = branchColor(b.name);
       var cls = "bc-block" + (b.name === current.name ? " current" : "");
-      return '<div class="' + cls + '" style="left:' + x + 'px;top:' + y + 'px;border-left:3px solid ' + bc + '" data-name="' + escapeHtml(b.name) + '">' +
+      var isCurrent = b.name === current.name;
+      return '<div class="' + cls + '" style="left:' + x + 'px;top:' + y + 'px" data-name="' + escapeHtml(b.name) + '">' +
         '<div class="bc-name" title="' + escapeHtml(b.name) + '">' + escapeHtml(b.name) + '</div>' +
         '<div class="bc-meta">' + escapeHtml((b.lastCommit || "").slice(0, 24)) + '</div>' +
         (localStorage.getItem((currentPath || getSavedPath() || "default") + ":note:" + b.name) ? '<div class="bc-note">' + escapeHtml(localStorage.getItem((currentPath || getSavedPath() || "default") + ":note:" + b.name).slice(0, 30)) + '</div>' : '') +
-        '<div class="bc-tri" style="border-color:transparent ' + bc + ' transparent transparent"></div>' +
+        (isCurrent ? '' : '<div class="bc-tri" style="border-color:transparent ' + bc + ' transparent transparent"></div>') +
         '</div>';
     }).join("");
 
