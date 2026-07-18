@@ -40,6 +40,12 @@ html::-webkit-scrollbar{width:3px!important}
 html::-webkit-scrollbar-track{background:transparent!important}
 html::-webkit-scrollbar-thumb{background:var(--hana-scrollbar,rgba(94,106,210,.3))!important;border-radius:2px!important}
 
+:root{
+  --grain-dark:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --grain-light:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --grain-bg:var(--grain-dark);
+  --grain-blend:multiply;
+}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
   font-size:13px;line-height:1.5;
@@ -47,6 +53,30 @@ body{
   padding:12px;min-height:100vh;
   overflow-y:auto;
 }
+body.paper-texture::before{
+  content:'';
+  position:fixed;inset:0;
+  z-index:9999;
+  pointer-events:none;
+  background-image:var(--grain-bg);
+  background-size:200px 200px;
+  mix-blend-mode:var(--grain-blend);
+}
+.theme-dark{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-midnight{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-midnight-contrast{--grain-bg:var(--grain-dark);--grain-blend:multiply}
+.theme-warm-paper{--grain-bg:var(--grain-light);--grain-blend:screen}
+.theme-new-warm-paper{--grain-bg:var(--grain-light);--grain-blend:screen}
+.theme-high-contrast{--grain-bg:var(--grain-light);--grain-blend:screen}
+.theme-grass-aroma{--grain-bg:var(--grain-light);--grain-blend:screen}
+.theme-contemplation{--grain-bg:var(--grain-light);--grain-blend:screen}
+.theme-absolutely{--grain-bg:var(--grain-light);--grain-blend:screen}
+.theme-delve{--grain-bg:var(--grain-light);--grain-blend:screen}
+.theme-deep-think{--grain-bg:var(--grain-light);--grain-blend:screen}
+.theme-coral{--grain-bg:var(--grain-light);--grain-blend:screen}
+/* 开关样式 */
+#cfgTexture:checked + span{background:var(--hana-accent,#5e6ad2)}
+#cfgTexture:checked + span + span{transform:translateX(14px)}
 /* 头部 */
 .header{display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .header h1{font-size:15px;font-weight:600;flex:1}
@@ -526,6 +556,15 @@ body{
         <option value="internal">内部窗口</option>
         <option value="external">外部浏览器</option>
       </select>
+    </label>
+    <label style="display:block;margin:6px 0;display:flex;align-items:center;gap:8px">
+      <span>纸质纹理</span>
+      <span style="flex:1"></span>
+      <label style="position:relative;width:32px;height:18px;cursor:pointer">
+        <input type="checkbox" id="cfgTexture" onchange="toggleTexture(this.checked)" style="opacity:0;width:0;height:0">
+        <span style="position:absolute;top:0;left:0;right:0;bottom:0;background:var(--hana-border,#d0d5dd);border-radius:9px;transition:background .2s"></span>
+        <span style="position:absolute;top:2px;left:2px;width:14px;height:14px;background:#fff;border-radius:50%;transition:transform .2s"></span>
+      </label>
     </label>
   </div>
 </div>
@@ -1120,6 +1159,8 @@ async function loadSettingsUI() {
     set("cfgPullMode", c.pullMode);
     set("cfgDiffMode", c.defaultDiffMode);
     set("cfgGhOpen", c.ghOpenMode || "internal");
+    var textureEl = document.getElementById("cfgTexture");
+    if (textureEl) textureEl.checked = (c.paperTexture === "on");
   } catch {}
   // 应用保存的主题
   var savedTheme = localStorage.getItem("git-sl-theme");
@@ -1128,12 +1169,30 @@ async function loadSettingsUI() {
     var themeSel = document.getElementById("cfgTheme");
     if (themeSel) themeSel.value = savedTheme;
   }
+  // 应用保存的纸质纹理
+  var savedTexture = localStorage.getItem("git-sl-texture");
+  if (savedTexture) {
+    applyTexture(savedTexture === "on");
+    var textureEl = document.getElementById("cfgTexture");
+    if (textureEl) textureEl.checked = (savedTexture === "on");
+  }
 }
 
 function switchTheme(val) {
   applyTheme(val);
   localStorage.setItem("git-sl-theme", val);
   saveSetting("theme", val);
+}
+
+function toggleTexture(checked) {
+  var val = checked ? "on" : "off";
+  localStorage.setItem("git-sl-texture", val);
+  applyTexture(checked);
+  saveSetting("paperTexture", val, true);
+}
+
+function applyTexture(on) {
+  document.body.classList.toggle("paper-texture", on);
 }
 
 function applyTheme(theme) {
@@ -1148,6 +1207,9 @@ function applyTheme(theme) {
   // 设置颜色方案（深色主题用深色方案）
   var darkThemes = ["dark", "midnight", "midnight-contrast"];
   document.documentElement.style.colorScheme = darkThemes.indexOf(theme) >= 0 ? "dark" : "light";
+  // 应用纸质纹理
+  var textureEnabled = localStorage.getItem("git-sl-texture") === "on";
+  applyTexture(textureEnabled);
 }
 
 // 获取Hana当前主题

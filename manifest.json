@@ -49,6 +49,12 @@
           "default": "auto",
           "enum": ["auto", "light", "dark", "warm-paper", "new-warm-paper", "midnight", "midnight-contrast", "high-contrast", "grass-aroma", "contemplation", "absolutely", "delve", "deep-think", "coral"],
           "description": "主题"
+        },
+        "paperTexture": {
+          "type": "string",
+          "default": "off",
+          "enum": ["on", "off"],
+          "description": "纸质纹理"
         }
       }
     }
