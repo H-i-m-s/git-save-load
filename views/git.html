@@ -60,11 +60,11 @@ body.paper-texture::before{
   pointer-events:none;
   background-image:var(--grain-bg);
   background-size:200px 200px;
-  mix-blend-mode:overlay;
+  mix-blend-mode:var(--grain-blend);
 }
-.theme-dark{--grain-bg:var(--grain-light);--grain-blend:multiply}
-.theme-midnight{--grain-bg:var(--grain-light);--grain-blend:multiply}
-.theme-midnight-contrast{--grain-bg:var(--grain-light);--grain-blend:multiply}
+.theme-dark{--grain-bg:var(--grain-light);--grain-blend:overlay}
+.theme-midnight{--grain-bg:var(--grain-light);--grain-blend:overlay}
+.theme-midnight-contrast{--grain-bg:var(--grain-light);--grain-blend:overlay}
 body.paper-texture.theme-dark{--hana-bg:#070708;--hana-surface:#141517}
 body.paper-texture.theme-midnight{--hana-bg:#33414b;--hana-surface:#3c4c56}
 body.paper-texture.theme-midnight-contrast{--hana-bg:#1e2c35;--hana-surface:#28363f}
