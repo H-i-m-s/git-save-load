@@ -46,8 +46,8 @@
         },
         "theme": {
           "type": "string",
-          "default": "light",
-          "enum": ["light", "dark"],
+          "default": "auto",
+          "enum": ["auto", "light", "dark", "warm-paper", "new-warm-paper", "midnight", "midnight-contrast", "high-contrast", "grass-aroma", "contemplation", "absolutely", "delve", "deep-think", "coral"],
           "description": "主题"
         }
       }
