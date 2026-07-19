@@ -86,8 +86,9 @@ body.paper-texture.theme-absolutely{--hana-bg:#F8F7F3;--hana-surface:#FEFDFB}
 body.paper-texture.theme-delve{--hana-bg:#FFFFFF;--hana-surface:#FCFCFC}
 body.paper-texture.theme-deep-think{--hana-bg:#FFFFFF;--hana-surface:#FCFCFE}
 body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
-/* 开关样式 */
-#cfgTexture:checked + span{background:var(--hana-accent,#5e6ad2)}
+/* 开关样式 — 开启后就是一块主题 accent 纯色底，跟 "存档" / "初始化仓库" 那种填充按钮同调 */
+/* !important 强制覆盖内联于 span 上的默认 background:var(--hana-border) */
+#cfgTexture:checked + span{background:var(--hana-accent,#5e6ad2) !important}
 #cfgTexture:checked + span + span{transform:translateX(14px)}
 /* 头部 */
 .header{display:flex;align-items:center;gap:8px;margin-bottom:12px}
@@ -367,6 +368,12 @@ select:disabled{opacity:.5;cursor:not-allowed}
 #ghCtxMenu .item.danger:hover{background:rgba(231,76,60,.08)}
 #ghCtxMenu .item.danger::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;background:#e74c3c;border-radius:2px}
 #ghCtxMenu .divider{height:1px;margin:4px 8px;background:var(--hana-border,#e2e5ea)}
+
+/* === 设置卡里控件统一宽度，跟走整体的控件右对齐 === */
+#settingsBody .hana-select,
+#settingsBody .hana-seg{
+  width:110px;
+}
 
 /* === 分段按钮（HanaSegments） === */
 .hana-seg{
