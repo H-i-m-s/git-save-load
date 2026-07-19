@@ -106,6 +106,88 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
 .btn-refresh.spinning{animation:spin .6s linear}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* 原生 select 视觉统一：触发器跟随卡片风格，options 面板仍走浏览器 */
+select{
+  -webkit-appearance:none;-moz-appearance:none;appearance:none;
+  background-color:var(--hana-surface,#fff);
+  border:1px solid var(--hana-border,#d0d5dd);
+  border-radius:6px;
+  color:var(--hana-fg,#1a1d24);
+  font-family:inherit;
+  padding:4px 22px 4px 8px;cursor:pointer;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 6px center;
+  background-size:10px;
+  transition:border-color .15s ease,box-shadow .15s ease;
+  outline:none;
+}
+select:hover{border-color:var(--hana-fg-muted,#9ca3af)}
+select:focus{border-color:var(--hana-accent,#4a8cff);box-shadow:0 0 0 3px rgba(74,140,255,.12)}
+select:disabled{opacity:.5;cursor:not-allowed}
+
+/* === HanaSelect 自绘下拉 === */
+.hana-select{
+  position:relative;
+  display:inline-flex;align-items:center;justify-content:space-between;
+  background-color:var(--hana-surface,#fff);
+  border:1px solid var(--hana-border,#d0d5dd);
+  border-radius:6px;
+  color:var(--hana-fg,#1a1d24);
+  font-family:inherit;
+  font-size:11px;
+  padding:4px 8px;cursor:pointer;user-select:none;
+  min-width:80px;
+  transition:border-color .15s ease,box-shadow .15s ease;
+  outline:none;
+}
+.hana-select:hover{border-color:var(--hana-fg-muted,#9ca3af)}
+.hana-select.open{border-color:var(--hana-accent,#4a8cff);box-shadow:0 0 0 3px rgba(74,140,255,.12)}
+.hana-select-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hana-select-chevron{
+  flex-shrink:0;width:10px;height:10px;
+  margin-left:8px;opacity:.6;transition:transform .15s ease;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:center;background-size:contain;
+}
+.hana-select.open .hana-select-chevron{transform:rotate(180deg)}
+
+.hana-select-panel{
+  position:fixed;z-index:1500;
+  background:var(--hana-surface,#fff);
+  border:1px solid var(--hana-border,#d0d5dd);
+  border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.18),0 2px 8px rgba(0,0,0,.10);
+  padding:4px;
+  min-width:140px;
+  max-height:240px;overflow-y:auto;
+  opacity:0;transform:scale(.96) translateY(-4px);
+  transform-origin:top left;
+  transition:opacity .12s ease,transform .12s ease;
+  pointer-events:none;
+  /* 自绘滚动条（深色场景明显） */
+  scrollbar-width:thin;
+  scrollbar-color:var(--hana-fg-muted,#9ca3af) transparent;
+}
+.hana-select-panel::-webkit-scrollbar{width:8px;height:8px}
+.hana-select-panel::-webkit-scrollbar-track{background:transparent}
+.hana-select-panel::-webkit-scrollbar-thumb{background:var(--hana-fg-muted,#9ca3af);border-radius:4px;border:2px solid transparent;background-clip:padding-box}
+.hana-select-panel::-webkit-scrollbar-thumb:hover{background:var(--hana-fg,#1a1d24);border:2px solid transparent;background-clip:padding-box}
+.hana-select-panel.open{opacity:1;transform:scale(1) translateY(0);pointer-events:auto}
+
+.hana-select-option{
+  padding:7px 12px 7px 28px;
+  font-size:12px;
+  border-radius:4px;cursor:pointer;
+  position:relative;
+  color:var(--hana-fg,#1a1d24);
+  transition:background .12s ease;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.hana-select-option:hover{background:var(--hana-bg-muted,#f5f6f8)}
+.hana-select-option.selected{color:var(--hana-accent,#4a8cff);font-weight:500}
+.hana-select-option.selected::before{content:"\2713";position:absolute;left:10px;color:var(--hana-accent,#4a8cff);font-size:11px}
+
 /* 状态卡片 */
 .card{
   background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#e2e5ea);border-radius:8px;
@@ -263,18 +345,58 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
   background:var(--hana-surface,#fff);
   border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;
   padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,.12);
+  transform-origin:top left;
+  transition:opacity .12s ease,transform .12s ease;
 }
-#ctxMenu .item{padding:7px 14px;font-size:12px;cursor:pointer;transition:background .1s}
+#ctxMenu.hana-menu-opening{opacity:0;transform:scale(.96)}
+#ctxMenu .item{padding:8px 14px;font-size:12px;cursor:pointer;transition:background .12s,color .12s;position:relative}
 #ctxMenu .item:hover{background:var(--hana-bg,#f5f6f8)}
 #ctxMenu .item.danger{color:#e74c3c}
-#ctxMenu .item.danger:hover{background:#fee2e2}
+#ctxMenu .item.danger:hover{background:rgba(231,76,60,.08)}
+#ctxMenu .item.danger::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;background:#e74c3c;border-radius:2px}
+#ctxMenu .divider{height:1px;margin:4px 8px;background:var(--hana-border,#e2e5ea)}
 /* 多级子菜单 */
 #ctxMenu .has-sub{position:relative}
 #ctxMenu .has-sub>.sub{display:none;position:fixed;min-width:160px;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:2001}
-#ctxMenu .has-sub>.item{padding-right:24px}
-#ctxMenu .has-sub::after{content:">";position:absolute;right:8px;top:7px;font-size:10px;color:var(--hana-fg-muted,#6b7280);pointer-events:none}
-#ghCtxMenu{display:none;position:fixed;z-index:999;min-width:180px;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,.12)}
-#ghCtxMenu .item{padding:7px 14px;font-size:12px;cursor:pointer;transition:background .1s}
+#ctxMenu .has-sub>.item::after{content:"\25B8";position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--hana-fg-muted,#6b7280);pointer-events:none}
+#ghCtxMenu{display:none;position:fixed;z-index:999;min-width:180px;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,.12);transform-origin:top left;transition:opacity .12s ease,transform .12s ease}
+#ghCtxMenu.hana-menu-opening{opacity:0;transform:scale(.96)}
+#ghCtxMenu .item{padding:8px 14px;font-size:12px;cursor:pointer;transition:background .12s,color .12s;position:relative}
+#ghCtxMenu .item:hover{background:var(--hana-bg,#f5f6f8)}
+#ghCtxMenu .item.danger{color:#e74c3c}
+#ghCtxMenu .item.danger:hover{background:rgba(231,76,60,.08)}
+#ghCtxMenu .item.danger::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;background:#e74c3c;border-radius:2px}
+#ghCtxMenu .divider{height:1px;margin:4px 8px;background:var(--hana-border,#e2e5ea)}
+
+/* === 分段按钮（HanaSegments） === */
+.hana-seg{
+  display:inline-flex;
+  background:var(--hana-bg,#f5f6f8);
+  border:1px solid var(--hana-border,#d0d5dd);
+  border-radius:6px;
+  padding:2px;
+  gap:2px;
+  vertical-align:middle;
+}
+.hana-seg-btn{
+  flex:1;min-width:0;
+  padding:4px 10px;border:0;background:transparent;
+  font-size:11px;border-radius:4px;cursor:pointer;
+  color:var(--hana-fg-muted,#6b7280);
+  transition:background .15s ease,color .15s ease,box-shadow .15s ease;
+  font-family:inherit;
+  white-space:nowrap;
+}
+.hana-seg-btn.active{
+  background:var(--hana-surface,#fff);
+  color:var(--hana-accent,#4a8cff);
+  box-shadow:0 1px 2px rgba(0,0,0,.06);
+  font-weight:500;
+}
+.hana-seg-btn:hover:not(.active){
+  color:var(--hana-fg,#1a1d24);
+  background:rgba(0,0,0,.04);
+}
 #ghCtxMenu .item:hover{background:var(--hana-bg,#f5f6f8)}
 #ghCtxMenu .item.danger{color:#e74c3c}
 #ghCtxMenu .item.danger:hover{background:#fee2e2}
@@ -443,7 +565,7 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
   <!-- 模板选择 -->
   <div style="margin-bottom:8px">
     <label style="font-size:12px;color:var(--hana-fg-muted,#6b7280)">.gitignore 模板：</label>
-    <select id="gitignoreSelect" onchange="applyTemplate()" style="margin-left:6px;padding:4px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:12px;background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24)">
+    <select id="gitignoreSelect" onchange="applyTemplate()" style="margin-left:6px;font-size:12px">
       <option value="">无</option>
       <option value="node">Node.js</option>
       <option value="python">Python</option>
@@ -538,35 +660,35 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
     <span id="settingsToggle" style="color:var(--hana-accent,#5e6ad2);font-size:11px">▸</span>
   </div>
   <div id="settingsBody" style="font-size:12px;max-height:0;overflow:hidden;transition:max-height .2s ease">
-    <label style="display:block;margin:6px 0">暂存模式
-      <select id="cfgStashMode" onchange="saveSetting('stashMode',this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
+    <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">暂存模式
+      <select id="cfgStashMode" onchange="saveSetting('stashMode',this.value)" style="font-size:11px">
         <option value="normal">仅跟踪文件</option>
         <option value="untracked">包含未跟踪</option>
         <option value="all">包含全部</option>
       </select>
     </label>
-    <label style="display:block;margin:6px 0">推送模式
-      <select id="cfgPushMode" onchange="saveSetting('pushMode',this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
+    <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">推送模式
+      <select id="cfgPushMode" onchange="saveSetting('pushMode',this.value)" style="font-size:11px">
         <option value="normal">普通推送</option>
         <option value="force-with-lease">安全强制</option>
         <option value="force">强制覆盖</option>
       </select>
     </label>
-    <label style="display:block;margin:6px 0">拉取模式
-      <select id="cfgPullMode" onchange="saveSetting('pullMode',this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
+    <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">拉取模式
+      <select id="cfgPullMode" onchange="saveSetting('pullMode',this.value)" style="font-size:11px">
         <option value="merge">合并</option>
         <option value="rebase">变基 (把提交接到最新)</option>
         <option value="ff-only">仅快进 (禁止合并)</option>
       </select>
     </label>
-    <label style="display:block;margin:6px 0">Diff 模式
-      <select id="cfgDiffMode" onchange="saveSetting('defaultDiffMode',this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
-        <option value="detail">详细</option>
-        <option value="simple">精简</option>
-      </select>
+    <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">Diff 模式
+      <div class="hana-seg" id="segDiffMode" style="float:none">
+        <button type="button" class="hana-seg-btn" data-value="detail">详细</button>
+        <button type="button" class="hana-seg-btn" data-value="simple">精简</button>
+      </div>
     </label>
-    <label style="display:block;margin:6px 0">主题
-      <select id="cfgTheme" onchange="switchTheme(this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
+    <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">主题
+      <select id="cfgTheme" onchange="switchTheme(this.value)" style="font-size:11px">
         <option value="auto">自动</option>
         <option value="light">浅色</option>
         <option value="dark">深色</option>
@@ -583,11 +705,11 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
         <option value="coral">珊瑚</option>
       </select>
     </label>
-    <label style="display:block;margin:6px 0">GitHub 打开
-      <select id="cfgGhOpen" onchange="saveSetting('ghOpenMode',this.value)" style="float:right;padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:11px;background:var(--hana-surface,#fff)">
-        <option value="internal">内部窗口</option>
-        <option value="external">外部浏览器</option>
-      </select>
+    <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">GitHub 打开
+      <div class="hana-seg" id="segGhOpen" style="float:none">
+        <button type="button" class="hana-seg-btn" data-value="internal">内置</button>
+        <button type="button" class="hana-seg-btn" data-value="external">外部</button>
+      </div>
     </label>
     <label style="display:block;margin:6px 0;display:flex;align-items:center;gap:8px">
       <span>纸质纹理</span>
@@ -627,10 +749,10 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
   <div class="gh-tab-content" id="ghTabCreate">
     <div style="display:flex;gap:4px;margin-bottom:6px">
       <input type="text" id="ghRepoName" placeholder="仓库名" autocomplete="off" style="flex:1;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none">
-      <select id="ghRepoPrivacy" style="padding:5px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:11px;background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24)">
-        <option value="0">公开</option>
-        <option value="1">私有</option>
-      </select>
+      <div class="hana-seg" id="segGhPrivacy" style="float:none">
+        <button type="button" class="hana-seg-btn" data-value="0">公开</button>
+        <button type="button" class="hana-seg-btn" data-value="1">私有</button>
+      </div>
     </div>
     <input type="text" id="ghRepoDesc" placeholder="描述（可选）" autocomplete="off" style="width:100%;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
     <button onclick="ghCreateRepo()" style="margin-top:6px;width:100%;padding:6px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">在 GitHub 创建</button>
@@ -1294,6 +1416,43 @@ function toggleSettings() {
   }
 }
 
+// === 分段按钮助手（HanaSegments） ===
+// 设当前选中（按 data-value 匹配）
+function setHanaSegActive(seg, value) {
+  if (typeof seg === "string") seg = document.getElementById(seg);
+  if (!seg || !value) return;
+  seg.querySelectorAll(".hana-seg-btn").forEach(function(btn) {
+    btn.classList.toggle("active", btn.getAttribute("data-value") === value);
+  });
+}
+// 读当前选中值
+function getHanaSegValue(seg) {
+  if (typeof seg === "string") seg = document.getElementById(seg);
+  if (!seg) return "";
+  var a = seg.querySelector(".hana-seg-btn.active");
+  return a ? a.getAttribute("data-value") : "";
+}
+// 绑定点击；指定 configKey 后默认调 saveSetting，否则走 onChange
+function bindHanaSeg(id, configKey, onChange) {
+  var seg = document.getElementById(id);
+  if (!seg) return;
+  seg.querySelectorAll(".hana-seg-btn").forEach(function(btn) {
+    btn.onclick = function() {
+      var v = btn.getAttribute("data-value");
+      if (btn.classList.contains("active")) return;
+      setHanaSegActive(seg, v);
+      if (typeof onChange === "function") onChange(v);
+      else if (configKey) saveSetting(configKey, v);
+    };
+  });
+}
+// 初始化三个分段控件的点击逻辑（只需调用一次）
+function initAllHanaSegs() {
+  bindHanaSeg("segDiffMode", "defaultDiffMode");
+  bindHanaSeg("segGhOpen", "ghOpenMode");
+  bindHanaSeg("segGhPrivacy");   // ghPrivacy 不需持久化，默认 公开
+}
+
 async function loadSettingsUI() {
   try {
     const res = await fetch(apiUrl("/api/config"));
@@ -1304,17 +1463,21 @@ async function loadSettingsUI() {
     set("cfgStashMode", c.stashMode);
     set("cfgPushMode", c.pushMode);
     set("cfgPullMode", c.pullMode);
-    set("cfgDiffMode", c.defaultDiffMode);
-    set("cfgGhOpen", c.ghOpenMode || "internal");
+    // 新分段控件：从后端拉来的值用于点亮初始状态
+    setHanaSegActive("segDiffMode", c.defaultDiffMode);
+    setHanaSegActive("segGhOpen", c.ghOpenMode || "internal");
     var textureEl = document.getElementById("cfgTexture");
     if (textureEl) textureEl.checked = (c.paperTexture === "on");
   } catch {}
+  // 后端值写到隐藏 select 后，让对应的 HanaSelect 触发器刷新 label
+  syncHanaSelects();
   // 应用保存的主题
   var savedTheme = localStorage.getItem("git-sl-theme");
   if (savedTheme) {
     applyTheme(savedTheme);
     var themeSel = document.getElementById("cfgTheme");
     if (themeSel) themeSel.value = savedTheme;
+    syncHanaSelects();
   }
   // 应用保存的纸质纹理
   var savedTexture = localStorage.getItem("git-sl-texture");
@@ -1524,7 +1687,7 @@ async function ghCreateRepo() {
   const name = document.getElementById("ghRepoName").value.trim();
   const nameErr = validateGhRepoName(name);
   if (nameErr) { toast(nameErr, "err"); return; }
-  const priv = document.getElementById("ghRepoPrivacy").value === "1";
+  const priv = getHanaSegValue("segGhPrivacy") === "1";
   const desc = document.getElementById("ghRepoDesc").value.trim();
   const p = currentPath || getSavedPath();
   const el = document.getElementById("ghCreateResult");
@@ -1610,11 +1773,9 @@ function showGhCtxMenu(e, repoName) {
   ghCtxRepo = repoName;
   const menu = document.getElementById("ghCtxMenu");
   menu.innerHTML = `
-    <div class="item danger" onclick="ghDeleteRepo()">??? 删除 ${escapeHtml(repoName)}</div>
+    <div class="item danger" onclick="ghDeleteRepo()">✕ 删除 ${escapeHtml(repoName)}</div>
   `;
-  menu.style.display = "block";
-  menu.style.left = Math.min(e.clientX, window.innerWidth - 180) + "px";
-  menu.style.top = Math.min(e.clientY, window.innerHeight - 80) + "px";
+  openCtxMenuWithAnim(menu, e.clientX, e.clientY, 180, 80);
 }
 
 async function ghDeleteRepo() {
@@ -1681,7 +1842,7 @@ async function ghSearch() {
       b.onclick = function() {
         var url = b.getAttribute("data-url");
         if (!url) return;
-        var mode = document.getElementById("cfgGhOpen")?.value || "internal";
+        var mode = getHanaSegValue("segGhOpen") || "internal";
         if (mode === "external") {
           fetch(apiUrl("/api/open-external?url=" + encodeURIComponent(url)));
         } else {
@@ -2013,6 +2174,198 @@ function editLabel(from, to) {
   drawConnections();
 }
 
+// === 菜单打开助手：定位 + 打开动画 ===
+function openCtxMenuWithAnim(menu, x, y, fallbackW, fallbackH) {
+  if (!menu) return;
+  // 先加 opening 类（在 display:block 前设 opacity:0；这样 transition 才能从隐藏状态启动）
+  menu.classList.add("hana-menu-opening");
+  menu.style.display = "block";
+  var w = menu.offsetWidth || fallbackW || 180;
+  var h = menu.offsetHeight || fallbackH || 120;
+  menu.style.left = Math.min(x, window.innerWidth - w - 6) + "px";
+  menu.style.top = Math.min(y, window.innerHeight - h - 6) + "px";
+  // 两帧后移除 opening 类，触发到默认状态
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+      menu.classList.remove("hana-menu-opening");
+    });
+  });
+}
+function closeAllCtxMenus() {
+  var m = document.getElementById("ctxMenu");
+  var gm = document.getElementById("ghCtxMenu");
+  if (m) m.style.display = "none";
+  if (gm) gm.style.display = "none";
+}
+// Esc 关闭菜单 + 下拉
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape" || e.keyCode === 27) {
+    closeAllCtxMenus();
+    closeAllHanaSelects();
+  }
+});
+// 点击外部关闭 HanaSelect面板（面板是 document.body 的子，原生 select 被隐藏）
+document.addEventListener("mousedown", function(e) {
+  if (!e.target.closest('.hana-select') && !e.target.closest('.hana-select-panel')) {
+    closeAllHanaSelects();
+  }
+}, true);
+
+// === HanaSelect 自绘下拉 ===
+// 背后的原生 <select> 仍是状态源；HanaSelect 只负责视觉与交互
+const _hanaSelectInstances = new Map();
+function replaceSelectWithHanaSelect(selectId, opts) {
+  opts = opts || {};
+  var sel = document.getElementById(selectId);
+  if (!sel || sel._hanaSelectReplaced) return;
+  sel._hanaSelectReplaced = true;
+  sel.style.display = "none";
+
+  var options = opts.options;
+  if (!options && sel.options) {
+    options = Array.prototype.slice.call(sel.options).map(function(o) {
+      return { value: o.value, label: o.text };
+    });
+  }
+  if (!options) return;
+
+  // 触发器
+  var trigger = document.createElement("div");
+  trigger.className = "hana-select";
+  trigger.setAttribute("role", "button");
+  trigger.setAttribute("tabindex", "0");
+  var label = document.createElement("span");
+  label.className = "hana-select-label";
+  trigger.appendChild(label);
+  var chevron = document.createElement("span");
+  chevron.className = "hana-select-chevron";
+  trigger.appendChild(chevron);
+
+  // 面板
+  var panel = document.createElement("div");
+  panel.className = "hana-select-panel";
+  panel.setAttribute("role", "listbox");
+  panel.style.display = "none";
+  document.body.appendChild(panel);
+
+  var state = {
+    open: false,
+    currentValue: sel.value != null ? sel.value : (options[0] ? options[0].value : "")
+  };
+
+  function getLabel(v) {
+    for (var i = 0; i < options.length; i++) if (options[i].value == v) return options[i].label;
+    return "";
+  }
+  function refresh() {
+    label.textContent = getLabel(state.currentValue);
+    var cEls = panel.children;
+    for (var i = 0; i < cEls.length; i++) {
+      var cls = cEls[i].classList;
+      cls.toggle("selected", cEls[i].dataset.value == state.currentValue);
+    }
+  }
+  function openPanel() {
+    closeAllHanaSelects();
+    // 定位：默认贴在触发器下面，超出窗口就反向到上面
+    var tr = trigger.getBoundingClientRect();
+    panel.style.minWidth = Math.max(140, tr.width) + "px";
+    panel.style.left = tr.left + "px";
+    panel.style.top = (tr.bottom + 4) + "px";
+    panel.style.display = "block";
+    var ph = panel.offsetHeight;
+    if (tr.bottom + 4 + ph > window.innerHeight - 8) {
+      panel.style.top = (tr.top - ph - 4) + "px";
+    }
+    if (tr.left + panel.offsetWidth > window.innerWidth - 8) {
+      panel.style.left = Math.max(8, window.innerWidth - panel.offsetWidth - 8) + "px";
+    }
+    panel.classList.add("open");
+    trigger.classList.add("open");
+    state.open = true;
+  }
+  function closePanel() {
+    panel.classList.remove("open");
+    trigger.classList.remove("open");
+    state.open = false;
+    setTimeout(function(){ if (!state.open) panel.style.display = "none"; }, 130);
+  }
+  function setValue(v, fire) {
+    if (state.currentValue == v) return;
+    state.currentValue = v;
+    sel.value = v;
+    refresh();
+    if (fire && typeof opts.onChange === "function") opts.onChange(v);
+  }
+
+  options.forEach(function(opt) {
+    var optEl = document.createElement("div");
+    optEl.className = "hana-select-option";
+    optEl.setAttribute("role", "option");
+    optEl.dataset.value = opt.value;
+    optEl.textContent = opt.label;
+    optEl.addEventListener("click", function(e) {
+      e.stopPropagation();
+      setValue(opt.value, true);
+      closePanel();
+    });
+    panel.appendChild(optEl);
+  });
+
+  trigger.addEventListener("click", function(e) {
+    e.stopPropagation();
+    if (state.open) closePanel(); else openPanel();
+  });
+  trigger.addEventListener("keydown", function(e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (state.open) closePanel(); else openPanel(); }
+  });
+
+  panel._trigger = trigger;
+  refresh();
+
+  sel.parentNode.insertBefore(trigger, sel.nextSibling);
+
+  sel._hanaSelect = {
+    refresh: refresh,
+    close: closePanel,
+    sync: function() { state.currentValue = sel.value; refresh(); }
+  };
+  _hanaSelectInstances.set(selectId, sel._hanaSelect);
+}
+function closeAllHanaSelects() {
+  document.querySelectorAll(".hana-select-panel.open").forEach(function(p) {
+    p.classList.remove("open");
+    if (p._trigger) p._trigger.classList.remove("open");
+    p.style.display = "none";
+  });
+}
+function syncHanaSelects() {
+  _hanaSelectInstances.forEach(function(hs, id) { hs.sync(); });
+}
+function initHanaSelects() {
+  // cfgStashMode
+  replaceSelectWithHanaSelect("cfgStashMode", {
+    onChange: function(v) { saveSetting("stashMode", v); }
+  });
+  // cfgPushMode
+  replaceSelectWithHanaSelect("cfgPushMode", {
+    onChange: function(v) { saveSetting("pushMode", v); }
+  });
+  // cfgPullMode
+  replaceSelectWithHanaSelect("cfgPullMode", {
+    onChange: function(v) { saveSetting("pullMode", v); }
+  });
+  // cfgTheme
+  replaceSelectWithHanaSelect("cfgTheme", {
+    onChange: function(v) { switchTheme(v); }
+  });
+  // gitignoreSelect（不调用 onChange，依赖原 onchange="applyTemplate()"
+  // 但原 onchange 是原生 select 的机制，隐藏后不再 fire。需手动调 applyTemplate）
+  replaceSelectWithHanaSelect("gitignoreSelect", {
+    onChange: function() { applyTemplate(); }
+  });
+}
+
 // 右键菜单：创建分支、删除
 function showBranchCtx(e, branchName) {
   e.preventDefault();
@@ -2040,9 +2393,7 @@ function showBranchCtx(e, branchName) {
     '</div></div>') +
     '<div class="item" data-bc="note:' + nameEsc + '">' + noteLabel + '</div>' +
     '<div class="item danger" data-bc="delete:' + nameEsc + '">✕ 删除分支</div>';
-  menu.style.display = "block";
-  menu.style.left = Math.min(e.clientX, window.innerWidth - 180) + "px";
-  menu.style.top = Math.min(e.clientY, window.innerHeight - 120) + "px";
+  openCtxMenuWithAnim(menu, e.clientX, e.clientY, 180, 120);
   // 点击一级菜单项切换二级菜单（不再依赖 hover）
   var openSub = null;
   menu.querySelectorAll(".has-sub > .item").forEach(function(parentItem) {
@@ -3663,6 +4014,11 @@ async function submitIdentitySetup() {
     savePathToStorage(configPath);
   }
   setupCtxMenuEvents();
+  initAllHanaSegs();
+  // 默认 公开
+  setHanaSegActive("segGhPrivacy", "0");
+  // 替换原生 select 为 HanaSelect
+  if (typeof initHanaSelects === "function") initHanaSelects();
   initCardDrag();
   // 注册卡片（事件驱动的自动刷新）
   Cards.register("fileCard", { events: ["commit","push","pull","reset","branch-switch","refresh-all"], refresh: function(){
