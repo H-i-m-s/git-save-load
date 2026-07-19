@@ -110,10 +110,13 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
 .card{
   background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#e2e5ea);border-radius:8px;
   padding:10px 12px;margin-bottom:10px;
+  overflow:hidden;        /* 吃掉任何内部溢出，不让其越过卡片边界 */
 }
 .card-title{font-size:12px;font-weight:600;color:var(--hana-fg-muted,#6b7280);margin-bottom:6px}
 .card.dragging{opacity:.5;border-color:var(--hana-accent,#5e6ad2)}
 .card.drag-over{border-color:var(--hana-accent,#5e6ad2);border-style:dashed}
+/* GitHub 卡片里输入 + flex 行能自由收缩，不被 placeholder / 内容撑出卡片 */
+.gh-tab-content input,.gh-tab-content [style*="flex:"]{min-width:0}
 
 /* 仓库名片显示：basename为主 + origin/路径为副 */
 .repo-display{display:flex;flex-direction:column;gap:1px;min-width:0}
@@ -1492,7 +1495,17 @@ function switchGhTab(tab) {
   if (tabEl) tabEl.style.display = "";
   const btn = document.querySelector(`.gh-tab[data-tab="${tab}"]`);
   if (btn) { btn.style.background = "var(--hana-accent,#4a8cff)"; btn.style.color = "#fff"; }
+  // 切换标签后重算高度，避免上一个标签的 maxHeight 抢占造成内容溢出
+  updateGhBodyHeight();
   if (tab === "list") loadGhList();
+}
+
+// 重新贴合 ghBody 高度。逻辑：只有在打开状态才设，避免收起时无关赋值
+function updateGhBodyHeight() {
+  var ghBody = document.getElementById("ghBody");
+  if (!ghBody) return;
+  if (ghBody.style.maxHeight === "0px" || ghBody.style.maxHeight === "") return;
+  ghBody.style.maxHeight = ghBody.scrollHeight + "px";
 }
 
 function validateGhRepoName(name) {
