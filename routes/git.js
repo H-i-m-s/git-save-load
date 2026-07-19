@@ -23,6 +23,30 @@ function gitExec(cwd, cmd) {
   return execSync(cmd, { cwd, encoding: "utf8", timeout: 15000, windowsHide: true }).trim();
 }
 
+// 路径辅助函数
+function extractBasename(p) {
+  if (!p) return "";
+  return p.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).pop() || p;
+}
+
+function extractParentTail(p, depth = 2) {
+  if (!p) return "";
+  const segs = p.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean);
+  return segs.slice(-depth).join("/");
+}
+
+// 解析 git remote URL，统一成 "owner/repo" 形式用于显示
+function parseOriginUrl(url) {
+  if (!url) return "";
+  // https://host/owner/repo(.git)  /  ssh://git@host/owner/repo(.git)  /  file:///path
+  let m = url.match(/^(?:https?|ssh|file):\/\/[^/]+\/(.+?)(?:\.git)?\/?$/);
+  if (m) return m[1].replace(/\.git$/, "");
+  // git@host:owner/repo(.git)
+  m = url.match(/^[^@/]+@[^:]+:(.+?)(?:\.git)?\/?$/);
+  if (m) return m[1].replace(/\.git$/, "");
+  return url;
+}
+
 function repoPath(input) {
   return (input && String(input).trim()) || process.cwd();
 }
@@ -558,6 +582,46 @@ export default function (app, ctx) {
     const path = String(body.repoPath || "").trim();
     await writeRepoPath(ctx, path);
     return c.json({ ok: true, repoPath: path });
+  });
+
+  // ======== API: 读取仓库元信息（用于库列表面板） ========
+  // 返回 basename / path tail / 远程信息 / 默认分支，路径不论是否 git 仓库都返回
+  app.get("/api/repo-info", async (c) => {
+    const path = repoPath(c.req.query("path"));
+    const out = {
+      ok: false,
+      path,
+      basename: extractBasename(path),
+      parentTail: extractParentTail(path),
+      isGit: false,
+      origin: "",
+      defaultBranch: ""
+    };
+    if (!path) return c.json(out);
+
+    // 判断是否为 git 仓库
+    try {
+      gitExec(path, "git rev-parse --is-inside-work-tree");
+      out.isGit = true;
+    } catch {
+      return c.json(out); // 不是 git 仓库，basename 仍可用
+    }
+
+    // 远程 origin（需静默错误：未设置 remote 时 git config --get 返回 1）
+    try { out.origin = parseOriginUrl(gitExec(path, "git config --get remote.origin.url")); } catch {}
+
+    // 默认分支：先试 symbolic-ref（需先 fetch），失败则退到 init.defaultBranch，再不济给 "main"
+    try {
+      const sym = gitExec(path, "git symbolic-ref --short refs/remotes/origin/HEAD");
+      out.defaultBranch = (sym || "").replace(/^origin\//, "");
+    } catch {}
+    if (!out.defaultBranch) {
+      try { out.defaultBranch = gitExec(path, "git config init.defaultBranch") || "main"; } catch {}
+      if (!out.defaultBranch) out.defaultBranch = "main";
+    }
+
+    out.ok = true;
+    return c.json(out);
   });
 
   // ======== API: GitHub 管理 ========

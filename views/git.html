@@ -115,6 +115,21 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
 .card.dragging{opacity:.5;border-color:var(--hana-accent,#5e6ad2)}
 .card.drag-over{border-color:var(--hana-accent,#5e6ad2);border-style:dashed}
 
+/* 仓库名片显示：basename为主 + origin/路径为副 */
+.repo-display{display:flex;flex-direction:column;gap:1px;min-width:0}
+.repo-display .repo-name{font-size:13px;font-weight:600;color:var(--hana-fg,#1a1d24);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-sans-serif,system-ui,sans-serif}
+.repo-display .repo-origin{font-size:10px;color:var(--hana-accent,#4a8cff);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.repo-display .repo-tail{font-size:10px;color:var(--hana-fg-muted,#9ca3af);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* 仓库历史行 */
+.hist-row{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:4px;transition:background .12s}
+.hist-row:hover{background:var(--hana-bg,#f5f6f8)}
+.hist-row.active{background:var(--hana-accent-soft,rgba(74,140,255,.08));border-left:2px solid var(--hana-accent,#4a8cff);padding-left:4px}
+.hist-row.active .repo-name{color:var(--hana-accent,#4a8cff)}
+.hist-row .repo-display{flex:1;min-width:0}
+.hist-row .hist-del{flex-shrink:0;padding:0 4px;border:0;background:none;cursor:pointer;color:#e74c3c;font-size:12px;opacity:.5;transition:opacity .12s}
+.hist-row:hover .hist-del{opacity:1}
+
 /* 变更列表 */
 .file-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 .file-list li{padding:3px 0;display:flex;gap:6px;align-items:baseline}
@@ -1085,37 +1100,99 @@ function addRepoHistory(path) {
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch {}
 }
 
+// 仓库元信息缓存（跨请求复用，避免翻页逐个请求）—— 30s 过期
+const REPO_INFO_CACHE_TTL = 30000;
+const _repoInfoCache = new Map();
+async function fetchRepoInfo(path) {
+  if (!path) return { ok:false, basename:"", parentTail:"", isGit:false, origin:"", defaultBranch:"" };
+  const cached = _repoInfoCache.get(path);
+  if (cached && Date.now() - cached.ts < REPO_INFO_CACHE_TTL) return cached.info;
+  try {
+    const res = await fetch(apiUrl("/api/repo-info?path=" + encodeURIComponent(path)));
+    const info = await res.json();
+    _repoInfoCache.set(path, { ts: Date.now(), info });
+    return info;
+  } catch (e) {
+    return { ok:false, path, basename: path ? path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : "", parentTail: path ? path.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).slice(-2).join("/") : "", isGit:false, origin:"", defaultBranch:"" };
+  }
+}
+
+// 仓库名片渲染：basename 为主，origin/路径为副
+function formatRepoDisplay(path, info, opts = {}) {
+  const basename = (info && info.basename) || (path ? path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : "") || "未命名仓库";
+  const origin = (info && info.origin) || "";
+  const parentTail = (info && info.parentTail) || (path ? path.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).slice(-2).join("/") : "");
+  const showOrigin = opts.showOrigin !== false && origin && origin !== basename;
+  const html =
+    '<div class="repo-display" title="' + escapeHtml(path) + '">' +
+      '<div class="repo-name">' + escapeHtml(basename) + '</div>' +
+      (showOrigin ? '<div class="repo-origin">↑ ' + escapeHtml(origin) + '</div>' : '') +
+      (parentTail ? '<div class="repo-tail">…/' + escapeHtml(parentTail) + '</div>' : '') +
+    '</div>';
+  return { html, basename, origin, parentTail };
+}
+
+
 // 渲染仓库历史
-function renderRepoHistory() {
+async function renderRepoHistory() {
   const el = document.getElementById("repoHistory");
   const history = getRepoHistory();
   if (history.length === 0) { el.innerHTML = ""; return; }
+  // 先开骨架，依次填入仓库元信息（并行请求，有缓存）
   el.innerHTML = history.map((p, i) =>
-    '<div class="hist-row" style="display:flex;align-items:center;gap:4px;padding:3px 4px;font-size:11px;font-family:monospace;border-radius:4px">' +
-      '<span data-idx="' + i + '" class="hist-path" style="flex:1;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg-muted,#6b7280)">' + escapeHtml(p) + '</span>' +
-      '<button data-del="' + i + '" class="hist-del" style="flex-shrink:0;padding:0 4px;border:0;background:none;cursor:pointer;color:#e74c3c;font-size:12px">×</button>' +
+    '<div class="hist-row' + (p === currentPath ? ' active' : '') + '" data-idx="' + i + '" data-path="' + escapeHtml(p) + '" style="cursor:pointer">' +
+      '<div class="hist-slot" style="flex:1;min-width:0">' +
+        '<div class="repo-display" title="' + escapeHtml(p) + '">' +
+          '<div class="repo-name">' + escapeHtml((p ? p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : p) || '加载中…') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<button data-del="' + i + '" class="hist-del" title="从历史中移除">×</button>' +
     '</div>'
   ).join("");
+  // 并行获取每条仓库的元信息，逐个填补
+  await Promise.all(history.map(async (p) => {
+    const info = await fetchRepoInfo(p);
+    const slot = el.querySelector('.hist-row[data-path="' + CSS.escape(p) + '"] .hist-slot');
+    if (!slot) return;
+    const { html } = formatRepoDisplay(p, info);
+    slot.innerHTML = html;
+  }));
   el.onclick = function(e) {
-    var span = e.target.closest("span[data-idx]");
-    if (span) {
-      var idx = parseInt(span.getAttribute("data-idx"));
-      var h = getRepoHistory();
-      if (h[idx]) document.getElementById("pathInput").value = h[idx];
-    }
-  };
-  el.addEventListener("click", function(e) {
-    var btn = e.target.closest("button[data-del]");
-    if (btn) {
+    var row = e.target.closest("div.hist-row");
+    if (!row) return;
+    var delBtn = e.target.closest("button[data-del]");
+    if (delBtn) {
       e.stopPropagation();
-      var idx = parseInt(btn.getAttribute("data-del"));
+      var idx = parseInt(row.getAttribute("data-idx"));
       var h = getRepoHistory();
       h.splice(idx, 1);
       try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch {}
       renderRepoHistory();
+      return;
     }
-  });
+    var p = row.getAttribute("data-path");
+    if (p) document.getElementById("pathInput").value = p;
+  };
 }
+
+// 仓库名片（顶部卡片）渲染：上为 basename+origin，下为路径尾
+async function updateRepoPathDisplay(path) {
+  const el = document.getElementById("repoPathDisplay");
+  if (!el) return;
+  if (!path) {
+    el.innerHTML = '<div class="repo-display"><div class="repo-name" style="color:var(--hana-fg-muted,#9ca3af)">未设置仓库</div></div>';
+    return;
+  }
+  // 先画骨架，后台取仓库元信息后补全
+  const placeholder = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
+  el.setAttribute("data-path", path);
+  el.innerHTML = '<div class="repo-display" title="' + escapeHtml(path) + '"><div class="repo-name">' + escapeHtml(placeholder) + '</div></div>';
+  const info = await fetchRepoInfo(path);
+  // 如果中途被切走，不覆盖原填充
+  if (el.getAttribute("data-path") !== path) return;
+  el.innerHTML = formatRepoDisplay(path, info).html;
+}
+
 
 // 从插件配置读取仓库路径
 async function fetchConfigPath() {
@@ -2278,7 +2355,7 @@ async function refreshWithPath(path) {
 function renderStatus(data) {
   if (!data.ok || data.isRepo === false) {
     document.getElementById("branch").textContent = "✕";
-    document.getElementById("repoPathDisplay").textContent = data.path || currentPath || "未设置仓库路径";
+    updateRepoPathDisplay(data.path || currentPath || "");
     document.getElementById("fileList").innerHTML = '<li class="empty-hint">不是 git 仓库<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 点顶部「切换」选一个 Git 项目文件夹</span></li>';
     // 显示初始化按钮
     const initArea = document.getElementById("initArea");
@@ -2304,7 +2381,7 @@ function renderStatus(data) {
     addRepoHistory(data.path);
   }
   document.getElementById("branch").textContent = data.branch;
-  document.getElementById("repoPathDisplay").textContent = data.path;
+  updateRepoPathDisplay(data.path);
 
   const fl = document.getElementById("fileList");
   fl.innerHTML = "";
