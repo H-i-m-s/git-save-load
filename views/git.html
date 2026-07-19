@@ -938,6 +938,8 @@ var CARD_ORDER_KEY = "gsl-card-order";
 var _dragSrc = null;
 var _dropTarget = null;
 var _dropPos = ""; // "before" or "after"
+// 历史列表里"点选预期"的仓库路径；空表示交由 currentPath 决定高亮。
+var _highlightedPath = "";
 
 function initCardDrag() {
   var container = document.getElementById("panelsArea");
@@ -1138,9 +1140,10 @@ async function renderRepoHistory() {
   const el = document.getElementById("repoHistory");
   const history = getRepoHistory();
   if (history.length === 0) { el.innerHTML = ""; return; }
+  const highlight = _highlightedPath || currentPath || "";
   // 先开骨架，依次填入仓库元信息（并行请求，有缓存）
   el.innerHTML = history.map((p, i) =>
-    '<div class="hist-row' + (p === currentPath ? ' active' : '') + '" data-idx="' + i + '" data-path="' + escapeHtml(p) + '" style="cursor:pointer">' +
+    '<div class="hist-row' + (p === highlight ? ' active' : '') + '" data-idx="' + i + '" data-path="' + escapeHtml(p) + '" style="cursor:pointer">' +
       '<div class="hist-slot" style="flex:1;min-width:0">' +
         '<div class="repo-display" title="' + escapeHtml(p) + '">' +
           '<div class="repo-name">' + escapeHtml((p ? p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : p) || '加载中…') + '</div>' +
@@ -1171,8 +1174,24 @@ async function renderRepoHistory() {
       return;
     }
     var p = row.getAttribute("data-path");
-    if (p) document.getElementById("pathInput").value = p;
+    if (p) {
+      document.getElementById("pathInput").value = p;
+      if (_highlightedPath !== p) {
+        _highlightedPath = p;
+        updateHistoryHighlight();
+      }
+    }
   };
+}
+
+// 仅刷新历史列表的高亮态（避免重新拉仓库元信息）
+function updateHistoryHighlight() {
+  const el = document.getElementById("repoHistory");
+  if (!el) return;
+  const highlight = _highlightedPath || currentPath || "";
+  el.querySelectorAll(".hist-row").forEach(function(row) {
+    row.classList.toggle("active", row.getAttribute("data-path") === highlight);
+  });
 }
 
 // 仓库名片（顶部卡片）渲染：上为 basename+origin，下为路径尾
@@ -1244,6 +1263,8 @@ function editPath() {
 function cancelEditPath() {
   document.getElementById("repoPathDisplay").style.display = "";
   document.getElementById("repoPathEdit").style.display = "none";
+  _highlightedPath = "";           // 取消后预期选择复位
+  updateHistoryHighlight();
 }
 // ======== 设置 ========
 function toggleSettings() {
@@ -1665,6 +1686,7 @@ function savePath() {
   savePathToStorage(p);
   saveConfigPath(p);
   currentPath = p;
+  _highlightedPath = p;            // 点击后的“预期”路径已成为事实
   cancelEditPath();
   refresh();
 }
