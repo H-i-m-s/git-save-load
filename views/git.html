@@ -117,9 +117,10 @@ body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
 
 /* 仓库名片显示：basename为主 + origin/路径为副 */
 .repo-display{display:flex;flex-direction:column;gap:1px;min-width:0}
-.repo-display .repo-name{font-size:13px;font-weight:600;color:var(--hana-fg,#1a1d24);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-sans-serif,system-ui,sans-serif}
-.repo-display .repo-origin{font-size:10px;color:var(--hana-accent,#4a8cff);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.repo-display .repo-tail{font-size:10px;color:var(--hana-fg-muted,#9ca3af);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.repo-display .repo-name{font-size:13px;line-height:16px;font-weight:600;color:var(--hana-fg,#1a1d24);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-sans-serif,system-ui,sans-serif}
+.repo-display .repo-origin{font-size:10px;line-height:12px;min-height:12px;color:var(--hana-accent,#4a8cff);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.repo-display .repo-tail{font-size:10px;line-height:12px;min-height:12px;color:var(--hana-fg-muted,#9ca3af);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.repo-display .repo-origin.is-empty::after{content:"本地仓库";font-style:italic;opacity:.55;color:var(--hana-fg-muted,#9ca3af)}
 
 /* 仓库历史行 */
 .hist-row{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:4px;transition:background .12s}
@@ -1119,19 +1120,31 @@ async function fetchRepoInfo(path) {
   }
 }
 
-// 仓库名片渲染：basename 为主，origin/路径为副
+// 仓库名片渲染：始终渲染三行 —— basename、origin、tail。
+// origin 行是个例：info 未加载时为空，info 加载无 origin 时启用 is-empty (CSS::after 显示"本地仓库")。
+// 三个行都用 min-height 锁定，不论是否有内容都不额外撑高。
 function formatRepoDisplay(path, info, opts = {}) {
   const basename = (info && info.basename) || (path ? path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : "") || "未命名仓库";
-  const origin = (info && info.origin) || "";
+  const infoLoaded = !!(info && info.ok);
+  const realOrigin = (info && info.origin) || "";
   const parentTail = (info && info.parentTail) || (path ? path.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).slice(-2).join("/") : "");
-  const showOrigin = opts.showOrigin !== false && origin && origin !== basename;
+
+  let originHtml = "";
+  let originClass = "";
+  if (infoLoaded && realOrigin && realOrigin !== basename) {
+    originHtml = "↑ " + escapeHtml(realOrigin);
+  } else if (infoLoaded) {
+    originClass = " is-empty";   // CSS::after 显示 "本地仓库"
+  }
+  // 未加载时：originHtml 留空，originClass 也不加 = 纯空行，min-height 保住结构。
+
   const html =
     '<div class="repo-display" title="' + escapeHtml(path) + '">' +
       '<div class="repo-name">' + escapeHtml(basename) + '</div>' +
-      (showOrigin ? '<div class="repo-origin">↑ ' + escapeHtml(origin) + '</div>' : '') +
-      (parentTail ? '<div class="repo-tail">…/' + escapeHtml(parentTail) + '</div>' : '') +
+      '<div class="repo-origin' + originClass + '">' + originHtml + '</div>' +
+      '<div class="repo-tail">' + (parentTail ? "…/" + escapeHtml(parentTail) : "") + '</div>' +
     '</div>';
-  return { html, basename, origin, parentTail };
+  return { html, basename, origin: realOrigin, parentTail };
 }
 
 
@@ -1141,18 +1154,16 @@ async function renderRepoHistory() {
   const history = getRepoHistory();
   if (history.length === 0) { el.innerHTML = ""; return; }
   const highlight = _highlightedPath || currentPath || "";
-  // 先开骨架，依次填入仓库元信息（并行请求，有缓存）
-  el.innerHTML = history.map((p, i) =>
-    '<div class="hist-row' + (p === highlight ? ' active' : '') + '" data-idx="' + i + '" data-path="' + escapeHtml(p) + '" style="cursor:pointer">' +
-      '<div class="hist-slot" style="flex:1;min-width:0">' +
-        '<div class="repo-display" title="' + escapeHtml(p) + '">' +
-          '<div class="repo-name">' + escapeHtml((p ? p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : p) || '加载中…') + '</div>' +
-        '</div>' +
-      '</div>' +
+  // 一上来以 3 行骨架渲染（name、tail 都是客户端可算，origin 位置占住）
+  // —— 这样信息负载时行高不会被撑高，不产生察觉不到的行高伸长
+  el.innerHTML = history.map((p, i) => {
+    const init = formatRepoDisplay(p, null);  // name+tail 同步填上，origin 行为占位
+    return '<div class="hist-row' + (p === highlight ? ' active' : '') + '" data-idx="' + i + '" data-path="' + escapeHtml(p) + '" style="cursor:pointer">' +
+      '<div class="hist-slot" style="flex:1;min-width:0">' + init.html + '</div>' +
       '<button data-del="' + i + '" class="hist-del" title="从历史中移除">×</button>' +
-    '</div>'
-  ).join("");
-  // 并行获取每条仓库的元信息，逐个填补
+    '</div>';
+  }).join("");
+  // 并行获取每条仓库的元信息，填补 origin 行（布局高度早已预留，不跳）
   await Promise.all(history.map(async (p) => {
     const info = await fetchRepoInfo(p);
     const slot = el.querySelector('.hist-row[data-path="' + CSS.escape(p) + '"] .hist-slot');
@@ -1202,12 +1213,10 @@ async function updateRepoPathDisplay(path) {
     el.innerHTML = '<div class="repo-display"><div class="repo-name" style="color:var(--hana-fg-muted,#9ca3af)">未设置仓库</div></div>';
     return;
   }
-  // 先画骨架，后台取仓库元信息后补全
-  const placeholder = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
+  // 先按三行骨架填上（name、tail 同步可算，origin 行占住 min-height 位置）
   el.setAttribute("data-path", path);
-  el.innerHTML = '<div class="repo-display" title="' + escapeHtml(path) + '"><div class="repo-name">' + escapeHtml(placeholder) + '</div></div>';
+  el.innerHTML = formatRepoDisplay(path, null).html;
   const info = await fetchRepoInfo(path);
-  // 如果中途被切走，不覆盖原填充
   if (el.getAttribute("data-path") !== path) return;
   el.innerHTML = formatRepoDisplay(path, info).html;
 }
