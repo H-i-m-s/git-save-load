@@ -959,12 +959,33 @@ function initCardDrag() {
   container.appendChild(dropLine);
   // 元素级事件
   container.addEventListener("dragstart", function(e) {
+    // 兑底：即使 mousedown 拦截失效，也要阻止 input 上的 drag
+    if (e.target.closest('input, textarea, select, [contenteditable]')) {
+      e.preventDefault();
+      return;
+    }
     var card = e.target.closest(".card");
     if (!card) return;
     _dragSrc = card;
     card.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
   });
+  // 根本修复：mousedown 捕获阶段把所属卡片临时关掉 draggable，
+  // 让浏览器在决定"拖卡片"或"文本选择"时走文本选择路径。
+  // 注意用捕获阶段，保证发生在浏览器默认判定之前。
+  container.addEventListener("mousedown", function(e) {
+    if (!e.target.closest('input, textarea, select, [contenteditable]')) return;
+    var card = e.target.closest('.card');
+    if (!card || !card.getAttribute('draggable')) return;
+    card.setAttribute('draggable', 'false');
+    var restore = function() {
+      card.setAttribute('draggable', 'true');
+      document.removeEventListener('mouseup', restore, true);
+      document.removeEventListener('mouseleave', restore, true);
+    };
+    document.addEventListener('mouseup', restore, true);
+    document.addEventListener('mouseleave', restore, true);
+  }, true);
   container.addEventListener("dragend", function(e) {
     dropLine.style.display = "none";
     container.querySelectorAll(".card").forEach(function(c) { c.classList.remove("dragging"); });
