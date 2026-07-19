@@ -744,7 +744,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
       ⚠️ 未检测到 GitHub CLI (<code>gh</code>)。需要先安装 gh 才能使用 GitHub 功能。<br>
       前往 <a href="https://cli.github.com/" target="_blank" style="color:#5e6ad2;text-decoration:underline">cli.github.com</a> 下载安装后重启 Hana。
     </div>
-    <div style="display:flex;gap:2px;margin-bottom:8px">
+    <div style="display:flex;gap:2px;margin-top:10px;margin-bottom:8px">
       <button class="gh-tab" data-tab="create" onclick="switchGhTab('create')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">创建</button>
       <button class="gh-tab" data-tab="clone" onclick="switchGhTab('clone')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">克隆</button>
       <button class="gh-tab" data-tab="list" onclick="switchGhTab('list')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">列表</button>
@@ -1471,7 +1471,7 @@ async function loadSettingsUI() {
     set("cfgPushMode", c.pushMode);
     set("cfgPullMode", c.pullMode);
     // 新分段控件：从后端拉来的值用于点亮初始状态
-    setHanaSegActive("segDiffMode", c.defaultDiffMode);
+    setHanaSegActive("segDiffMode", c.defaultDiffMode || "detail");
     setHanaSegActive("segGhOpen", c.ghOpenMode || "internal");
     var textureEl = document.getElementById("cfgTexture");
     if (textureEl) textureEl.checked = (c.paperTexture === "on");
