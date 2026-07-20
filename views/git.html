@@ -247,9 +247,9 @@ select:disabled{opacity:.5;cursor:not-allowed}
 /* 提交历史 */
 .commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:200px;overflow-y:auto;overflow-x:auto}
 #logCard{overflow:visible}
-.commit-list.compact .commit-msg{display:none}
+.commit-list.compact .commit-msg{flex:0 0 0;min-width:0;padding:0;overflow:hidden;margin:0 -4px}
 .commit-list li{
-  display:flex;align-items:center;gap:2px;padding:4px 0;
+  display:flex;align-items:center;gap:4px;padding:4px 0;
   border-bottom:1px solid var(--hana-border,#e2e5ea);position:relative;
   min-width:320px;
 }
@@ -2980,7 +2980,11 @@ function renderLog(data) {
   // 窄屏时隐藏说明，保持右侧对齐
   if (!cl._resizeObs) {
     cl._resizeObs = new ResizeObserver(([e]) => {
-      cl.classList.toggle('compact', e.contentRect.width < 420);
+      const compact = e.contentRect.width < 300;
+      cl.classList.toggle('compact', compact);
+      cl.querySelectorAll('.commit-msg').forEach(m => {
+        m.style.flex = compact ? '0 0 0' : '1 1 0';
+      });
     });
     cl._resizeObs.observe(cl);
   }
@@ -3010,6 +3014,7 @@ function renderLog(data) {
     msgSpan.className = "commit-msg";
     msgSpan.textContent = c.message;
     msgSpan.style.flex = "1";
+    msgSpan._isMsg = true;
 
     // 3. 增删行数
     const statSpan = document.createElement("span");
