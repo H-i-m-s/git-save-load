@@ -2920,13 +2920,30 @@ async function doCompare() {
     const data = await res.json();
     if (data.ok) {
       const lines = (data.detail || '').split('\n');
-      const colored = lines.map(line => {
+      // 检测连续高亮块
+      const isHl = lines.map(l => l.startsWith('+') || l.startsWith('-') || l.startsWith('@@'));
+      const blocks = [];
+      let bi = 0;
+      while (bi < lines.length) {
+        if (isHl[bi]) {
+          const start = bi;
+          while (bi < lines.length && isHl[bi]) bi++;
+          blocks.push({ start, end: bi - 1 });
+        } else { bi++; }
+      }
+      const colored = lines.map((line, idx) => {
         let cls = '';
-        if (line.startsWith('+')) cls = 'diff-add';
-        else if (line.startsWith('-')) cls = 'diff-del';
-        else if (line.startsWith('@@')) cls = 'diff-hunk';
+        let sty = '';
+        if (line.startsWith('+')) { cls = 'diff-add'; sty = 'padding:0 2px'; }
+        else if (line.startsWith('-')) { cls = 'diff-del'; sty = 'padding:0 2px'; }
+        else if (line.startsWith('@@')) { cls = 'diff-hunk'; sty = 'padding:0 2px'; }
+        for (const b of blocks) {
+          if (idx === b.start && idx === b.end) { sty += ';border-radius:5px'; break; }
+          else if (idx === b.start) { sty += ';border-radius:5px 5px 0 0'; break; }
+          else if (idx === b.end) { sty += ';border-radius:0 0 5px 5px'; break; }
+        }
         const esc = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        return `<div style="${cls ? 'padding:0 2px' : ''}" class="${cls}">${esc}</div>`;
+        return `<div style="${sty}" class="${cls}">${esc}</div>`;
       }).join('');
       el.innerHTML = `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(data.stat)}</div>\n${colored}`;
     } else {
