@@ -277,6 +277,8 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .diff-add{background:#e6ffed;color:#1a7f37;padding:0 4px}
 .diff-del{background:#ffeef0;color:#cf222e;padding:0 4px}
 .diff-hunk{background:#f0f4ff;color:#4a8cff;padding:0 4px}
+/* diff 容器 */
+.diff-body{}
 
 /* 分支树 */
 .branch-tree{display:none}
@@ -3381,13 +3383,26 @@ function renderDiffLines(el, lines, mode) {
   const filtered = mode === 'simple'
     ? lines.filter(l => l.startsWith('+') || l.startsWith('-') || l.startsWith('@@'))
     : lines;
-  el.innerHTML = (filtered.length === 0 ? '<div style="color:var(--hana-fg-muted,#6b7280);padding:4px">(没有变更)</div>' : filtered.map(line => {
+  const count = filtered.length;
+  el.innerHTML = (count === 0 ? '<div style="color:var(--hana-fg-muted,#6b7280);padding:4px">(没有变更)</div>' : filtered.map((line, index) => {
     let cls = '';
     let style = '';
     if (line.startsWith('+')) { cls = 'diff-add'; style = 'padding:0 4px'; }
     else if (line.startsWith('-')) { cls = 'diff-del'; style = 'padding:0 4px'; }
     else if (line.startsWith('@@')) { cls = 'diff-hunk'; style = 'padding:0 4px'; }
     else if (mode === 'detail') { style = 'padding:0 4px;color:var(--hana-fg-muted,#6b7280)'; }
+    
+    // 添加圆角：第一行顶部圆角，最后一行底部圆角，单行全圆角
+    if (count > 1) {
+      if (index === 0) {
+        style += ';border-radius:5px 5px 0 0';
+      } else if (index === count - 1) {
+        style += ';border-radius:0 0 5px 5px';
+      }
+    } else {
+      style += ';border-radius:5px';
+    }
+    
     const esc = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     return `<div style="${style}" class="${cls}">${esc}</div>`;
   }).join(''));
@@ -3406,7 +3421,7 @@ async function toggleDiff(file, nameEl) {
   const container = document.createElement("div");
   container.className = "diff-inline";
   container.dataset.file = file;
-  container.style.cssText = "padding:8px 10px;margin:4px 0;border:1px solid var(--hana-border,#e2e5ea);border-radius:6px;font-size:11px;font-family:monospace;line-height:1.6;background:var(--hana-bg,#f5f6f8);resize:vertical;overflow-x:hidden;overflow-y:auto;min-height:60px;max-height:300px;white-space:pre-wrap;word-break:break-all";
+  container.style.cssText = "padding:8px 10px;margin:4px 0;border:1px solid var(--hana-border,#e2e5ea);border-radius:8px;font-size:11px;font-family:monospace;line-height:1.6;background:var(--hana-bg,#f5f6f8);resize:vertical;overflow-x:hidden;overflow-y:auto;min-height:60px;max-height:300px;white-space:pre-wrap;word-break:break-all";
   container.textContent = "加载中...";
   li.parentNode.insertBefore(container, li.nextSibling);
 
