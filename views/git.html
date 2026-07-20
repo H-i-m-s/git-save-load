@@ -3105,6 +3105,11 @@ function renderLog(data) {
     items.forEach(function(el) { li.appendChild(el); });
     cl.appendChild(li);
   }
+
+  // 渲染完立即应用 compact 状态
+  if (cl.classList.contains('compact')) {
+    cl.querySelectorAll('.commit-msg').forEach(m => { m.style.flex = '0 0 0'; });
+  }
 }
 
 // 提交
