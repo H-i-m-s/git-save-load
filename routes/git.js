@@ -18,9 +18,27 @@ async function loadHtml() {
   return cachedHtml;
 }
 
+// 缓存用户级代理环境变量，避免每次 git 调用都查询 Windows 注册表
+let _cachedUserProxy = null;
+function getUserProxy() {
+  if (_cachedUserProxy) return _cachedUserProxy;
+  _cachedUserProxy = {};
+  try {
+    const userHttps = execSync('[System.Environment]::GetEnvironmentVariable("HTTPS_PROXY", "User")', { encoding: 'utf8', shell: 'powershell', windowsHide: true }).trim();
+    const userHttp = execSync('[System.Environment]::GetEnvironmentVariable("HTTP_PROXY", "User")', { encoding: 'utf8', shell: 'powershell', windowsHide: true }).trim();
+    if (userHttps) _cachedUserProxy.HTTPS_PROXY = userHttps;
+    if (userHttp) _cachedUserProxy.HTTP_PROXY = userHttp;
+  } catch {}
+  return _cachedUserProxy;
+}
+
 // 执行 git 命令的辅助函数
-function gitExec(cwd, cmd) {
-  return execSync(cmd, { cwd, encoding: "utf8", timeout: 15000, windowsHide: true }).trim();
+function gitExec(cwd, cmd, opts = {}) {
+  const timeout = opts.timeout || 60000;
+  const env = { ...process.env, ...getUserProxy() };
+  // Windows 上 HOME 通常未设置，OpenSSH 靠它找 .ssh/config 和 known_hosts
+  if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
+  return execSync(cmd, { cwd, encoding: "utf8", timeout, windowsHide: true, env }).trim();
 }
 
 // 路径辅助函数
@@ -628,6 +646,7 @@ export default function (app, ctx) {
   function ghExec(args) {
     // 直接读取Windows用户环境变量，确保代理等配置生效
     const env = { ...process.env };
+    if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
     try {
       const userHttps = execSync('[System.Environment]::GetEnvironmentVariable("HTTPS_PROXY", "User")', { encoding: 'utf8', shell: 'powershell', windowsHide: true }).trim();
       const userHttp = execSync('[System.Environment]::GetEnvironmentVariable("HTTP_PROXY", "User")', { encoding: 'utf8', shell: 'powershell', windowsHide: true }).trim();
@@ -799,7 +818,7 @@ export default function (app, ctx) {
     const path = repoPath(body.path);
     try {
       const actualBranch = gitExec(path, "git branch --show-current");
-      const raw = gitExec(path, `git pull --no-rebase origin "${actualBranch}" 2>&1`);
+      const raw = gitExec(path, `git pull --no-rebase origin "${actualBranch}" 2>&1`, { timeout: 120000 });
       const alreadyUpToDate = raw.includes("Already up to date") || raw.includes("Already up-to-date");
       return c.json({ ok: true, message: alreadyUpToDate ? "已经是最新" : "拉取成功" });
     } catch (e) {
@@ -832,7 +851,7 @@ export default function (app, ctx) {
     const branch = String(body.branch || "").trim();
     try {
       const actualBranch = branch || gitExec(path, "git branch --show-current");
-      const raw = gitExec(path, `git push "${remote}" "${actualBranch}" 2>&1`);
+      const raw = gitExec(path, `git push "${remote}" "${actualBranch}" 2>&1`, { timeout: 120000 });
       const upToDate = raw.includes("up-to-date") || raw.includes("Everything up-to-date");
       return c.json({ ok: true, message: upToDate ? "没有新提交需要推送" : "推送成功" });
     } catch (e) {
