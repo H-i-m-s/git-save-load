@@ -245,18 +245,22 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .commit-area button:hover:not(:disabled){opacity:.85}
 
 /* 提交历史 */
-.commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:200px;overflow-y:auto}
+.commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:200px;overflow-y:auto;overflow-x:auto}
+#logCard{overflow:visible}
+.commit-list.compact .commit-msg{display:none}
 .commit-list li{
-  display:flex;align-items:center;gap:6px;padding:5px 0;
+  display:flex;align-items:center;gap:2px;padding:4px 0;
   border-bottom:1px solid var(--hana-border,#e2e5ea);position:relative;
+  min-width:320px;
 }
 .commit-list li:last-child{border-bottom:0}
 .commit-hash{color:var(--hana-accent,#4a8cff);cursor:pointer;font-weight:500}
 .commit-msg{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
 .commit-date{font-size:11px;color:var(--hana-fg-muted,#6b7280);white-space:nowrap}
 .btn-rollback{
-  padding:2px 8px;border:1px solid #e74c3c;border-radius:4px;
+  padding:1px 6px;border:1px solid #e74c3c;border-radius:4px;
   background:transparent;color:#e74c3c;font-size:11px;cursor:pointer;transition:all .15s;
+  flex-shrink:0;width:38px;text-align:center;
 }
 .btn-rollback:hover{background:#e74c3c;color:#fff}
 
@@ -2973,6 +2977,14 @@ function renderLog(data) {
   const cl = document.getElementById("commitList");
   cl.innerHTML = "";
 
+  // 窄屏时隐藏说明，保持右侧对齐
+  if (!cl._resizeObs) {
+    cl._resizeObs = new ResizeObserver(([e]) => {
+      cl.classList.toggle('compact', e.contentRect.width < 420);
+    });
+    cl._resizeObs.observe(cl);
+  }
+
   if (!data.ok || !data.commits || data.commits.length === 0) {
     cl.innerHTML = '<li class="empty-hint">暂无提交记录<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 改一下文件，然后点上面的「存档」按钮</span></li>';
     return;
@@ -2988,7 +3000,7 @@ function renderLog(data) {
     // 1. 日期时间（主标识）- 始终显示 "MM-DD HH:MM" 或 "昨天 HH:MM" 或 "MM-DD"
     const dateSpan = document.createElement("span");
     dateSpan.className = "commit-date-primary";
-    dateSpan.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:600;color:var(--hana-accent,#5e6ad2);background:rgba(94,106,210,.08);padding:2px 7px;border-radius:4px;flex-shrink:0;white-space:nowrap;min-width:78px;text-align:center;cursor:pointer";
+    dateSpan.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:600;color:var(--hana-accent,#5e6ad2);background:rgba(94,106,210,.08);padding:2px 5px;border-radius:4px;flex-shrink:0;white-space:nowrap;min-width:68px;text-align:center;cursor:pointer";
     dateSpan.textContent = formatCommitDateFull(c.date);
     dateSpan.title = c.date || "";
     dateSpan.onclick = () => doReset(c.hash);
@@ -3002,17 +3014,17 @@ function renderLog(data) {
     // 3. 增删行数
     const statSpan = document.createElement("span");
     if (c.added || c.deleted) {
-      statSpan.style.cssText = "font-size:10px;white-space:nowrap;margin:0 4px";
+      statSpan.style.cssText = "font-size:10px;white-space:nowrap;margin:0 2px;width:48px;text-align:right";
       statSpan.innerHTML = `<span style="color:#27ae60;font-weight:600">+${c.added}</span>/<span style="color:#e74c3c;font-weight:600">-${c.deleted}</span>`;
     } else {
-      statSpan.style.cssText = "font-size:10px;color:var(--hana-fg-muted,#6b7280);margin:0 4px";
+      statSpan.style.cssText = "font-size:10px;color:var(--hana-fg-muted,#6b7280);margin:0 2px;width:48px;text-align:right";
       statSpan.textContent = "—";
     }
 
     // 4. hash 缩到辅助位置（小字、淡色、hover 提示）
     const hashSpan = document.createElement("span");
     hashSpan.className = "commit-hash-secondary";
-    hashSpan.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--hana-fg-muted,#9ca3af);flex-shrink:0;cursor:pointer;padding:0 4px";
+    hashSpan.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--hana-fg-muted,#9ca3af);flex-shrink:0;cursor:pointer;padding:0 3px;width:48px;text-align:center";
     hashSpan.textContent = display;
     hashSpan.title = "点击查看完整 hash / 复制 / 回滚";
     hashSpan.onclick = (e) => { e.stopPropagation(); doReset(c.hash); };
@@ -3021,7 +3033,7 @@ function renderLog(data) {
     let tagBadge = null;
     if (c.tag) {
       tagBadge = document.createElement("span");
-      tagBadge.style.cssText = "font-size:10px;color:#fff;background:#8b5cf6;padding:1px 5px;border-radius:3px;flex-shrink:0;margin:0 2px";
+      tagBadge.style.cssText = "font-size:10px;color:#fff;background:#8b5cf6;padding:1px 4px;border-radius:3px;flex-shrink:0;margin:0 1px;width:44px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
       tagBadge.textContent = c.tag;
     }
 
@@ -3051,7 +3063,7 @@ function renderLog(data) {
     amendBtn.className = "btn-amend";
     amendBtn.textContent = "✏️";
     amendBtn.title = "修改这条提交的说明（仅最近一条可改）";
-    amendBtn.style.cssText = "padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:11px;cursor:pointer;flex-shrink:0;margin:0 2px";
+    amendBtn.style.cssText = "padding:1px 5px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:11px;cursor:pointer;flex-shrink:0;margin:0 1px;width:24px;text-align:center";
     amendBtn.onclick = (e) => { e.stopPropagation(); doAmendMessage(c); };
 
     // 回滚按钮
@@ -3064,7 +3076,7 @@ function renderLog(data) {
     let compareBtn = null;
     if (compareMode) {
       compareBtn = document.createElement("button");
-      compareBtn.style.cssText = "padding:1px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;cursor:pointer;background:transparent";
+      compareBtn.style.cssText = "padding:1px 5px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;cursor:pointer;background:transparent;flex-shrink:0;width:24px;text-align:center";
       if (c.hash === compareFrom) {
         compareBtn.textContent = "←旧";
         compareBtn.style.borderColor = "#4a8cff";
