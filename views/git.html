@@ -637,7 +637,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
   </div>
   <div id="stashPanel">
     <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
-      <input type="text" id="stashMsg" placeholder="暂存备注（可选）" autocomplete="off" style="flex:1;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none">
+      <input type="text" id="stashMsg" placeholder="暂存备注（可选）" autocomplete="off" style="flex:1;min-width:108px;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none">
       <button id="btnStashPush" onclick="doStashPush()" style="padding:5px 12px;border:0;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;background:var(--hana-accent,#4a8cff);color:#fff;white-space:nowrap">暂存</button>
     </div>
     <ul id="stashList" style="list-style:none;padding:0;margin:0;display:none"></ul>
