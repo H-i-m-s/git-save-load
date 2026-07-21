@@ -245,7 +245,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .commit-area button:hover:not(:disabled){opacity:.85}
 
 /* 提交历史 */
-.commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:200px;overflow-y:auto;overflow-x:auto;padding-right:2px}
+.commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:200px;overflow-y:auto;overflow-x:auto;padding-right:3px}
 #logCard{overflow:visible}
 .commit-list li{
   display:flex;align-items:center;gap:4px;padding:4px 0;
@@ -2994,7 +2994,7 @@ function renderLog(data) {
     // 1. 日期时间（主标识）- 始终显示 "MM-DD HH:MM" 或 "昨天 HH:MM" 或 "MM-DD"
     const dateSpan = document.createElement("span");
     dateSpan.className = "commit-date-primary";
-    dateSpan.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:600;color:var(--hana-accent,#5e6ad2);background:rgba(94,106,210,.08);padding:2px 5px;border-radius:4px;flex-shrink:0;white-space:nowrap;min-width:68px;text-align:center;cursor:pointer";
+    dateSpan.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:600;color:var(--hana-accent,#5e6ad2);background:rgba(94,106,210,.08);padding:2px 0;border-radius:4px;flex-shrink:0;white-space:nowrap;min-width:68px;text-align:center;cursor:pointer";
     dateSpan.textContent = formatCommitDateFull(c.date);
     dateSpan.title = c.date || "";
     dateSpan.onclick = () => doReset(c.hash);
@@ -3008,11 +3008,12 @@ function renderLog(data) {
 
     // 3. 增删行数
     const statSpan = document.createElement("span");
+    statSpan.className = "commit-stat";
     if (c.added || c.deleted) {
-      statSpan.style.cssText = "font-size:10px;white-space:nowrap;width:48px;text-align:right;flex-shrink:0";
+      statSpan.style.cssText = "font-size:10px;white-space:nowrap;min-width:32px;text-align:right;flex-shrink:0";
       statSpan.innerHTML = `<span style="color:#27ae60;font-weight:600">+${c.added}</span>/<span style="color:#e74c3c;font-weight:600">-${c.deleted}</span>`;
     } else {
-      statSpan.style.cssText = "font-size:10px;color:var(--hana-fg-muted,#6b7280);width:48px;text-align:right;flex-shrink:0";
+      statSpan.style.cssText = "font-size:10px;color:var(--hana-fg-muted,#6b7280);min-width:32px;text-align:right;flex-shrink:0";
       statSpan.textContent = "—";
     }
 
@@ -3095,6 +3096,17 @@ function renderLog(data) {
     items.forEach(function(el) { li.appendChild(el); });
     cl.appendChild(li);
   }
+
+  // 统一 diff 列宽度
+  const statEls = cl.querySelectorAll('.commit-stat');
+  let maxStatWidth = 32;
+  statEls.forEach(el => {
+    const w = el.scrollWidth;
+    if (w > maxStatWidth) maxStatWidth = w;
+  });
+  statEls.forEach(el => {
+    el.style.width = maxStatWidth + 'px';
+  });
 }
 
 // 提交
