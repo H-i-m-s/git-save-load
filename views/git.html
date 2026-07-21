@@ -517,7 +517,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
 <div id="mainInterface">
 
 <div class="header">
-  <h1>Save/Load <span style="font-size:11px;font-weight:400;color:var(--hana-fg-muted,#6b7280)">v1.0</span></h1>
+  <h1>Save/Load <span id="pluginVersion" style="font-size:11px;font-weight:400;color:var(--hana-fg-muted,#6b7280)">v...</span></h1>
   <span class="branch" id="branch" onclick="toggleBranchTree()" style="cursor:pointer" title="点击查看分支树">—</span>
   <button class="btn-refresh" id="btnRefresh" onclick="doRefreshAll()">↻</button>
   
@@ -4086,6 +4086,14 @@ async function submitIdentitySetup() {
   // 应用主题
   var savedTheme = localStorage.getItem("git-sl-theme") || "auto";
   applyTheme(savedTheme);
+  // 获取插件版本号
+  try {
+    const versionRes = await fetch(apiUrl("/api/plugin-version"));
+    const versionData = await versionRes.json();
+    if (versionData.ok && versionData.version) {
+      document.getElementById("pluginVersion").textContent = "v" + versionData.version;
+    }
+  } catch (e) {}
   var configPath = await fetchConfigPath();
   if (configPath) {
     savePathToStorage(configPath);

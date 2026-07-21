@@ -921,4 +921,15 @@ export default function (app, ctx) {
       return c.json({ ok: true });
     } catch (e) { return c.json({ ok: false, message: e.message }); }
   });
+
+  // 返回插件版本号（从 manifest.json 读取）
+  app.get("/api/plugin-version", async (c) => {
+    try {
+      const manifestPath = join(__dirname, "..", "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      return c.json({ ok: true, version: manifest.version || "unknown" });
+    } catch (e) {
+      return c.json({ ok: false, version: "unknown" });
+    }
+  });
 }
