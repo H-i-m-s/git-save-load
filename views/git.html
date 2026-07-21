@@ -245,17 +245,15 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .commit-area button:hover:not(:disabled){opacity:.85}
 
 /* 提交历史 */
-.commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:200px;overflow-y:auto;overflow-x:auto}
+.commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:200px;overflow-y:auto;overflow-x:auto;padding-right:2px}
 #logCard{overflow:visible}
-.commit-list.compact .commit-msg{flex:0 0 0;min-width:0;padding:0;overflow:hidden;margin:0 -4px}
 .commit-list li{
   display:flex;align-items:center;gap:4px;padding:4px 0;
   border-bottom:1px solid var(--hana-border,#e2e5ea);position:relative;
-  min-width:320px;
 }
 .commit-list li:last-child{border-bottom:0}
 .commit-hash{color:var(--hana-accent,#4a8cff);cursor:pointer;font-weight:500}
-.commit-msg{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+.commit-msg{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
 .commit-date{font-size:11px;color:var(--hana-fg-muted,#6b7280);white-space:nowrap}
 .btn-rollback{
   padding:1px 6px;border:1px solid #e74c3c;border-radius:4px;
@@ -2977,17 +2975,9 @@ function renderLog(data) {
   const cl = document.getElementById("commitList");
   cl.innerHTML = "";
 
-  // 窄屏时隐藏说明，保持右侧对齐
-  if (!cl._resizeObs) {
-    cl._resizeObs = new ResizeObserver(([e]) => {
-      const compact = e.contentRect.width < 300;
-      cl.classList.toggle('compact', compact);
-      cl.querySelectorAll('.commit-msg').forEach(m => {
-        m.style.flex = compact ? '0 0 0' : '1 1 0';
-      });
-    });
-    cl._resizeObs.observe(cl);
-  }
+  // 说明列 flex:1 1 0 → 容器宽度响应天然渐进：
+  // - 容器宽度 ≤ 必需列总宽（≈256px）：其他列已占满 li，msg = 0（说明列被压没）
+  // - 容器宽度 > 必需列总宽：msg 从剩余空间逐渐扩张，列间距保持 4px
 
   if (!data.ok || !data.commits || data.commits.length === 0) {
     cl.innerHTML = '<li class="empty-hint">暂无提交记录<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 改一下文件，然后点上面的「存档」按钮</span></li>';
@@ -3019,10 +3009,10 @@ function renderLog(data) {
     // 3. 增删行数
     const statSpan = document.createElement("span");
     if (c.added || c.deleted) {
-      statSpan.style.cssText = "font-size:10px;white-space:nowrap;margin:0 2px;width:48px;text-align:right";
+      statSpan.style.cssText = "font-size:10px;white-space:nowrap;width:48px;text-align:right;flex-shrink:0";
       statSpan.innerHTML = `<span style="color:#27ae60;font-weight:600">+${c.added}</span>/<span style="color:#e74c3c;font-weight:600">-${c.deleted}</span>`;
     } else {
-      statSpan.style.cssText = "font-size:10px;color:var(--hana-fg-muted,#6b7280);margin:0 2px;width:48px;text-align:right";
+      statSpan.style.cssText = "font-size:10px;color:var(--hana-fg-muted,#6b7280);width:48px;text-align:right;flex-shrink:0";
       statSpan.textContent = "—";
     }
 
@@ -3038,7 +3028,7 @@ function renderLog(data) {
     let tagBadge = null;
     if (c.tag) {
       tagBadge = document.createElement("span");
-      tagBadge.style.cssText = "font-size:10px;color:#fff;background:#8b5cf6;padding:1px 4px;border-radius:3px;flex-shrink:0;margin:0 1px;width:44px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+      tagBadge.style.cssText = "font-size:10px;color:#fff;background:#8b5cf6;padding:1px 4px;border-radius:3px;flex-shrink:0;width:44px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
       tagBadge.textContent = c.tag;
     }
 
@@ -3068,7 +3058,7 @@ function renderLog(data) {
     amendBtn.className = "btn-amend";
     amendBtn.textContent = "✏️";
     amendBtn.title = "修改这条提交的说明（仅最近一条可改）";
-    amendBtn.style.cssText = "padding:1px 5px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:11px;cursor:pointer;flex-shrink:0;margin:0 1px;width:24px;text-align:center";
+    amendBtn.style.cssText = "padding:1px 5px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:11px;cursor:pointer;flex-shrink:0;width:24px;text-align:center";
     amendBtn.onclick = (e) => { e.stopPropagation(); doAmendMessage(c); };
 
     // 回滚按钮
@@ -3104,11 +3094,6 @@ function renderLog(data) {
     items.push(amendBtn, rbBtn, tip);
     items.forEach(function(el) { li.appendChild(el); });
     cl.appendChild(li);
-  }
-
-  // 渲染完立即应用 compact 状态
-  if (cl.classList.contains('compact')) {
-    cl.querySelectorAll('.commit-msg').forEach(m => { m.style.flex = '0 0 0'; });
   }
 }
 
