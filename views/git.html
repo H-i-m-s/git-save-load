@@ -199,7 +199,15 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .card.dragging{opacity:.5;border-color:var(--hana-accent,#5e6ad2)}
 .card.drag-over{border-color:var(--hana-accent,#5e6ad2);border-style:dashed}
 /* GitHub 卡片里输入 + flex 行能自由收缩，不被 placeholder / 内容撑出卡片 */
+.gh-tab-content{width:100%;min-width:0}
 .gh-tab-content input,.gh-tab-content [style*="flex:"]{min-width:0}
+#ghCard{overflow:visible}
+#ghConnectRepoStatus,#ghConnectResult,#ghCreateResult,#ghCloneResult,#ghSearchStatus,#ghSearchResult{
+  min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;line-height:1.5;
+}
+#ghConnectRepoRow .hana-select{width:100%;min-width:0;flex:1}
+#ghConnectRepoSelect{min-width:0;width:100%}
+#ghHelpBubble{z-index:10000!important;max-height:calc(100vh - 16px);overflow-y:auto;overflow-wrap:anywhere;word-break:break-word}
 
 /* 仓库名片显示：basename为主 + origin/路径为副 */
 .repo-display{display:flex;flex-direction:column;gap:1px;min-width:0}
@@ -750,24 +758,58 @@ select:disabled{opacity:.5;cursor:not-allowed}
     </div>
     <div style="display:flex;gap:2px;margin-top:10px;margin-bottom:8px">
       <button class="gh-tab" data-tab="create" onclick="switchGhTab('create')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">创建</button>
-      <button class="gh-tab" data-tab="clone" onclick="switchGhTab('clone')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">克隆</button>
-      <button class="gh-tab" data-tab="list" onclick="switchGhTab('list')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">列表</button>
-      <button class="gh-tab" data-tab="search" onclick="switchGhTab('search')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">搜索</button>
+      <button class="gh-tab" data-tab="connect" onclick="switchGhTab('connect')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">关联</button>
+      <button class="gh-tab" data-tab="clone" onclick="switchGhTab('clone')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">克隆</button>
+      <button class="gh-tab" data-tab="list" onclick="switchGhTab('list')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">列表</button>
+      <button class="gh-tab" data-tab="search" onclick="switchGhTab('search')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">搜索</button>
     </div>
 
 
   <!-- 创建 -->
   <div class="gh-tab-content" id="ghTabCreate">
-    <div style="display:flex;gap:4px;margin-bottom:6px">
-      <input type="text" id="ghRepoName" placeholder="仓库名" autocomplete="off" style="flex:1;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none">
-      <div class="hana-seg" id="segGhPrivacy" style="float:none">
+    <div style="margin-bottom:6px">
+      <input type="text" id="ghRepoName" placeholder="仓库名" autocomplete="off" style="width:100%;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
+    </div>
+    <div style="display:flex;align-items:stretch;gap:4px;margin-bottom:6px">
+      <div class="hana-seg" id="segGhPrivacy" style="float:none;flex:1;min-width:0">
         <button type="button" class="hana-seg-btn" data-value="0">公开</button>
         <button type="button" class="hana-seg-btn" data-value="1">私有</button>
+      </div>
+      <div id="ghLicenseWrap" style="flex:1;min-width:0;display:flex">
+        <select id="ghLicense" style="font-size:11px">
+          <option value="">无许可证</option>
+          <option value="MIT">MIT License</option>
+          <option value="Apache-2.0">Apache License 2.0</option>
+          <option value="GPL-3.0">GNU GPLv3</option>
+          <option value="BSD-3-Clause">BSD 3-Clause</option>
+          <option value="LGPL-3.0">GNU LGPLv3</option>
+          <option value="MPL-2.0">Mozilla Public License 2.0</option>
+          <option value="Unlicense">The Unlicense</option>
+        </select>
       </div>
     </div>
     <input type="text" id="ghRepoDesc" placeholder="描述（可选）" autocomplete="off" style="width:100%;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
     <button onclick="ghCreateRepo()" style="margin-top:6px;width:100%;padding:6px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">在 GitHub 创建</button>
     <div id="ghCreateResult" style="margin-top:6px;font-size:11px"></div>
+  </div>
+
+  <!-- 关联已有仓库 -->
+  <div class="gh-tab-content" id="ghTabConnect" style="display:none">
+    <div id="ghConnectRepoRow" style="display:flex;align-items:center;gap:4px;margin-bottom:6px;min-width:0">
+      <div id="ghConnectRepoSelectWrap" style="display:flex;flex:1;min-width:0">
+        <select id="ghConnectRepoSelect" onchange="onGhConnectRepoSelect()" style="width:100%;font-size:12px">
+          <option value="">点击此处加载我的 GitHub 仓库</option>
+        </select>
+      </div>
+      <button onclick="loadGhConnectRepos()" style="padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:11px;background:transparent;color:var(--hana-fg-muted,#6b7280);cursor:pointer;flex-shrink:0;white-space:nowrap">刷新</button>
+    </div>
+    <input type="text" id="ghConnectUrl" placeholder="或输入远程 URL，如 https://github.com/user/repo.git" autocomplete="off" style="width:100%;margin-top:0;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box" onkeydown="ghConnectEnter(event)">
+    <div style="display:flex;gap:4px;margin-top:4px">
+      <input type="text" id="ghConnectRemote" value="origin" placeholder="远程名称" autocomplete="off" style="flex:1;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none">
+      <button onclick="ghConnectRepo()" style="padding:5px 10px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">关联当前仓库</button>
+    </div>
+    <div id="ghConnectRepoStatus" style="margin-top:3px;font-size:10px;color:var(--hana-fg-muted,#6b7280)"></div>
+    <div id="ghConnectResult" style="margin-top:6px;font-size:11px"></div>
   </div>
 
   <!-- 克隆 -->
@@ -811,10 +853,14 @@ select:disabled{opacity:.5;cursor:not-allowed}
 </div>
 
 <!-- GitHub 帮助气泡 -->
-<div id="ghHelpBubble" style="display:none;position:fixed;z-index:1000;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.8;box-shadow:0 4px 12px rgba(0,0,0,0.12);max-width:300px">
+<div id="ghHelpBubble" style="display:none;position:fixed;z-index:10000;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.8;box-shadow:0 4px 12px rgba(0,0,0,0.12);max-width:300px">
   <div style="font-weight:600;margin-bottom:4px">GitHub 卡片</div>
   <div style="margin-bottom:6px;font-size:11px;color:var(--hana-fg-muted,#6b7280)">
     此卡片的功能依赖 GitHub CLI (<code>gh</code>) 工具。
+  </div>
+  <div style="margin-bottom:8px;padding:7px 8px;background:var(--hana-bg,#f5f6f8);border-radius:5px;font-size:11px;line-height:1.6">
+    <b>关联已有仓库：</b><br>
+    将当前选中的本地仓库连接到已经存在的 GitHub 远程仓库，不会删除本地文件。可以从仓库列表选择，也可以手动输入 URL；如果远程名称已存在，系统会先展示原地址并要求确认替换。
   </div>
   <div style="margin-bottom:4px;font-size:11px">
     <b>安装指南：</b>
@@ -939,10 +985,11 @@ select:disabled{opacity:.5;cursor:not-allowed}
 </div>
 
 <!-- 确认弹窗 -->
-<div id="confirmModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:999;background:rgba(0,0,0,0.3);padding:20px;overflow:auto;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif;scrollbar-width:none;-ms-overflow-style:none" onclick="if(event.target===this){this.style.display='none';confirmCallback(false)}">
+<div id="confirmModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:999;background:rgba(0,0,0,0.3);padding:20px;overflow:auto;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif;scrollbar-width:none;-ms-overflow-style:none" onclick="if(event.target===this){this.style.display='none';if(confirmCallback)confirmCallback(false)}">
   <div style="background:var(--hana-surface,#fff);border-radius:12px;width:94%;margin:5vh auto;padding:22px;text-align:left;color:var(--hana-fg,#1a1d24);box-shadow:0 8px 30px rgba(0,0,0,.2);overflow:hidden">
-    <div style="font-size:15px;font-weight:700;margin-bottom:10px">↩️ 回滚到指定版本</div>
-    <div id="confirmMsg" style="margin-bottom:16px;font-size:13px;line-height:1.6;color:var(--hana-fg-muted,#6b7280)"></div>
+    <div id="confirmTitle" style="font-size:15px;font-weight:700;margin-bottom:10px">↩️ 回滚到指定版本</div>
+    <div id="confirmMsg" style="margin-bottom:10px;font-size:13px;line-height:1.6;color:var(--hana-fg-muted,#6b7280)"></div>
+    <div id="confirmDetails" style="display:none;margin-bottom:16px;padding:10px;border-radius:8px;background:var(--hana-bg-muted,#f6f7f7);font-size:11px;line-height:1.6;max-height:240px;overflow:auto"></div>
     <!-- 回滚模式选择器（带中文说明）-->
     <div id="modeSelector" style="display:none;margin-bottom:8px">
       <div style="font-size:12px;font-weight:600;color:var(--hana-fg,#1a1d24);margin-bottom:8px">回滚到什么程度？</div>
@@ -974,8 +1021,8 @@ select:disabled{opacity:.5;cursor:not-allowed}
       </div>
     </div>
     <div style="display:flex;gap:10px;justify-content:center">
-      <button id="confirmCancelBtn" onclick="document.getElementById('confirmModal').style.display='none';confirmCallback(false)" style="padding:6px 18px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:13px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">取消</button>
-      <button id="confirmOkBtn" onclick="document.getElementById('confirmModal').style.display='none';confirmCallback(true)" style="padding:6px 18px;border:0;border-radius:6px;font-size:13px;font-weight:500;background:#e74c3c;color:#fff;cursor:pointer">确定</button>
+      <button id="confirmCancelBtn" onclick="document.getElementById('confirmModal').style.display='none';if(confirmCallback)confirmCallback(false)" style="padding:6px 18px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:13px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">取消</button>
+      <button id="confirmOkBtn" onclick="document.getElementById('confirmModal').style.display='none';if(confirmCallback)confirmCallback(true)" style="padding:6px 18px;border:0;border-radius:6px;font-size:13px;font-weight:500;background:#e74c3c;color:#fff;cursor:pointer">确定</button>
     </div>
   </div>
 </div>
@@ -1425,6 +1472,7 @@ function toggleSettings() {
     body.style.maxHeight = body.scrollHeight + "px";
     if (toggle) toggle.textContent = "▾";
   }
+  requestHostResize();
 }
 
 // === 分段按钮助手（HanaSegments） ===
@@ -1593,6 +1641,31 @@ async function saveSetting(key, val, silent) {
   } catch { if (!silent) toast("保存失败", "err"); }
 }
 
+// ======== 容器高度同步 ========
+var _lastHostHeight = 0;
+function requestHostResize() {
+  if (typeof requestAnimationFrame !== "function") return;
+  requestAnimationFrame(function() {
+    var doc = document.documentElement;
+    var body = document.body;
+    var contentHeight = Math.max(260, doc ? doc.scrollHeight : 0, body ? body.scrollHeight : 0);
+    var height = contentHeight;
+    var help = document.getElementById("ghHelpBubble");
+    if (help && help.style.display !== "none") {
+      var helpRect = help.getBoundingClientRect();
+      height = Math.max(height, helpRect.bottom + 12);
+    }
+    height = Math.min(height, contentHeight + 320);
+    if (Math.abs(height - _lastHostHeight) < 2) return;
+    _lastHostHeight = height;
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: "resize-request", payload: { height: height } }, "*");
+      }
+    } catch {}
+  });
+}
+
 // ======== GitHub 面板 ========
 function toggleGhPanel() {
   var body = document.getElementById("ghBody");
@@ -1603,11 +1676,13 @@ function toggleGhPanel() {
     body.style.maxHeight = "0px";
     if (toggle) toggle.textContent = "▸";
   } else {
-    body.style.maxHeight = body.scrollHeight + "px";
+    body.style.maxHeight = "0px";
     if (toggle) toggle.textContent = "▾";
     switchGhTab("create");
-    loadGhList();
+    requestAnimationFrame(updateGhBodyHeight);
   }
+  requestHostResize();
+  if (open) setTimeout(requestHostResize, 240);
 }
 
 function showBranchColorHelp() {
@@ -1632,29 +1707,47 @@ function showBranchColorHelp() {
 
 function showGhHelp(e) {
   if (!e) e = window.event;
-  var btn = e.target;
+  var btn = e.currentTarget || e.target;
   var bubble = document.getElementById("ghHelpBubble");
-  if (bubble.style.display !== "none") { bubble.style.display = "none"; return; }
-  var rect = btn.getBoundingClientRect();
-  bubble.style.left = Math.max(4, rect.right - 280) + "px";
-  // 如果下方空间不够，显示在按钮上方
-  if (rect.bottom + 200 > window.innerHeight) {
-    bubble.style.top = (rect.top - 4) + "px";
-    bubble.style.transform = "translateY(-100%)";
-  } else {
-    bubble.style.top = (rect.bottom + 4) + "px";
-    bubble.style.transform = "";
+  if (bubble.style.display !== "none") {
+    bubble.style.display = "none";
+    bubble.style.visibility = "hidden";
+    requestHostResize();
+    return;
   }
-  bubble.style.display = "";
+
+  // 先显示再测量真实尺寸，不再用固定的 200px 猜测帮助气泡高度。
+  var viewportWidth = window.innerWidth || document.documentElement.clientWidth || 320;
+  var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 480;
+  bubble.style.maxWidth = Math.max(120, Math.min(300, viewportWidth - 16)) + "px";
+  bubble.style.transform = "none";
+  bubble.style.visibility = "hidden";
+  bubble.style.left = "-9999px";
+  bubble.style.top = "-9999px";
+  bubble.style.display = "block";
+
+  var rect = btn.getBoundingClientRect();
+  var bubbleWidth = bubble.offsetWidth || Math.min(300, viewportWidth - 16);
+  var bubbleHeight = bubble.offsetHeight || 180;
+  var left = Math.max(8, Math.min(rect.right - bubbleWidth, viewportWidth - bubbleWidth - 8));
+  var top = rect.bottom + 8;
+  if (top + bubbleHeight > viewportHeight - 8) top = rect.top - bubbleHeight - 8;
+  if (top < 8) top = 8;
+  bubble.style.left = left + "px";
+  bubble.style.top = top + "px";
+  bubble.style.visibility = "visible";
+  requestHostResize();
   var closeListener = function(ev) {
     if (!bubble.contains(ev.target) && ev.target !== btn) {
       bubble.style.display = "none";
+      bubble.style.visibility = "hidden";
       document.removeEventListener("click", closeListener);
+      requestHostResize();
     }
   };
   setTimeout(function() { document.addEventListener("click", closeListener); }, 0);
   // 滚动时关闭气泡
-  var scrollClose = function() { bubble.style.display = "none"; document.removeEventListener("click", closeListener); window.removeEventListener("scroll", scrollClose, true); };
+  var scrollClose = function() { bubble.style.display = "none"; bubble.style.visibility = "hidden"; document.removeEventListener("click", closeListener); window.removeEventListener("scroll", scrollClose, true); requestHostResize(); };
   setTimeout(function() { window.addEventListener("scroll", scrollClose, true); }, 0);
 }
 
@@ -1671,6 +1764,7 @@ function switchGhTab(tab) {
   if (btn) { btn.style.background = "var(--hana-accent,#4a8cff)"; btn.style.color = "#fff"; }
   // 切换标签后重算高度，避免上一个标签的 maxHeight 抢占造成内容溢出
   updateGhBodyHeight();
+  if (tab === "connect") loadGhConnectRepos();
   if (tab === "list") loadGhList();
 }
 
@@ -1678,8 +1772,13 @@ function switchGhTab(tab) {
 function updateGhBodyHeight() {
   var ghBody = document.getElementById("ghBody");
   if (!ghBody) return;
-  if (ghBody.style.maxHeight === "0px" || ghBody.style.maxHeight === "") return;
-  ghBody.style.maxHeight = ghBody.scrollHeight + "px";
+  if (ghBody.style.maxHeight === "0px" || ghBody.style.maxHeight === "") {
+    ghBody.style.maxHeight = "0px";
+    return;
+  }
+  var height = ghBody.scrollHeight;
+  ghBody.style.maxHeight = height + "px";
+  requestHostResize();
 }
 
 function validateGhRepoName(name) {
@@ -1694,24 +1793,137 @@ function validateGhRepoName(name) {
   return null;
 }
 
+function ghConnectEnter(e) {
+  if (e.key === "Enter") ghConnectRepo();
+}
+
+function selectGhRepoForConnect(url) {
+  ensureGhOpen();
+  switchGhTab("connect");
+  const input = document.getElementById("ghConnectUrl");
+  const select = document.getElementById("ghConnectRepoSelect");
+  if (input) input.value = url || "";
+  if (select) {
+    select.value = "";
+    if (select._hanaSelect) select._hanaSelect.sync();
+  }
+  const result = document.getElementById("ghConnectResult");
+  if (result) result.textContent = "已把仓库地址带入关联表单，请确认后点击“关联当前仓库”。";
+}
+
+async function loadGhConnectRepos() {
+  const select = document.getElementById("ghConnectRepoSelect");
+  const status = document.getElementById("ghConnectRepoStatus");
+  if (!select || select.dataset.loading === "1") return;
+  select.dataset.loading = "1";
+  if (status) status.textContent = "正在读取 GitHub 仓库...";
+  updateGhBodyHeight();
+  select.innerHTML = '<option value="">加载我的 GitHub 仓库...</option>';
+  if (select._hanaSelect) select._hanaSelect.replaceOptions(select.options);
+  try {
+    const res = await fetch(apiUrl("/api/gh/list"));
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.repos)) throw new Error(data.message || "加载失败");
+    select.innerHTML = '<option value="">请选择一个仓库</option>' + data.repos.map(function(repo) {
+      const label = (repo.owner?.login ? repo.owner.login + "/" : "") + repo.name + (repo.isPrivate ? " 🔒" : "");
+      return '<option value="' + escapeAttr(repo.url || "") + '">' + escapeHtml(label) + '</option>';
+    }).join("");
+    if (select._hanaSelect) select._hanaSelect.replaceOptions(select.options);
+    if (status) status.textContent = "已加载 " + data.repos.length + " 个仓库";
+    updateGhBodyHeight();
+  } catch (e) {
+    const message = e && e.message ? e.message : "未知错误";
+    select.innerHTML = '<option value="">仓库列表加载失败</option>';
+    if (select._hanaSelect) select._hanaSelect.replaceOptions(select.options);
+    if (status) status.textContent = "加载失败：" + message;
+    updateGhBodyHeight();
+  } finally {
+    select.dataset.loading = "0";
+  }
+}
+
+function onGhConnectRepoSelect() {
+  const select = document.getElementById("ghConnectRepoSelect");
+  const input = document.getElementById("ghConnectUrl");
+  if (select && input && select.value) input.value = select.value;
+}
+
+function refreshGhLicenseSelect() {
+  const select = document.getElementById("ghLicense");
+  if (select && select._hanaSelect) select._hanaSelect.sync();
+}
+
+async function ghConnectRepo(confirmed) {
+  const url = document.getElementById("ghConnectUrl").value.trim();
+  const remote = document.getElementById("ghConnectRemote").value.trim() || "origin";
+  const p = currentPath || getSavedPath();
+  const el = document.getElementById("ghConnectResult");
+  if (!p) { toast("请先设置本地仓库路径", "err"); return; }
+  if (!url) { toast("请输入 GitHub 仓库 URL", "err"); return; }
+  el.textContent = "关联并验证中...";
+  try {
+    const res = await fetch(apiUrl("/api/gh/connect"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ localPath: p, remoteUrl: url, remote, confirmed: !!confirmed }),
+    });
+    const data = await res.json();
+    if (data.code === "REMOTE_REPLACE_CONFIRM") {
+      el.textContent = "";
+      showConfirm(
+        `当前本地仓库的 ${data.remote} 已经关联到一个远程仓库，是否替换？`,
+        "替换远程关联",
+        function(ok) { if (ok) ghConnectRepo(true); },
+        false,
+        { title: "⚠️ 替换远程仓库", detailsHtml: `<div><b>当前：</b>${escapeHtml(data.previousUrl)}</div><div style='margin-top:4px'><b>改为：</b>${escapeHtml(data.nextUrl)}</div>` }
+      );
+      return;
+    }
+    el.textContent = data.ok ? "✅ " + data.message : "❌ " + data.message;
+    updateGhBodyHeight();
+    if (data.ok) {
+      document.getElementById("ghConnectUrl").value = "";
+      const repoSelect = document.getElementById("ghConnectRepoSelect");
+      if (repoSelect) {
+        repoSelect.value = "";
+        if (repoSelect._hanaSelect) repoSelect._hanaSelect.sync();
+      }
+      _repoInfoCache.delete(p);
+      refresh();
+      toast("✅ 已连接 GitHub 仓库", "success");
+    }
+  } catch (e) { el.textContent = "❌ " + e.message; updateGhBodyHeight(); }
+}
+
 async function ghCreateRepo() {
   const name = document.getElementById("ghRepoName").value.trim();
   const nameErr = validateGhRepoName(name);
   if (nameErr) { toast(nameErr, "err"); return; }
   const priv = getHanaSegValue("segGhPrivacy") === "1";
   const desc = document.getElementById("ghRepoDesc").value.trim();
+  const license = document.getElementById("ghLicense")?.value || "";
   const p = currentPath || getSavedPath();
   const el = document.getElementById("ghCreateResult");
   el.textContent = "创建中...";
   try {
     const res = await fetch(apiUrl("/api/gh/create"), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, private: priv, description: desc, localPath: p }),
+      body: JSON.stringify({ name, private: priv, description: desc, license, localPath: p }),
     });
     const data = await res.json();
     el.textContent = data.ok ? "✅ " + data.message : "❌ " + data.message;
-    if (data.ok) { document.getElementById("ghRepoName").value = ""; document.getElementById("ghRepoDesc").value = ""; loadGhList(); }
-  } catch (e) { el.textContent = "❌ " + e.message; }
+    updateGhBodyHeight();
+    if (data.ok) {
+      document.getElementById("ghRepoName").value = "";
+      document.getElementById("ghRepoDesc").value = "";
+      if (document.getElementById("ghLicense")) {
+        document.getElementById("ghLicense").value = "";
+        const licenseSelect = document.getElementById("ghLicense")._hanaSelect;
+        if (licenseSelect) licenseSelect.sync();
+      }
+      loadGhList();
+      loadGhConnectRepos();
+    }
+  } catch (e) { el.textContent = "❌ " + e.message; updateGhBodyHeight(); }
 }
 
 async function ghCloneRepo() {
@@ -1736,7 +1948,43 @@ async function ghCloneRepo() {
     });
     const data = await res.json();
     el.textContent = data.ok ? "✅ " + data.message : "❌ " + data.message;
-  } catch (e) { el.textContent = "❌ " + e.message; }
+    updateGhBodyHeight();
+  } catch (e) { el.textContent = "❌ " + e.message; updateGhBodyHeight(); }
+}
+
+async function copyGhUrl(url) {
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("✅ 已复制仓库地址", "success");
+  } catch {
+    toast("复制失败，请手动复制", "err");
+  }
+}
+
+function openGhUrl(url) {
+  if (!url) return;
+  const mode = getHanaSegValue("segGhOpen") || "internal";
+  if (mode === "external") fetch(apiUrl("/api/open-external?url=" + encodeURIComponent(url)));
+  else window.open(url, "_blank");
+}
+
+function formatGhUpdatedAt(value) {
+  if (!value) return "";
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+  } catch { return ""; }
+}
+
+function bindGhRepoActions(container) {
+  container.querySelectorAll(".gh-open-btn").forEach(function(btn) {
+    btn.onclick = function(e) { e.stopPropagation(); openGhUrl(btn.getAttribute("data-url") || ""); };
+  });
+  container.querySelectorAll(".gh-copy-btn").forEach(function(btn) {
+    btn.onclick = function(e) { e.stopPropagation(); copyGhUrl(btn.getAttribute("data-url") || ""); };
+  });
 }
 
 async function loadGhList() {
@@ -1750,26 +1998,30 @@ async function loadGhList() {
       if (data.message && data.message.match(/gh.*(not found|not recognized|not installed|install)/i)) {
         document.getElementById("ghNotInstalled").style.display = "";
       }
-      el.innerHTML = "加载失败"; return;
+      el.innerHTML = '<div style="padding:8px;color:#c0392b;font-size:11px">加载失败：' + escapeHtml(data.message || "未知错误") + '</div><button onclick="loadGhList()" style="margin-top:4px;padding:3px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-accent,#4a8cff);font-size:10px;cursor:pointer">重新加载</button>'; return;
     }
     // 检测成功，隐藏未安装提示
     document.getElementById("ghNotInstalled").style.display = "none";
     if (data.repos.length === 0) { el.innerHTML = '<div style="padding:8px;text-align:center;font-size:12px;color:var(--hana-fg-muted,#6b7280)">暂无仓库</div>'; return; }
     el.innerHTML = data.repos.map(r =>
       `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--hana-border,#eef0f2);font-size:12px" oncontextmenu="showGhCtxMenu(event,'${escapeAttr(r.owner?.login || '')}/${escapeAttr(r.name)}')">
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-          <span style="font-weight:600">${escapeHtml(r.name)}</span>
-          <span style="color:var(--hana-fg-muted,#6b7280);margin-left:4px">${escapeHtml(r.owner?.login || '')}</span>
-          ${r.isPrivate ? '<span style="font-size:10px;color:#e67e22">🔒</span>' : ''}
+        <span style="flex:1;min-width:0;overflow:hidden">
+          <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600">${escapeHtml(r.name)}</span><span style="color:var(--hana-fg-muted,#6b7280);margin-left:4px">${escapeHtml(r.owner?.login || '')}</span>${r.isPrivate ? '<span style="font-size:10px;color:#e67e22">🔒</span>' : ''}</span>
+          <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg-muted,#6b7280);font-size:10px">${escapeHtml(r.description || "无描述")}${formatGhUpdatedAt(r.updatedAt) ? " · 更新于 " + escapeHtml(formatGhUpdatedAt(r.updatedAt)) : ""}</span>
         </span>
+        <button class="gh-open-btn" data-url="${escapeAttr(r.url || '')}" style="padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:transparent;cursor:pointer;color:var(--hana-accent,#4a8cff);white-space:nowrap">打开</button>
+        <button class="gh-copy-btn" data-url="${escapeAttr(r.url || '')}" style="padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:transparent;cursor:pointer;color:var(--hana-fg-muted,#6b7280);white-space:nowrap">复制地址</button>
       </div>`
     ).join('');
+    bindGhRepoActions(el);
     // 重新计算卡片高度
     var ghBody = document.getElementById("ghBody");
     if (ghBody && ghBody.style.maxHeight !== "0px" && ghBody.style.maxHeight !== "") {
-      ghBody.style.maxHeight = ghBody.scrollHeight + "px";
+      updateGhBodyHeight();
     }
-  } catch { el.innerHTML = "加载失败"; }
+  } catch (e) {
+    el.innerHTML = '<div style="padding:8px;color:#c0392b;font-size:11px">加载失败：' + escapeHtml(e && e.message ? e.message : "未知错误") + '</div><button onclick="loadGhList()" style="margin-top:4px;padding:3px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-accent,#4a8cff);font-size:10px;cursor:pointer">重新加载</button>';
+  }
 }
 
 // GitHub 右键菜单
@@ -1792,16 +2044,26 @@ function showGhCtxMenu(e, repoName) {
 async function ghDeleteRepo() {
   document.getElementById("ghCtxMenu").style.display = "none";
   if (!ghCtxRepo) return;
-  toast("删除中...", "info");
-  try {
-    const res = await fetch(apiUrl("/api/gh/delete"), {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: ghCtxRepo }),
-    });
-    const data = await res.json();
-    if (data.ok) { toast(`已删除 ${ghCtxRepo}`, "success"); loadGhList(); }
-    else toast("❌ " + data.message, "err");
-  } catch (e) { toast("❌ " + e.message, "err"); }
+  const target = ghCtxRepo;
+  showConfirm(
+    `确定要删除 GitHub 仓库 ${target} 吗？此操作不可撤销。`,
+    "删除仓库",
+    async function(ok) {
+      if (!ok) return;
+      toast("删除中...", "info");
+      try {
+        const res = await fetch(apiUrl("/api/gh/delete"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: target, confirmed: true }),
+        });
+        const data = await res.json();
+        if (data.ok) { toast(`已删除 ${target}`, "success"); loadGhList(); }
+        else toast("❌ " + data.message, "err");
+      } catch (e) { toast("❌ " + e.message, "err"); }
+    },
+    false,
+    { title: "⚠️ 删除 GitHub 仓库", detailsHtml: "删除后远程仓库及其历史将无法通过此操作恢复。" }
+  );
 }
 
 function ensureGhOpen() {
@@ -1809,8 +2071,9 @@ function ensureGhOpen() {
   var toggle = document.getElementById("ghToggle");
   if (!body) return;
   if (body.style.maxHeight === "0px" || body.style.maxHeight === "") {
-    body.style.maxHeight = "500px";
+    body.style.maxHeight = body.scrollHeight + "px";
     if (toggle) toggle.textContent = "▾";
+    requestHostResize();
   }
 }
 
@@ -1845,27 +2108,22 @@ async function ghSearch() {
           <span style="font-weight:600">${escapeHtml(r.name)}</span>
           <span style="color:var(--hana-fg-muted,#6b7280);margin-left:4px">${escapeHtml(r.owner?.login || '')}</span>
         </span>
-        <button class="gh-open-btn" data-url="${escapeHtml(r.url)}" style="padding:1px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:none;cursor:pointer;color:var(--hana-accent,#4a8cff);font-family:inherit">打开</button>
+        <button class="gh-select-btn" data-url="${escapeAttr(r.url || '')}" style="padding:1px 6px;border:1px solid var(--hana-accent,#4a8cff);border-radius:4px;font-size:10px;background:none;cursor:pointer;color:var(--hana-accent,#4a8cff);font-family:inherit">带入关联</button>
+        <button class="gh-open-btn" data-url="${escapeAttr(r.url || '')}" style="padding:1px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:none;cursor:pointer;color:var(--hana-accent,#4a8cff);font-family:inherit">打开</button>
       </div>`
     ).join('');
     st.style.display = "none";
+    el.querySelectorAll(".gh-select-btn").forEach(function(b) {
+      b.onclick = function(e) { e.stopPropagation(); selectGhRepoForConnect(b.getAttribute("data-url") || ""); };
+    });
     el.querySelectorAll(".gh-open-btn").forEach(function(b) {
-      b.onclick = function() {
-        var url = b.getAttribute("data-url");
-        if (!url) return;
-        var mode = getHanaSegValue("segGhOpen") || "internal";
-        if (mode === "external") {
-          fetch(apiUrl("/api/open-external?url=" + encodeURIComponent(url)));
-        } else {
-          window.open(url, "_blank");
-        }
-      };
+      b.onclick = function(e) { e.stopPropagation(); openGhUrl(b.getAttribute("data-url") || ""); };
     });
   } catch { el.innerHTML = "搜索失败"; st.style.display = "none"; }
   // 搜索结果渲染后重新计算 ghBody 高度
   var ghBody = document.getElementById("ghBody");
   if (ghBody && ghBody.style.maxHeight !== "0px" && ghBody.style.maxHeight !== "") {
-    ghBody.style.maxHeight = ghBody.scrollHeight + "px";
+    updateGhBodyHeight();
   }
   // 聚焦输入框
   var inp = document.getElementById("ghSearchQuery");
@@ -2335,10 +2593,37 @@ function replaceSelectWithHanaSelect(selectId, opts) {
   refresh();
 
   sel.parentNode.insertBefore(trigger, sel.nextSibling);
+  if (sel.parentNode && sel.parentNode.id === "ghLicenseWrap") {
+    trigger.style.width = "100%";
+    trigger.style.boxSizing = "border-box";
+  }
+
+  function replaceOptions(nextOptions) {
+    options = Array.prototype.slice.call(nextOptions || []).map(function(o) {
+      return { value: o.value, label: o.text };
+    });
+    panel.innerHTML = "";
+    options.forEach(function(opt) {
+      var optEl = document.createElement("div");
+      optEl.className = "hana-select-option";
+      optEl.setAttribute("role", "option");
+      optEl.dataset.value = opt.value;
+      optEl.textContent = opt.label;
+      optEl.addEventListener("click", function(e) {
+        e.stopPropagation();
+        setValue(opt.value, true);
+        closePanel();
+      });
+      panel.appendChild(optEl);
+    });
+    state.currentValue = sel.value || (options[0] ? options[0].value : "");
+    refresh();
+  }
 
   sel._hanaSelect = {
     refresh: refresh,
     close: closePanel,
+    replaceOptions: replaceOptions,
     sync: function() { state.currentValue = sel.value; refresh(); }
   };
   _hanaSelectInstances.set(selectId, sel._hanaSelect);
@@ -2354,6 +2639,10 @@ function syncHanaSelects() {
   _hanaSelectInstances.forEach(function(hs, id) { hs.sync(); });
 }
 function initHanaSelects() {
+  replaceSelectWithHanaSelect("ghLicense", {});
+  replaceSelectWithHanaSelect("ghConnectRepoSelect", {
+    onChange: function(v) { onGhConnectRepoSelect(); }
+  });
   // cfgStashMode
   replaceSelectWithHanaSelect("cfgStashMode", {
     onChange: function(v) { saveSetting("stashMode", v); }
@@ -3159,29 +3448,58 @@ async function doCommit() {
 }
 
 // ======== 推送 ========
-async function doPush(btn) {
+function syncDetailHtml(data) {
+  const commitHtml = (data.commits || []).length
+    ? "<div style='font-weight:600;margin-bottom:4px'>远程新增提交：</div>" + data.commits.map(c => `<div>• <code>${escapeHtml(c.hash)}</code> ${escapeHtml(c.subject || "")}</div>`).join("")
+    : "<div>远程有提交变化，但没有可展示的提交摘要。</div>";
+  const fileHtml = (data.files || []).length
+    ? "<div style='font-weight:600;margin:8px 0 4px'>远程涉及文件：</div>" + data.files.map(f => `<div>• <code>${escapeHtml(f.status)}</code> ${escapeHtml(f.name)}</div>`).join("")
+    : "";
+  return commitHtml + fileHtml;
+}
+
+async function doPush(btn, forceContext) {
   cacheClear();
   Bus.emit("push");
   const p = currentPath || getSavedPath();
   const orig = btn.textContent;
-  btn.disabled = true; btn.style.opacity = ".5"; btn.textContent = "推送中...";
-  // 安全兜底：30 秒后强制恢复按钮
-  const safeTimer = setTimeout(() => { btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig; }, 30000);
+  btn.disabled = true; btn.style.opacity = ".5"; btn.textContent = forceContext ? "覆盖中..." : "检查中...";
+  const safeTimer = setTimeout(() => { btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig; }, 180000);
   try {
+    const body = { path: p };
+    if (forceContext) {
+      body.force = true;
+      body.expectedRemoteHash = forceContext.remoteHash;
+      body.remote = forceContext.remote || "origin";
+      body.branch = forceContext.branch || "";
+    }
     const res = await fetch(apiUrl("/api/push"), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: p }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     clearTimeout(safeTimer);
     if (data.ok) {
-      btn.textContent = "✅ 已推送";
-      btn.style.opacity = "";
-      btn.disabled = false;
-      setTimeout(() => { btn.textContent = orig; }, 2000);
+      btn.textContent = forceContext ? "✅ 已覆盖" : "✅ 已推送";
+      btn.style.opacity = ""; btn.disabled = false;
+      setTimeout(() => { btn.textContent = orig; }, 2500);
+      refresh();
+    } else if (data.code === "REMOTE_AHEAD" && !forceContext) {
+      btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig;
+      const relation = data.diverged ? "本地和远程已经分叉" : "远程包含本地没有的提交";
+      showConfirm(
+        `检测到当前仓库的本地版本与云端版本不一致：${relation}。`,
+        "以本地覆盖远程",
+        function(ok) { if (ok) doPush(btn, data); },
+        false,
+        {
+          title: "⚠️ 本地版本将覆盖云端",
+          detailsHtml: `<div style='margin-bottom:6px'><b>本地仓库：</b>${escapeHtml(p)}</div><div style='margin-bottom:6px'><b>远程仓库：</b>${escapeHtml(data.remote || "origin")}/${escapeHtml(data.branch || "")}</div>${syncDetailHtml(data)}<div style='margin-top:10px;color:#b91c1c;font-weight:600'>确认后，远程新增提交及其文件变化将被本地版本覆盖。</div>`
+        }
+      );
     } else {
       btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig;
-      toast("❌ " + data.message.split("\n")[0], "err");
+      toast("❌ " + (data.message || "推送失败").split("\n")[0], "err");
     }
   } catch (e) {
     clearTimeout(safeTimer);
@@ -3191,6 +3509,11 @@ async function doPush(btn) {
 }
 
 // ======== 拉取 ========
+function getSavedPullMode() {
+  const el = document.getElementById("cfgPullMode");
+  return el ? el.value : "merge";
+}
+
 async function doPull(btn) {
   cacheClear();
   Bus.emit("pull");
@@ -3200,7 +3523,7 @@ async function doPull(btn) {
   try {
     const res = await fetch(apiUrl("/api/pull"), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: p }),
+      body: JSON.stringify({ path: p, mode: getSavedPullMode() }),
     });
     const data = await res.json();
     btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig;
@@ -3568,10 +3891,18 @@ function pickResetMode(mode) {
   });
 }
 
-function showConfirm(msg, okText, cb, showMode) {
+function showConfirm(msg, okText, cb, showMode, options) {
+  options = options || {};
+  const title = document.getElementById("confirmTitle");
+  if (title) title.textContent = options.title || "↩️ 回滚到指定版本";
   document.getElementById("confirmMsg").textContent = msg;
   document.getElementById("confirmOkBtn").textContent = okText || "确定";
   document.getElementById("modeSelector").style.display = showMode ? "" : "none";
+  const details = document.getElementById("confirmDetails");
+  if (details) {
+    details.innerHTML = options.detailsHtml || "";
+    details.style.display = options.detailsHtml ? "" : "none";
+  }
   if (showMode) pickResetMode("soft");
   confirmCallback = cb;
   document.getElementById("confirmModal").style.display = "";
@@ -4104,6 +4435,8 @@ async function submitIdentitySetup() {
   setHanaSegActive("segGhPrivacy", "0");
   // 替换原生 select 为 HanaSelect
   if (typeof initHanaSelects === "function") initHanaSelects();
+  const connectSelect = document.getElementById("ghConnectRepoSelect");
+  if (connectSelect) connectSelect.dataset.loading = "0";
   initCardDrag();
   // 注册卡片（事件驱动的自动刷新）
   Cards.register("fileCard", { events: ["commit","push","pull","reset","branch-switch","refresh-all"], refresh: function(){

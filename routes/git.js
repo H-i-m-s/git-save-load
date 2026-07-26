@@ -2,11 +2,11 @@
 // 提供后端 API + 页面渲染。
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { execSync, exec } from "node:child_process";
+import { execSync, exec, execFile, execFileSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const htmlPath = join(__dirname, "..", "views", "git.html");
@@ -33,12 +33,135 @@ function getUserProxy() {
 }
 
 // 执行 git 命令的辅助函数
-function gitExec(cwd, cmd, opts = {}) {
-  const timeout = opts.timeout || 60000;
+function gitEnv() {
   const env = { ...process.env, ...getUserProxy() };
   // Windows 上 HOME 通常未设置，OpenSSH 靠它找 .ssh/config 和 known_hosts
   if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
-  return execSync(cmd, { cwd, encoding: "utf8", timeout, windowsHide: true, env }).trim();
+  return env;
+}
+
+function ghEnvironment() {
+  const env = { ...process.env };
+  if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
+  return env;
+}
+
+function gitExec(cwd, cmd, opts = {}) {
+  const timeout = opts.timeout || 60000;
+  return execSync(cmd, { cwd, encoding: "utf8", timeout, windowsHide: true, env: gitEnv() }).trim();
+}
+
+// 对用户输入敏感的 Git 调用使用 execFileSync，避免经过 shell 解释。
+function gitExecFile(cwd, args, opts = {}) {
+  const timeout = opts.timeout || 60000;
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    timeout,
+    windowsHide: true,
+    env: gitEnv(),
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
+
+function commandErrorText(error) {
+  const parts = [error?.stderr, error?.stdout, error?.message];
+  return parts
+    .filter(Boolean)
+    .map((value) => Buffer.isBuffer(value) ? value.toString("utf8") : String(value))
+    .join("\n")
+    .trim();
+}
+
+function isValidRemoteName(name) {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name);
+}
+
+function isValidRemoteUrl(url) {
+  return /^(?:https?|ssh):\/\/[^\s]+$/.test(url) || /^git@[^\s:]+:[^\s]+$/.test(url);
+}
+
+function validateBranchName(cwd, branch) {
+  if (!branch || branch.startsWith("-")) return false;
+  try {
+    gitExecFile(cwd, ["check-ref-format", `refs/heads/${branch}`], { timeout: 10000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parseNameStatus(raw) {
+  return String(raw || "").split("\n").filter(Boolean).map((line) => {
+    const parts = line.split("\t");
+    return { status: parts[0] || "?", name: parts.slice(1).join("\t") || parts[0] || "" };
+  });
+}
+
+function parseCommitList(raw) {
+  return String(raw || "").split("\n").filter(Boolean).map((line) => {
+    const separator = line.indexOf("|");
+    if (separator < 0) return { hash: line, subject: "" };
+    return { hash: line.slice(0, separator), subject: line.slice(separator + 1) };
+  });
+}
+
+const LICENSE_OPTIONS = new Set(["MIT", "Apache-2.0", "GPL-3.0", "BSD-3-Clause", "LGPL-3.0", "MPL-2.0", "Unlicense"]);
+
+function normalizeLicense(value) {
+  const license = String(value || "").trim();
+  return license && LICENSE_OPTIONS.has(license) ? license : "";
+}
+
+function hasHeadCommit(cwd) {
+  try {
+    gitExecFile(cwd, ["rev-parse", "--verify", "HEAD"], { timeout: 10000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getGitIdentity(cwd) {
+  try {
+    const name = gitExecFile(cwd, ["config", "user.name"], { timeout: 10000 });
+    const email = gitExecFile(cwd, ["config", "user.email"], { timeout: 10000 });
+    return name && email ? { name, email } : null;
+  } catch {
+    return null;
+  }
+}
+
+function readLicenseFile(cwd, license) {
+  try {
+    const output = execFileSync("gh", ["repo", "license", "view", license], {
+      cwd,
+      encoding: "utf8",
+      timeout: 30000,
+      windowsHide: true,
+      env: ghEnvironment(),
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+    return output;
+  } catch {
+    return "";
+  }
+}
+
+function applyLicenseToLocalRepo(cwd, license) {
+  if (!license) return { applied: false, existing: false, committed: false };
+  const licensePath = join(cwd, "LICENSE");
+  if (existsSync(licensePath)) return { applied: false, existing: true, committed: false };
+  const content = readLicenseFile(cwd, license);
+  if (!content) throw new Error("无法获取许可证模板，请检查 GitHub CLI 是否支持该许可证");
+  const identity = getGitIdentity(cwd);
+  if (!identity) throw new Error("当前仓库还没有配置 Git 姓名和邮箱，无法自动提交许可证");
+  const year = String(new Date().getFullYear());
+  const normalized = content
+    .replace(/\[year\]/gi, year)
+    .replace(/\[fullname\]/gi, identity.name);
+  writeFileSync(licensePath, normalized + "\n", "utf8");
+  return { applied: true, existing: false, committed: false };
 }
 
 // 路径辅助函数
@@ -85,6 +208,15 @@ async function readRepoPath(ctx) {
 
 async function writeRepoPath(ctx, path) {
   try { await writeFile(configPath(ctx), JSON.stringify({ repoPath: path }), "utf8"); } catch {}
+}
+
+async function readConfig(ctx) {
+  try {
+    const data = await readFile(configPath(ctx), "utf8");
+    return JSON.parse(data) || {};
+  } catch {
+    return {};
+  }
 }
 
 export default function (app, ctx) {
@@ -188,8 +320,8 @@ export default function (app, ctx) {
 
     // 提交前检测身份配置（使用本地仓库配置，不读 global，避免泄漏全局状态）
     try {
-      const localName = execSync("git config user.name", { cwd: path, encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }).trim();
-      const localEmail = execSync("git config user.email", { cwd: path, encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }).trim();
+      const localName = gitExecFile(path, ["config", "user.name"]);
+      const localEmail = gitExecFile(path, ["config", "user.email"]);
       if (!localName || !localEmail) {
         return c.json({
           ok: false,
@@ -230,7 +362,7 @@ export default function (app, ctx) {
       const version = String(body.version || "").trim();
       if (version) {
         tag = `v${version.replace(/^v/, "")}`;
-        gitExec(path, `git tag ${tag}`);
+        gitExecFile(path, ["tag", tag]);
       }
 
       return c.json({ ok: true, commit: last, message, tag });
@@ -257,8 +389,8 @@ export default function (app, ctx) {
       return c.json({ ok: false, message: "邮箱格式不正确，请检查（例：xx@example.com）" });
     }
     try {
-      gitExec(path, `git config user.name "${name.replace(/"/g, '\\"')}"`);
-      gitExec(path, `git config user.email "${email.replace(/"/g, '\\"')}"`);
+      gitExecFile(path, ["config", "user.name", name]);
+      gitExecFile(path, ["config", "user.email", email]);
       return c.json({ ok: true, message: "身份配置成功" });
     } catch (e) {
       return c.json({ ok: false, message: `配置失败：${e.message}` });
@@ -276,8 +408,8 @@ export default function (app, ctx) {
 
     // 身份检查（与 commit 路由一致）
     try {
-      const localName = execSync("git config user.name", { cwd: path, encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }).trim();
-      const localEmail = execSync("git config user.email", { cwd: path, encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }).trim();
+      const localName = gitExecFile(path, ["config", "user.name"]);
+      const localEmail = gitExecFile(path, ["config", "user.email"]);
       if (!localName || !localEmail) {
         return c.json({
           ok: false,
@@ -397,10 +529,11 @@ export default function (app, ctx) {
     }
 
     try {
-      gitExec(path, `git cat-file -t ${commit}`);
-      const before = gitExec(path, "git log --oneline -n 1");
-      const target = gitExec(path, `git log --oneline -n 1 ${commit}`);
-      gitExec(path, `git reset --${mode} ${commit}`);
+      if (!/^[0-9a-f]{4,64}$/i.test(commit)) return c.json({ ok: false, message: "提交 hash 格式不正确" });
+      gitExecFile(path, ["cat-file", "-t", commit]);
+      const before = gitExecFile(path, ["log", "--oneline", "-n", "1"]);
+      const target = gitExecFile(path, ["log", "--oneline", "-n", "1", commit]);
+      gitExecFile(path, ["reset", `--${mode}`, commit]);
 
       // 清理回滚后失效的 tag（指向历史外 commit 的 tag）
       const cleanedTags = [];
@@ -410,9 +543,9 @@ export default function (app, ctx) {
           const [h, t] = line.split("|");
           if (!h || !t) continue;
           try {
-            gitExec(path, `git merge-base --is-ancestor ${h} HEAD 2>nul`);
+            gitExecFile(path, ["merge-base", "--is-ancestor", h, "HEAD"]);
           } catch {
-            gitExec(path, `git tag -d ${t}`);
+            gitExecFile(path, ["tag", "-d", t]);
             cleanedTags.push(t);
           }
         }
@@ -557,7 +690,13 @@ export default function (app, ctx) {
     }
 
     try {
-      const filePath = join(repo, file);
+      const repoRoot = gitExecFile(repo, ["rev-parse", "--show-toplevel"], { timeout: 10000 });
+      const filePath = join(repoRoot, file);
+      const normalizedRoot = repoRoot.replace(/[\\/]+$/, "").toLowerCase();
+      const normalizedFile = filePath.toLowerCase();
+      if (normalizedFile !== normalizedRoot && !normalizedFile.startsWith(normalizedRoot + "\\") && !normalizedFile.startsWith(normalizedRoot + "/")) {
+        return c.json({ ok: false, message: "文件路径必须位于当前仓库内" });
+      }
       let content = readFileSync(filePath, "utf8");
 
       // 从后往前替换，避免 index 错位
@@ -581,7 +720,7 @@ export default function (app, ctx) {
       }
 
       writeFileSync(filePath, content, "utf8");
-      gitExec(repo, `git add "${file}"`);
+      gitExecFile(repo, ["add", "--", file]);
 
       return c.json({ ok: true, message: `${file} 冲突已解决` });
     } catch (e) {
@@ -643,43 +782,73 @@ export default function (app, ctx) {
   });
 
   // ======== API: GitHub 管理 ========
-  function ghExec(args) {
-    // 直接读取Windows用户环境变量，确保代理等配置生效
-    const env = { ...process.env };
-    if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
-    try {
-      const userHttps = execSync('[System.Environment]::GetEnvironmentVariable("HTTPS_PROXY", "User")', { encoding: 'utf8', shell: 'powershell', windowsHide: true }).trim();
-      const userHttp = execSync('[System.Environment]::GetEnvironmentVariable("HTTP_PROXY", "User")', { encoding: 'utf8', shell: 'powershell', windowsHide: true }).trim();
-      if (userHttps) env.HTTPS_PROXY = userHttps;
-      if (userHttp) env.HTTP_PROXY = userHttp;
-    } catch {}
-    const result = execSync(`gh ${args.join(" ")}`, { encoding: "utf8", timeout: 30000, windowsHide: true, env }).trim();
-    return result;
+  // gh 自己会读取 GitHub CLI 的登录配置。不要把 Git 的用户级代理强行注入 gh，
+  // 否则可能与 gh 的网络实现或本机代理状态冲突，导致 GraphQL 返回 EOF。
+  function ghExec(args, opts = {}) {
+    return execFileSync("gh", args, {
+      encoding: "utf8",
+      timeout: opts.timeout || 30000,
+      windowsHide: true,
+      env: ghEnvironment(),
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
   }
 
   app.post("/api/gh/create", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const name = String(body.name || "").trim();
     const privacy = body.private ? "--private" : "--public";
-    const desc = body.description ? `--description "${body.description.replace(/"/g, "'")}"` : "";
+    const description = String(body.description || "").trim();
+    const license = normalizeLicense(body.license);
+    const localPath = String(body.localPath || "").trim();
     if (!name) return c.json({ ok: false, message: "请输入仓库名" });
+
     try {
-      const url = ghExec(["repo", "create", name, privacy, desc].filter(Boolean));
-      // 如果有本地路径就关联远程
-      const localPath = String(body.localPath || "").trim();
+      let localLicense = { applied: false, existing: false, committed: false };
+      let localHasCommit = false;
       if (localPath) {
-        const { execSync } = await import("node:child_process");
-        try {
-          execSync(`git remote get-url origin`, { cwd: localPath, encoding: "utf8", windowsHide: true });
-          // origin 已存在 → 更新
-          execSync(`git remote set-url origin ${url}`, { cwd: localPath, encoding: "utf8", windowsHide: true });
-        } catch {
-          // origin 不存在 → 添加
-          execSync(`git remote add origin ${url}`, { cwd: localPath, encoding: "utf8", windowsHide: true });
+        gitExecFile(localPath, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+        localHasCommit = hasHeadCommit(localPath);
+        if (license && localHasCommit) {
+          localLicense = applyLicenseToLocalRepo(localPath, license);
+          if (localLicense.applied) {
+            const status = gitExecFile(localPath, ["status", "--porcelain", "--", "LICENSE"], { timeout: 10000 });
+            if (status) {
+              gitExecFile(localPath, ["add", "--", "LICENSE"], { timeout: 10000 });
+              gitExecFile(localPath, ["commit", "-m", `chore: add ${license} license`], { timeout: 30000 });
+              localLicense.committed = true;
+            }
+          }
         }
       }
-      return c.json({ ok: true, url, message: `已创建：${url}` });
-    } catch (e) { return c.json({ ok: false, message: e.message }); }
+
+      const args = ["repo", "create", name, privacy];
+      if (description) args.push("--description", description);
+      // 已有本地提交时，许可证已经在本地生成并提交，远程必须保持空初始化，避免产生分叉。
+      if (license && !localHasCommit) args.push("--license", license);
+      const url = ghExec(args);
+
+      if (localPath) {
+        try {
+          try {
+            gitExecFile(localPath, ["remote", "get-url", "origin"], { timeout: 10000 });
+            gitExecFile(localPath, ["remote", "set-url", "origin", url], { timeout: 10000 });
+          } catch {
+            gitExecFile(localPath, ["remote", "add", "origin", url], { timeout: 10000 });
+          }
+          if (localHasCommit) {
+            const branch = gitExecFile(localPath, ["branch", "--show-current"], { timeout: 10000 });
+            if (branch && validateBranchName(localPath, branch)) {
+              gitExecFile(localPath, ["push", "--set-upstream", "origin", `${branch}:${branch}`], { timeout: 120000 });
+            }
+          }
+        } catch (e) {
+          return c.json({ ok: false, url, license, message: `GitHub 仓库已创建，但本地关联或首次推送失败：${commandErrorText(e)}` });
+        }
+      }
+      const details = localLicense.committed ? `，已在本地提交 ${license} 许可证` : (license ? `，已选择 ${license} 许可证` : "");
+      return c.json({ ok: true, url, license, localLicense, message: `已创建并关联：${url}${details}` });
+    } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "创建失败" }); }
   });
 
   app.post("/api/gh/clone", async (c) => {
@@ -687,31 +856,36 @@ export default function (app, ctx) {
     const url = String(body.url || "").trim();
     const dir = String(body.dir || "").trim();
     if (!url) return c.json({ ok: false, message: "请输入仓库 URL" });
+    if (!isValidRemoteUrl(url)) return c.json({ ok: false, message: "仓库 URL 格式不正确" });
     try {
-      const cmd = dir ? `gh repo clone ${url} "${dir}"` : `gh repo clone ${url}`;
-      const { execSync } = await import("node:child_process");
-      execSync(cmd, { encoding: "utf8", timeout: 120000, windowsHide: true });
+      const args = ["repo", "clone", url];
+      if (dir) args.push(dir);
+      ghExec(args, { timeout: 120000 });
       return c.json({ ok: true, message: "克隆成功" });
-    } catch (e) { return c.json({ ok: false, message: e.message }); }
+    } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "克隆失败" }); }
   });
 
   app.get("/api/gh/list", async (c) => {
-    const owner = String(c.req.query("owner") || "").trim() || "";
+    const owner = String(c.req.query("owner") || "").trim();
     try {
-      const raw = ghExec(["repo", "list", owner, "--limit", "30", "--json", "name,owner,description,url,isPrivate,updatedAt"]);
+      const args = ["repo", "list"];
+      if (owner) args.push(owner);
+      args.push("--limit", "30", "--json", "name,owner,description,url,isPrivate,updatedAt");
+      const raw = ghExec(args);
       const repos = JSON.parse(raw);
       return c.json({ ok: true, repos });
-    } catch (e) { return c.json({ ok: false, message: e.message }); }
+    } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "获取仓库列表失败" }); }
   });
 
   app.post("/api/gh/delete", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const name = String(body.name || "").trim();
     if (!name) return c.json({ ok: false, message: "请指定仓库名" });
+    if (!body.confirmed) return c.json({ ok: false, code: "CONFIRM_REQUIRED", message: "删除 GitHub 仓库需要二次确认" });
     try {
       ghExec(["repo", "delete", name, "--yes"]);
       return c.json({ ok: true, message: `已删除：${name}` });
-    } catch (e) { return c.json({ ok: false, message: e.message }); }
+    } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "删除失败" }); }
   });
 
   app.get("/api/gh/search", async (c) => {
@@ -721,7 +895,46 @@ export default function (app, ctx) {
       const raw = ghExec(["search", "repos", q, "--limit", "20", "--json", "name,owner,description,url,isPrivate,updatedAt"]);
       const repos = JSON.parse(raw);
       return c.json({ ok: true, repos });
-    } catch (e) { return c.json({ ok: false, message: e.message }); }
+    } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "搜索仓库失败" }); }
+  });
+
+  // ======== API: 将当前本地仓库关联到已有远程仓库 ========
+  app.post("/api/gh/connect", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const localPath = String(body.localPath || "").trim();
+    const remoteUrl = String(body.remoteUrl || "").trim();
+    const remote = String(body.remote || "origin").trim() || "origin";
+
+    if (!localPath) return c.json({ ok: false, message: "请先选择本地仓库" });
+    if (!remoteUrl || !isValidRemoteUrl(remoteUrl)) return c.json({ ok: false, message: "GitHub 仓库 URL 格式不正确" });
+    if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
+
+    try {
+      gitExecFile(localPath, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      let previousUrl = "";
+      try { previousUrl = gitExecFile(localPath, ["remote", "get-url", remote], { timeout: 10000 }); } catch {}
+      if (previousUrl && !body.confirmed) {
+        return c.json({ ok: false, code: "REMOTE_REPLACE_CONFIRM", requiresConfirmation: true, remote, previousUrl, nextUrl: remoteUrl, message: "当前远程名称已经存在，需要确认是否替换" });
+      }
+      if (previousUrl) {
+        gitExecFile(localPath, ["remote", "set-url", remote, remoteUrl], { timeout: 10000 });
+      } else {
+        gitExecFile(localPath, ["remote", "add", remote, remoteUrl], { timeout: 10000 });
+      }
+      gitExecFile(localPath, ["fetch", "--prune", remote], { timeout: 120000 });
+      let currentBranch = "";
+      try { currentBranch = gitExecFile(localPath, ["branch", "--show-current"], { timeout: 10000 }); } catch {}
+      return c.json({
+        ok: true,
+        remote,
+        remoteUrl,
+        previousUrl,
+        branch: currentBranch,
+        message: previousUrl ? "已更新远程仓库关联" : "已关联远程仓库",
+      });
+    } catch (e) {
+      return c.json({ ok: false, message: `关联失败：${commandErrorText(e) || "无法访问远程仓库"}` });
+    }
   });
 
   // ======== API: 读写配置 ========
@@ -760,9 +973,9 @@ export default function (app, ctx) {
       // 对每个分支获取最后一条提交消息
       for (const b of branches) {
         try {
-          const logMsg = gitExec(path, `git log -1 --format="%s" ${b.name}`);
+          const logMsg = gitExecFile(path, ["log", "-1", "--format=%s", b.name], { timeout: 10000 });
           b.lastCommit = logMsg || "";
-          b.lastHash = gitExec(path, `git log -1 --format="%h" ${b.name}`);
+          b.lastHash = gitExecFile(path, ["log", "-1", "--format=%h", b.name], { timeout: 10000 });
         } catch { b.lastCommit = ""; b.lastHash = ""; }
       }
       return c.json({ ok: true, branches, current });
@@ -776,8 +989,9 @@ export default function (app, ctx) {
     const path = repoPath(body.path);
     const name = String(body.name || "").trim();
     if (!name) return c.json({ ok: false, message: "请指定分支名" });
+    if (!validateBranchName(path, name)) return c.json({ ok: false, message: "分支名格式不正确" });
     try {
-      gitExec(path, `git checkout "${name}"`);
+      gitExecFile(path, ["checkout", name]);
       return c.json({ ok: true, branch: name });
     } catch (e) {
       return c.json({ ok: false, message: `切换失败：${e.message}` });
@@ -790,9 +1004,11 @@ export default function (app, ctx) {
     const name = String(body.name || "").trim();
     if (!name) return c.json({ ok: false, message: "请指定新分支名" });
     const startPoint = String(body.startPoint || "").trim();
+    if (!validateBranchName(path, name)) return c.json({ ok: false, message: "分支名格式不正确" });
     try {
-      var cmd = startPoint ? `git branch "${name}" "${startPoint}"` : `git branch "${name}"`;
-      gitExec(path, cmd);
+      const args = ["branch", name];
+      if (startPoint) args.push(startPoint);
+      gitExecFile(path, args);
       return c.json({ ok: true, branch: name });
     } catch (e) {
       return c.json({ ok: false, message: `创建失败：${e.message}` });
@@ -804,31 +1020,66 @@ export default function (app, ctx) {
     const path = repoPath(body.path);
     const name = String(body.name || "").trim();
     if (!name) return c.json({ ok: false, message: "请指定分支名" });
+    if (!validateBranchName(path, name)) return c.json({ ok: false, message: "分支名格式不正确" });
     try {
-      gitExec(path, `git branch -D "${name}"`);
+      gitExecFile(path, ["branch", "-D", name]);
       return c.json({ ok: true, branch: name });
     } catch (e) {
       return c.json({ ok: false, message: `删除失败：${e.message}` });
     }
   });
 
-  // ======== API: 推送到远程 ========
+  // ======== API: 远程同步状态 ========
+  app.post("/api/sync-status", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const path = repoPath(body.path);
+    const remote = String(body.remote || "origin").trim() || "origin";
+    const requestedBranch = String(body.branch || "").trim();
+    if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
+
+    try {
+      const branch = requestedBranch || gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      if (!validateBranchName(path, branch)) return c.json({ ok: false, message: "当前分支名无效" });
+      const remoteUrl = gitExecFile(path, ["remote", "get-url", remote], { timeout: 10000 });
+      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
+      const remoteRef = `${remote}/${branch}`;
+      let remoteHash = "";
+      try { remoteHash = gitExecFile(path, ["rev-parse", remoteRef], { timeout: 10000 }); } catch {}
+      if (!remoteHash) {
+        return c.json({ ok: true, branch, remote, remoteUrl, hasUpstream: false, ahead: 0, behind: 0, diverged: false, message: "远程分支尚未建立" });
+      }
+      const counts = gitExecFile(path, ["rev-list", "--left-right", "--count", `${remoteRef}...${branch}`], { timeout: 10000 }).split(/\s+/).map(Number);
+      const behind = Number.isFinite(counts[0]) ? counts[0] : 0;
+      const ahead = Number.isFinite(counts[1]) ? counts[1] : 0;
+      const commits = parseCommitList(gitExecFile(path, ["log", "--format=%H|%s", "-n", "20", `${branch}..${remoteRef}`], { timeout: 10000 }))
+        .map((item) => ({ hash: item.hash.slice(0, 12), subject: item.subject }));
+      const files = parseNameStatus(gitExecFile(path, ["diff", "--name-status", `${branch}..${remoteRef}`], { timeout: 10000 }));
+      return c.json({ ok: true, branch, remote, remoteUrl, remoteHash, hasUpstream: true, ahead, behind, diverged: ahead > 0 && behind > 0, commits, files });
+    } catch (e) {
+      return c.json({ ok: false, message: commandErrorText(e) || "获取远程状态失败" });
+    }
+  });
+
+  // ======== API: 拉取远程 ========
   app.post("/api/pull", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const path = repoPath(body.path);
+    const remote = String(body.remote || "origin").trim() || "origin";
     try {
-      const actualBranch = gitExec(path, "git branch --show-current");
-      const raw = gitExec(path, `git pull --no-rebase origin "${actualBranch}" 2>&1`, { timeout: 120000 });
-      const alreadyUpToDate = raw.includes("Already up to date") || raw.includes("Already up-to-date");
-      return c.json({ ok: true, message: alreadyUpToDate ? "已经是最新" : "拉取成功" });
+      const actualBranch = String(body.branch || "").trim() || gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      if (!validateBranchName(path, actualBranch)) return c.json({ ok: false, message: "当前分支名无效" });
+      const config = await readConfig(ctx);
+      const pullMode = ["merge", "rebase", "ff-only"].includes(body.mode) ? body.mode : (["merge", "rebase", "ff-only"].includes(config.pullMode) ? config.pullMode : "merge");
+      const pullArgs = ["pull"];
+      if (pullMode === "rebase") pullArgs.push("--rebase");
+      else if (pullMode === "ff-only") pullArgs.push("--ff-only");
+      else pullArgs.push("--no-rebase");
+      pullArgs.push(remote, actualBranch);
+      const raw = gitExecFile(path, pullArgs, { timeout: 120000 });
+      const alreadyUpToDate = raw.includes("Already up to date") || raw.includes("Already-up-to-date");
+      return c.json({ ok: true, mode: pullMode, message: alreadyUpToDate ? "已经是最新" : "拉取成功" });
     } catch (e) {
-      let stderr = "";
-      try { stderr = e.stderr || e.stdout || ""; } catch {}
-      if (!stderr && e.message) {
-        const idx = e.message.indexOf("stderr: ");
-        if (idx > 0) stderr = e.message.substring(idx + 8);
-        else stderr = e.message;
-      }
+      const stderr = commandErrorText(e);
       const errLine = stderr.split("\n").find(l => l.includes("error:") || l.includes("fatal:"));
       return c.json({ ok: false, message: errLine ? errLine.replace(/^(error:|fatal:)\s*/, "").trim() : "拉取失败" });
     }
@@ -837,9 +1088,9 @@ export default function (app, ctx) {
   // ======== 在默认浏览器中打开 URL ========
   app.get("/api/open-external", async (c) => {
     const url = String(c.req.query("url") || "").trim();
-    if (!url) return c.json({ ok: false, message: "缺少 URL" });
+    if (!/^https?:\/\/[^\s]+$/i.test(url)) return c.json({ ok: false, message: "只允许打开 http/https 链接" });
     try {
-      exec(`start "" "${url.replace(/"/g, "'")}"`, { windowsHide: true });
+      execFileSync("rundll32.exe", ["url.dll,FileProtocolHandler", url], { windowsHide: true, timeout: 10000 });
       return c.json({ ok: true });
     } catch (e) { return c.json({ ok: false, message: e.message }); }
   });
@@ -848,22 +1099,63 @@ export default function (app, ctx) {
     const body = await c.req.json().catch(() => ({}));
     const path = repoPath(body.path);
     const remote = String(body.remote || "origin").trim() || "origin";
-    const branch = String(body.branch || "").trim();
+    const requestedBranch = String(body.branch || "").trim();
+    const force = body.force === true;
+    const expectedRemoteHash = String(body.expectedRemoteHash || "").trim();
     try {
-      const actualBranch = branch || gitExec(path, "git branch --show-current");
-      const raw = gitExec(path, `git push "${remote}" "${actualBranch}" 2>&1`, { timeout: 120000 });
-      const upToDate = raw.includes("up-to-date") || raw.includes("Everything up-to-date");
-      return c.json({ ok: true, message: upToDate ? "没有新提交需要推送" : "推送成功" });
-    } catch (e) {
-      let stderr = "";
-      try { stderr = e.stderr || e.stdout || ""; } catch {}
-      if (!stderr && e.message) {
-        const idx = e.message.indexOf("stderr: ");
-        if (idx > 0) stderr = e.message.substring(idx + 8);
-        else stderr = e.message;
+      if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
+      const actualBranch = requestedBranch || gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      if (!validateBranchName(path, actualBranch)) return c.json({ ok: false, message: "当前分支名无效" });
+      const config = await readConfig(ctx);
+      const pushMode = ["normal", "force-with-lease", "force"].includes(body.mode) ? body.mode : (["normal", "force-with-lease", "force"].includes(config.pushMode) ? config.pushMode : "normal");
+
+      // 推送前先获取远程状态。确认覆盖必须绑定到用户确认时看到的远程 hash。
+      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
+      const remoteRef = `${remote}/${actualBranch}`;
+      let remoteHash = "";
+      try { remoteHash = gitExecFile(path, ["rev-parse", remoteRef], { timeout: 10000 }); } catch {}
+      if (remoteHash) {
+        const counts = gitExecFile(path, ["rev-list", "--left-right", "--count", `${remoteRef}...${actualBranch}`], { timeout: 10000 }).split(/\s+/).map(Number);
+        const behind = Number.isFinite(counts[0]) ? counts[0] : 0;
+        const ahead = Number.isFinite(counts[1]) ? counts[1] : 0;
+        if (behind > 0 && !force) {
+          const commits = parseCommitList(gitExecFile(path, ["log", "--format=%H|%s", "-n", "20", `${actualBranch}..${remoteRef}`], { timeout: 10000 }))
+            .map((item) => ({ hash: item.hash.slice(0, 12), subject: item.subject }));
+          const files = parseNameStatus(gitExecFile(path, ["diff", "--name-status", `${actualBranch}..${remoteRef}`], { timeout: 10000 }));
+          return c.json({
+            ok: false,
+            code: "REMOTE_AHEAD",
+            requiresConfirmation: true,
+            remoteHash,
+            ahead,
+            behind,
+            diverged: ahead > 0,
+            branch: actualBranch,
+            remote,
+            commits,
+            files,
+            message: ahead > 0 ? "本地与远程已分叉" : "远程包含本地没有的提交",
+          });
+        }
+        if (force && expectedRemoteHash && expectedRemoteHash !== remoteHash) {
+          return c.json({ ok: false, code: "REMOTE_CHANGED", message: "确认后远程仓库又发生了变化，请重新检查后再覆盖" });
+        }
       }
+
+      const pushArgs = ["push"];
+      if (force) {
+        // 二次确认后的覆盖只允许安全强推，并锁定用户确认时看到的远程提交。
+        pushArgs.push(expectedRemoteHash ? `--force-with-lease=refs/heads/${actualBranch}:${expectedRemoteHash}` : "--force-with-lease");
+      } else if (pushMode === "force") pushArgs.push("--force");
+      else if (pushMode === "force-with-lease") pushArgs.push("--force-with-lease");
+      pushArgs.push(remote, `${actualBranch}:${actualBranch}`);
+      const raw = gitExecFile(path, pushArgs, { timeout: 120000 });
+      const upToDate = raw.includes("up-to-date") || raw.includes("Everything up-to-date");
+      return c.json({ ok: true, mode: force ? "force-with-lease" : pushMode, message: upToDate ? "没有新提交需要推送" : (force ? "已按本地版本覆盖远程" : "推送成功") });
+    } catch (e) {
+      const stderr = commandErrorText(e);
       let cn = "";
-      if (stderr.includes("non-fast-forward")) cn = "推送被拒绝：远程包含本地没有的提交。请先拉取或使用强制推送";
+      if (stderr.includes("non-fast-forward")) cn = "推送被拒绝：远程包含本地没有的提交";
       else if (stderr.includes("Could not read from remote")) cn = "无法连接远程仓库，请检查网络或仓库地址";
       else if (stderr.includes("Repository not found")) cn = "远程仓库不存在，请检查仓库地址";
       else if (stderr.includes("Permission denied")) cn = "权限不足，请检查 GitHub 登录状态";
@@ -896,30 +1188,33 @@ export default function (app, ctx) {
     const path = repoPath(body.path);
     const msg = String(body.message || "").trim();
     try {
-      const cmd = msg ? `git stash push -u -m "${msg.replace(/"/g, "'")}"` : "git stash push -u";
-      gitExec(path, cmd);
+      const args = ["stash", "push", "-u"];
+      if (msg) args.push("-m", msg);
+      gitExecFile(path, args);
       return c.json({ ok: true });
-    } catch (e) { return c.json({ ok: false, message: e.message }); }
+    } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "暂存失败" }); }
   });
 
   app.post("/api/stash/pop", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const path = repoPath(body.path);
     const idx = parseInt(body.index);
+    if (!Number.isInteger(idx) || idx < 0) return c.json({ ok: false, message: "暂存索引无效" });
     try {
-      gitExec(path, `git stash pop stash@{${idx}}`);
+      gitExecFile(path, ["stash", "pop", `stash@{${idx}}`]);
       return c.json({ ok: true });
-    } catch (e) { return c.json({ ok: false, message: e.message }); }
+    } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "恢复暂存失败" }); }
   });
 
   app.post("/api/stash/drop", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const path = repoPath(body.path);
     const idx = parseInt(body.index);
+    if (!Number.isInteger(idx) || idx < 0) return c.json({ ok: false, message: "暂存索引无效" });
     try {
-      gitExec(path, `git stash drop stash@{${idx}}`);
+      gitExecFile(path, ["stash", "drop", `stash@{${idx}}`]);
       return c.json({ ok: true });
-    } catch (e) { return c.json({ ok: false, message: e.message }); }
+    } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "删除暂存失败" }); }
   });
 
   // 返回插件版本号（从 manifest.json 读取）

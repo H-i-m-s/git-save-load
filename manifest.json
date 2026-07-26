@@ -2,8 +2,8 @@
   "manifestVersion": 1,
   "id": "git-save-load",
   "name": "Git Save/Load",
-  "version": "1.5",
-  "description": "Git 存档与读档。支持一键存档、版本历史浏览、分支管理、远程推送/拉取。",
+  "version": "1.6.0",
+  "description": "Git 存档与读档。支持一键存档、版本历史浏览、分支管理、已有 GitHub 仓库关联，以及带二次确认的远程覆盖推送。",
   "trust": "full-access",
   "minAppVersion": "0.82.0",
   "contributes": {
