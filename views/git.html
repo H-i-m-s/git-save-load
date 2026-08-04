@@ -372,12 +372,13 @@ select:disabled{opacity:.5;cursor:not-allowed}
 #ctxMenu .has-sub{position:relative}
 #ctxMenu .has-sub>.sub{display:none;position:fixed;min-width:160px;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:2001}
 #ctxMenu .has-sub>.item::after{content:"\25B8";position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--hana-fg-muted,#6b7280);pointer-events:none}
-#ghCtxMenu{display:none;position:fixed;z-index:999;min-width:180px;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,.12);transform-origin:top left;transition:opacity .12s ease,transform .12s ease}
+#ghCtxMenu{display:none;position:fixed;z-index:999;min-width:180px;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:0;box-shadow:0 4px 12px rgba(0,0,0,.12);transform-origin:top left;transition:opacity .12s ease,transform .12s ease;overflow:hidden}
 #ghCtxMenu.hana-menu-opening{opacity:0;transform:scale(.96)}
 #ghCtxMenu .item{padding:8px 14px;font-size:12px;cursor:pointer;transition:background .12s,color .12s;position:relative}
+#ghCtxMenu .item + .item{border-top:1px solid var(--hana-border,#eef0f2)}
 #ghCtxMenu .item:hover{background:var(--hana-bg,#f5f6f8)}
 #ghCtxMenu .item.danger{color:#e74c3c}
-#ghCtxMenu .item.danger:hover{background:rgba(231,76,60,.08)}
+#ghCtxMenu .item.danger:hover{background:#fee2e2}
 #ghCtxMenu .item.danger::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;background:#e74c3c;border-radius:2px}
 #ghCtxMenu .divider{height:1px;margin:4px 8px;background:var(--hana-border,#e2e5ea)}
 
@@ -416,10 +417,6 @@ select:disabled{opacity:.5;cursor:not-allowed}
   color:var(--hana-fg,#1a1d24);
   background:rgba(0,0,0,.04);
 }
-#ghCtxMenu .item:hover{background:var(--hana-bg,#f5f6f8)}
-#ghCtxMenu .item.danger{color:#e74c3c}
-#ghCtxMenu .item.danger:hover{background:#fee2e2}
-
 /* 折叠方块（仅动画容器，无样式） */
 #collapseBlock{
   display:none;
@@ -446,6 +443,8 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .msg-toast{
   position:fixed;top:12px;right:12px;left:12px;z-index:999;
   padding:8px 12px;border-radius:6px;font-size:12px;display:none;
+  white-space:pre-line;word-break:break-word;line-height:1.5;
+  max-height:60vh;overflow-y:auto;
 }
 .msg-toast.info{background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe}
 .msg-toast.err{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
@@ -1026,6 +1025,45 @@ select:disabled{opacity:.5;cursor:not-allowed}
     </div>
   </div>
 </div>
+
+<!-- GitHub 仓库编辑弹窗 -->
+<div id="ghEditModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:2500;background:rgba(0,0,0,.4);align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif" onclick="if(event.target===this)closeGhEdit()">
+  <div style="background:var(--hana-surface,#fff);border-radius:12px;padding:22px;width:440px;max-width:92vw;box-shadow:0 12px 40px rgba(0,0,0,.25);color:var(--hana-fg,#1a1d24)">
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px">✏️ 编辑仓库</div>
+    <div id="ghEditRepoLabel" style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"></div>
+    <div style="font-size:12px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px">仓库名</div>
+    <input type="text" id="ghEditName" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
+    <div style="font-size:12px;color:var(--hana-fg-muted,#6b7280);margin:12px 0 4px 0">描述</div>
+    <input type="text" id="ghEditDesc" placeholder="仓库描述" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
+    <div style="display:flex;gap:12px;margin-top:12px">
+      <div style="flex:1">
+        <div style="font-size:12px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px">开源协议</div>
+        <select id="ghEditLicense" style="width:100%;padding:7px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);box-sizing:border-box">
+          <option value="">不修改</option>
+          <option value="MIT">MIT License</option>
+          <option value="Apache-2.0">Apache License 2.0</option>
+          <option value="GPL-3.0">GNU GPLv3</option>
+          <option value="BSD-3-Clause">BSD 3-Clause</option>
+          <option value="LGPL-3.0">GNU LGPLv3</option>
+          <option value="MPL-2.0">Mozilla Public License 2.0</option>
+          <option value="Unlicense">The Unlicense</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:12px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px">可见性</div>
+        <select id="ghEditVisibility" style="width:100%;padding:7px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);box-sizing:border-box">
+          <option value="public">公开</option>
+          <option value="private">私有</option>
+        </select>
+      </div>
+    </div>
+    <div id="ghEditResult" style="margin-top:10px;font-size:11px;color:#c0392b;word-break:break-word;white-space:pre-line;max-height:140px;overflow-y:auto"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+      <button onclick="closeGhEdit()" style="padding:6px 18px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:13px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">取消</button>
+      <button onclick="submitGhEdit()" style="padding:6px 18px;border:0;border-radius:6px;font-size:13px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">保存</button>
+    </div>
+  </div>
+</div>
 <style>
 #confirmModal::-webkit-scrollbar{display:none}
 </style>
@@ -1427,12 +1465,28 @@ async function saveConfigPath(p) {
 }
 
 // Toast 消息
+let _toastTimer = null;
+let _toastDismissHandler = null;
+function hideToast() {
+  const el = document.getElementById("toast");
+  el.style.display = "none";
+  if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+  if (_toastDismissHandler) { document.removeEventListener("click", _toastDismissHandler, true); _toastDismissHandler = null; }
+}
 function toast(msg, type = "info") {
+  hideToast(); // 清理上一次的计时器和点击监听
   const el = document.getElementById("toast");
   el.textContent = msg;
   el.className = "msg-toast " + type;
   el.style.display = "block";
-  setTimeout(() => { el.style.display = "none"; }, 3000);
+  // 报错给足阅读时间，成功/信息类轻快一些
+  const duration = type === "err" ? 10000 : 4000;
+  _toastTimer = setTimeout(hideToast, duration);
+  // 点击 toast 以外的任意位置立即收起
+  _toastDismissHandler = (e) => {
+    if (el !== e.target && !el.contains(e.target)) hideToast();
+  };
+  document.addEventListener("click", _toastDismissHandler, true);
 }
 
 // 获取命令路径（带 token，正确处理已有 query 的情况）
@@ -2002,6 +2056,9 @@ async function loadGhList() {
     }
     // 检测成功，隐藏未安装提示
     document.getElementById("ghNotInstalled").style.display = "none";
+    // 缓存仓库完整数据（编辑弹窗预填用）
+    ghRepoData = {};
+    data.repos.forEach(function(r) { ghRepoData[((r.owner && r.owner.login) || "") + "/" + r.name] = r; });
     if (data.repos.length === 0) { el.innerHTML = '<div style="padding:8px;text-align:center;font-size:12px;color:var(--hana-fg-muted,#6b7280)">暂无仓库</div>'; return; }
     el.innerHTML = data.repos.map(r =>
       `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--hana-border,#eef0f2);font-size:12px" oncontextmenu="showGhCtxMenu(event,'${escapeAttr(r.owner?.login || '')}/${escapeAttr(r.name)}')">
@@ -2026,6 +2083,8 @@ async function loadGhList() {
 
 // GitHub 右键菜单
 let ghCtxRepo = null;
+// 列表仓库数据缓存（编辑弹窗预填用）
+let ghRepoData = {};
 
 function escapeAttr(s) {
   return s.replace(/"/g, '&quot;').replace(/'/g, "&#39;");
@@ -2036,9 +2095,91 @@ function showGhCtxMenu(e, repoName) {
   ghCtxRepo = repoName;
   const menu = document.getElementById("ghCtxMenu");
   menu.innerHTML = `
+    <div class="item" onclick="ghEditRepo()">✏️ 编辑仓库</div>
     <div class="item danger" onclick="ghDeleteRepo()">✕ 删除 ${escapeHtml(repoName)}</div>
   `;
-  openCtxMenuWithAnim(menu, e.clientX, e.clientY, 180, 80);
+  openCtxMenuWithAnim(menu, e.clientX, e.clientY, 180, 90);
+}
+
+// ======== GitHub 仓库编辑 ========
+let ghEditCtx = null;
+function ghEditRepo() {
+  const menu = document.getElementById("ghCtxMenu");
+  if (menu) menu.style.display = "none";
+  if (!ghCtxRepo) return;
+  const data = ghRepoData[ghCtxRepo] || {};
+  const parts = ghCtxRepo.split("/");
+  ghEditCtx = {
+    full: ghCtxRepo,
+    owner: (data.owner && data.owner.login) || parts[0] || "",
+    repo: data.name || parts[1] || "",
+  };
+  document.getElementById("ghEditRepoLabel").textContent = ghCtxRepo;
+  document.getElementById("ghEditName").value = ghEditCtx.repo;
+  document.getElementById("ghEditDesc").value = data.description || "";
+  document.getElementById("ghEditLicense").value = (data.licenseInfo && data.licenseInfo.key) || "";
+  document.getElementById("ghEditVisibility").value = data.isPrivate ? "private" : "public";
+  document.getElementById("ghEditResult").textContent = "";
+  document.getElementById("ghEditModal").style.display = "flex";
+  setTimeout(function() { document.getElementById("ghEditName").focus(); }, 50);
+}
+function closeGhEdit() {
+  document.getElementById("ghEditModal").style.display = "none";
+}
+async function submitGhEdit() {
+  if (!ghEditCtx) return;
+  const newName = document.getElementById("ghEditName").value.trim();
+  if (!newName) { toast("仓库名不能为空", "err"); return; }
+  const desc = document.getElementById("ghEditDesc").value;
+  const license = document.getElementById("ghEditLicense").value;
+  const visibility = document.getElementById("ghEditVisibility").value;
+  const el = document.getElementById("ghEditResult");
+  el.textContent = "保存中...";
+  el.style.color = "var(--hana-fg-muted,#6b7280)";
+  try {
+    const res = await fetch(apiUrl("/api/gh/edit"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: ghEditCtx.full, newName: newName, description: desc, license: license, visibility: visibility }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      closeGhEdit();
+      if (data.localRemote) {
+        showConfirm(
+          `本地仓库 ${data.localRemote.localPath} 的远程 ${data.localRemote.remote} 还指向旧地址，是否同步更新？`,
+          "同步远程地址",
+          function(ok) {
+            if (ok) syncLocalRemote(data.localRemote);
+            else toast("已跳过，可在关联页手动重新关联", "info");
+          },
+          false,
+          { title: "⚠️ 同步本地远程地址", detailsHtml: `<div style='margin-bottom:6px'><b>本地仓库：</b>${escapeHtml(data.localRemote.localPath)}</div><div style='margin-bottom:6px'><b>远程名称：</b>${escapeHtml(data.localRemote.remote)}</div><div style='margin-bottom:6px'><b>旧地址：</b>${escapeHtml(data.localRemote.oldUrl)}</div><div><b>新地址：</b>${escapeHtml(data.localRemote.newUrl)}</div>` }
+        );
+      } else {
+        toast("✅ " + (data.message || "仓库信息已更新"), "success");
+      }
+      loadGhList();
+    } else {
+      el.style.color = "#c0392b";
+      el.textContent = "❌ " + (data.message || "保存失败");
+    }
+  } catch (e) {
+    el.style.color = "#c0392b";
+    el.textContent = "❌ " + e.message;
+  }
+}
+
+// 同步本地仓库 remote 地址（远程仓库改名后）
+async function syncLocalRemote(info) {
+  try {
+    const res = await fetch(apiUrl("/api/gh/sync-local-remote"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(info),
+    });
+    const data = await res.json();
+    if (data.ok) { toast("✅ " + data.message, "success"); refresh(); }
+    else toast("❌ " + data.message, "err");
+  } catch (e) { toast("同步失败：" + e.message, "err"); }
 }
 
 async function ghDeleteRepo() {

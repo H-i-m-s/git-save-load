@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } from "
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { execSync, exec, execFile, execFileSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const htmlPath = join(__dirname, "..", "views", "git.html");
@@ -37,13 +37,88 @@ function gitEnv() {
   const env = { ...process.env, ...getUserProxy() };
   // Windows 上 HOME 通常未设置，OpenSSH 靠它找 .ssh/config 和 known_hosts
   if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
+  // 当 PATH 解析不到 git 时，把探测到的安装目录补进去（仅此时注入，避免版本不一致）
+  const gitDir = resolveGitDir();
+  if (gitDir) env.PATH = gitDir + (env.PATH ? ";" + env.PATH : "");
   return env;
+}
+
+// 定位 git 可执行文件所在目录并缓存。
+// 仅当 PATH 本身无法解析 git（ENOENT）时才探测常见安装位置。
+let _cachedGitDir = null;
+function resolveGitDir() {
+  if (_cachedGitDir !== null) return _cachedGitDir;
+  // 先看 PATH 是否已有 git（用无注入的环境探测，避免递归）
+  try {
+    const bare = { ...process.env };
+    if (!bare.HOME && bare.USERPROFILE) bare.HOME = bare.USERPROFILE;
+    execFileSync("git", ["--version"], { encoding: "utf8", timeout: 10000, windowsHide: true, env: bare, stdio: ["ignore", "pipe", "pipe"] });
+    _cachedGitDir = "";
+    return "";
+  } catch {}
+  // PATH 里没有，探测常见安装位置
+  const candidates = [
+    "C:\\Program Files\\Git\\cmd",
+    join(process.env.LOCALAPPDATA || "", "Programs", "Git", "cmd"),
+    join(process.env.LOCALAPPDATA || "", "Programs", "HanaAgent", "resources", "git", "cmd"),
+    join(process.env.LOCALAPPDATA || "", "GitHubDesktop", "bin"),
+    join(process.env.USERPROFILE || "", "scoop", "apps", "git", "current", "cmd"),
+  ];
+  for (const dir of candidates) {
+    if (!dir) continue;
+    const exe = join(dir, "git.exe");
+    if (!existsSync(exe)) continue;
+    try {
+      execFileSync(exe, ["--version"], { encoding: "utf8", timeout: 10000, windowsHide: true, env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] });
+      _cachedGitDir = dir;
+      return dir;
+    } catch {}
+  }
+  _cachedGitDir = "";
+  return "";
+}
+
+// 返回 git 可执行文件的绝对路径；PATH 可用时返回 "git" 交给系统解析
+function resolveGitPath() {
+  const dir = resolveGitDir();
+  return dir ? join(dir, "git.exe") : "git";
 }
 
 function ghEnvironment() {
   const env = { ...process.env };
   if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
   return env;
+}
+
+// 定位 gh 可执行文件。插件进程的 PATH 可能不包含 GitHub CLI 安装目录
+// （例如仅安装了 GitHub Desktop 或 PATH 被修改过），因此探测常见安装位置并缓存。
+let _cachedGhPath = null;
+function resolveGhPath() {
+  if (_cachedGhPath) return _cachedGhPath;
+  const candidates = [
+    "gh",
+    "C:\\Program Files\\GitHub CLI\\gh.exe",
+    join(process.env.LOCALAPPDATA || "", "Programs", "GitHub CLI", "gh.exe"),
+    join(process.env.LOCALAPPDATA || "", "GitHubDesktop", "bin", "gh.exe"),
+    join(process.env.USERPROFILE || "", ".local", "bin", "gh.exe"),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      // 裸命令交给 PATH 解析；绝对路径直接检查存在性
+      if (candidate === "gh") {
+        execFileSync("gh", ["--version"], { encoding: "utf8", timeout: 10000, windowsHide: true, env: ghEnvironment(), stdio: ["ignore", "pipe", "pipe"] });
+      } else if (existsSync(candidate)) {
+        execFileSync(candidate, ["--version"], { encoding: "utf8", timeout: 10000, windowsHide: true, env: ghEnvironment(), stdio: ["ignore", "pipe", "pipe"] });
+      } else {
+        continue;
+      }
+      _cachedGhPath = candidate;
+      return candidate;
+    } catch {}
+  }
+  _cachedGhPath = "gh";
+  return _cachedGhPath;
 }
 
 function gitExec(cwd, cmd, opts = {}) {
@@ -54,7 +129,7 @@ function gitExec(cwd, cmd, opts = {}) {
 // 对用户输入敏感的 Git 调用使用 execFileSync，避免经过 shell 解释。
 function gitExecFile(cwd, args, opts = {}) {
   const timeout = opts.timeout || 60000;
-  return execFileSync("git", args, {
+  return execFileSync(resolveGitPath(), args, {
     cwd,
     encoding: "utf8",
     timeout,
@@ -134,7 +209,7 @@ function getGitIdentity(cwd) {
 
 function readLicenseFile(cwd, license) {
   try {
-    const output = execFileSync("gh", ["repo", "license", "view", license], {
+    const output = execFileSync(resolveGhPath(), ["repo", "license", "view", license], {
       cwd,
       encoding: "utf8",
       timeout: 30000,
@@ -785,7 +860,7 @@ export default function (app, ctx) {
   // gh 自己会读取 GitHub CLI 的登录配置。不要把 Git 的用户级代理强行注入 gh，
   // 否则可能与 gh 的网络实现或本机代理状态冲突，导致 GraphQL 返回 EOF。
   function ghExec(args, opts = {}) {
-    return execFileSync("gh", args, {
+    return execFileSync(resolveGhPath(), args, {
       encoding: "utf8",
       timeout: opts.timeout || 30000,
       windowsHide: true,
@@ -870,7 +945,7 @@ export default function (app, ctx) {
     try {
       const args = ["repo", "list"];
       if (owner) args.push(owner);
-      args.push("--limit", "30", "--json", "name,owner,description,url,isPrivate,updatedAt");
+      args.push("--limit", "30", "--json", "name,owner,description,url,isPrivate,updatedAt,licenseInfo");
       const raw = ghExec(args);
       const repos = JSON.parse(raw);
       return c.json({ ok: true, repos });
@@ -888,11 +963,117 @@ export default function (app, ctx) {
     } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "删除失败" }); }
   });
 
+  // ======== API: 编辑 GitHub 仓库（改名 / 描述 / 可见性 / 许可证） ========
+  app.post("/api/gh/edit", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const name = String(body.name || "").trim();
+    const newName = String(body.newName || "").trim();
+    // description 为 null 表示不修改；为字符串（可能为空）表示明确设置/清空
+    const description = (body.description === null || body.description === undefined) ? null : String(body.description);
+    const visibility = String(body.visibility || "").trim();
+    const license = normalizeLicense(body.license);
+
+    if (!name) return c.json({ ok: false, message: "请指定仓库名" });
+    if (!name.includes("/")) return c.json({ ok: false, message: "请使用 owner/repo 格式指定仓库" });
+    const repoBase = name.split("/").pop() || "";
+    if (!/^[A-Za-z0-9_.-]+$/.test(repoBase)) return c.json({ ok: false, message: "仓库名格式不正确" });
+    if (newName && !/^[A-Za-z0-9_.-]+$/.test(newName)) return c.json({ ok: false, message: "新仓库名只能包含字母、数字、横线、下划线和点" });
+    if (visibility && !["public", "private"].includes(visibility)) return c.json({ ok: false, message: "可见性只能是 public 或 private" });
+
+    try {
+      const parts = name.split("/");
+      const owner = parts[0];
+      const repo = parts.length > 1 ? parts.slice(1).join("/") : name;
+      let current = name;
+      const actions = [];
+
+      // 1. 描述 / 可见性（用当前仓库名）
+      if (description !== null || visibility) {
+        const args = ["repo", "edit", current];
+        if (description !== null) args.push("--description", description);
+        if (visibility) {
+          args.push("--visibility", visibility);
+          // gh 要求改可见性时必须显式接受后果
+          args.push("--accept-visibility-change-consequences");
+        }
+        ghExec(args);
+        actions.push("描述/可见性");
+      }
+
+      // 2. 改名（改名后后续操作统一用新名）
+      let localRemote = null;
+      if (newName && newName !== repo) {
+        ghExec(["repo", "rename", newName, "--repo", current]);
+        current = `${owner}/${newName}`;
+        actions.push("仓库名");
+        // 检测插件配置的本地仓库是否关联了被改名的远程（匹配 owner/repo 后缀）
+        try {
+          const localPath = await readRepoPath(ctx);
+          if (localPath) {
+            const remotes = gitExecFile(localPath, ["remote"], { timeout: 10000 });
+            const oldSuffix = `${owner}/${repo}`;
+            for (const rn of remotes.split("\n").filter(Boolean)) {
+              let url = "";
+              try { url = gitExecFile(localPath, ["remote", "get-url", rn], { timeout: 10000 }); } catch {}
+              if (url && url.includes(oldSuffix)) {
+                localRemote = { localPath, remote: rn, oldUrl: url, newUrl: url.replace(oldSuffix, `${owner}/${newName}`) };
+                break;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // 3. 许可证：GitHub 仓库的许可证由仓库内的 LICENSE 文件决定，
+      //    通过 contents API 直接写入/更新 LICENSE 文件。
+      if (license) {
+        let branch = "main";
+        try { branch = ghExec(["api", `repos/${current}`, "--jq", ".default_branch"]); } catch {}
+        const raw = readLicenseFile(process.cwd(), license);
+        if (!raw) throw new Error(`无法获取 ${license} 许可证模板，请检查 GitHub CLI 支持情况`);
+        const year = String(new Date().getFullYear());
+        const normalized = raw
+          .replace(/\[year\]/gi, year)
+          .replace(/\[fullname\]/gi, owner);
+        const content64 = Buffer.from(normalized, "utf8").toString("base64");
+        let sha = "";
+        try { sha = ghExec(["api", `repos/${current}/contents/LICENSE`, "--jq", ".sha"]); } catch {}
+        const putArgs = [
+          "api", "-X", "PUT", `repos/${current}/contents/LICENSE`,
+          "-f", `message=chore: update license to ${license}`,
+          "-f", `content=${content64}`,
+          "-f", `branch=${branch}`,
+        ];
+        if (sha) putArgs.push("-f", `sha=${sha}`);
+        ghExec(putArgs);
+        actions.push("许可证");
+      }
+
+      return c.json({ ok: true, name: current, actions, localRemote, message: `已更新：${actions.length ? actions.join("、") : "未修改任何内容"}` });
+    } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "编辑仓库失败" }); }
+  });
+
+  // ======== API: 同步本地仓库的远程地址（仓库改名后） ========
+  app.post("/api/gh/sync-local-remote", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const localPath = String(body.localPath || "").trim();
+    const remote = String(body.remote || "").trim();
+    const newUrl = String(body.newUrl || "").trim();
+    if (!localPath || !remote || !newUrl) return c.json({ ok: false, message: "参数不完整" });
+    if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
+    if (!isValidRemoteUrl(newUrl)) return c.json({ ok: false, message: "远程地址格式不正确" });
+    try {
+      gitExecFile(localPath, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      gitExecFile(localPath, ["remote", "set-url", remote, newUrl], { timeout: 10000 });
+      return c.json({ ok: true, message: `已同步本地远程地址（${remote}）` });
+    } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "同步失败" }); }
+  });
+
   app.get("/api/gh/search", async (c) => {
     const q = String(c.req.query("q") || "").trim();
     if (!q) return c.json({ ok: true, repos: [] });
     try {
-      const raw = ghExec(["search", "repos", q, "--limit", "20", "--json", "name,owner,description,url,isPrivate,updatedAt"]);
+      const raw = ghExec(["search", "repos", q, "--limit", "20", "--json", "name,owner,description,url,isPrivate,updatedAt,licenseInfo"]);
       const repos = JSON.parse(raw);
       return c.json({ ok: true, repos });
     } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "搜索仓库失败" }); }

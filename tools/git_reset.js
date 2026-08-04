@@ -1,8 +1,7 @@
 // git-tools / tools / git_reset.js
 // 回滚到指定提交。默认 --soft 保留工作区修改。
 
-import { execSync } from "node:child_process";
-import { resolvePath } from "./_helpers.js";
+import { resolvePath, gitExec } from "./_helpers.js";
 
 export const name = "git_reset";
 export const description = "回滚到指定提交。默认 --soft 保留工作区文件修改，--hard 会丢失所有未提交的变更（慎用）。";
@@ -38,18 +37,18 @@ export async function execute(input = {}) {
 
   try {
     // 验证 commit 是否存在
-    execSync(`git cat-file -t ${commit}`, { cwd, encoding: "utf8", timeout: 10000, windowsHide: true });
+    gitExec(cwd, ["cat-file", "-t", commit], { timeout: 10000 });
 
     // 获取回滚前的当前提交信息
-    const before = execSync("git log --oneline -n 1", { cwd, encoding: "utf8", timeout: 10000, windowsHide: true }).trim();
+    const before = gitExec(cwd, ["log", "--oneline", "-n", "1"], { timeout: 10000 });
 
     // 获取目标提交信息
-    const target = execSync(`git log --oneline -n 1 ${commit}`, { cwd, encoding: "utf8", timeout: 10000, windowsHide: true }).trim();
+    const target = gitExec(cwd, ["log", "--oneline", "-n", "1", commit], { timeout: 10000 });
 
     if (mode === "hard") {
-      execSync(`git reset --hard ${commit}`, { cwd, encoding: "utf8", timeout: 30000, windowsHide: true });
+      gitExec(cwd, ["reset", "--hard", commit], { timeout: 30000 });
     } else {
-      execSync(`git reset --${mode} ${commit}`, { cwd, encoding: "utf8", timeout: 30000, windowsHide: true });
+      gitExec(cwd, ["reset", `--${mode}`, commit], { timeout: 30000 });
     }
 
     return JSON.stringify({

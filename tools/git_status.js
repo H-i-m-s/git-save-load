@@ -1,8 +1,7 @@
 // git-tools / tools / git_status.js
 // 查看当前 git 工作区状态。
 
-import { execSync } from "node:child_process";
-import { resolvePath } from "./_helpers.js";
+import { resolvePath, gitExec } from "./_helpers.js";
 
 export const name = "git_status";
 export const description = "查看当前 git 工作区状态：分支、变更文件、暂存区。";
@@ -22,8 +21,8 @@ export async function execute(input = {}) {
   const cwd = resolvePath(input);
 
   try {
-    const branch = execSync("git branch --show-current", { cwd, encoding: "utf8", timeout: 5000, windowsHide: true }).trim();
-    const statusShort = execSync("git -c core.quotepath=false status --short", { cwd, encoding: "utf8", timeout: 5000, windowsHide: true }).trim();
+    const branch = gitExec(cwd, ["branch", "--show-current"], { timeout: 5000 });
+    const statusShort = gitExec(cwd, ["-c", "core.quotepath=false", "status", "--short"], { timeout: 5000 });
 
     const changed = [];
     const untracked = [];

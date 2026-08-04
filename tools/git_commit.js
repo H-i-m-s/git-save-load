@@ -1,8 +1,7 @@
 // git-tools / tools / git_commit.js
 // 暂存所有变更并提交。
 
-import { execSync } from "node:child_process";
-import { resolvePath } from "./_helpers.js";
+import { resolvePath, gitExec } from "./_helpers.js";
 
 export const name = "git_commit";
 export const description = "暂存所有变更并提交。提交前先用 git_status 确认变更内容。";
@@ -31,10 +30,10 @@ export async function execute(input = {}) {
   }
 
   try {
-    execSync("git add .", { cwd, encoding: "utf8", timeout: 30000, windowsHide: true });
-    execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, { cwd, encoding: "utf8", timeout: 30000, windowsHide: true });
+    gitExec(cwd, ["add", "."], { timeout: 30000 });
+    gitExec(cwd, ["commit", "-m", message], { timeout: 30000 });
 
-    const log = execSync("git log --oneline -n 1", { cwd, encoding: "utf8", timeout: 10000, windowsHide: true }).trim();
+    const log = gitExec(cwd, ["log", "--oneline", "-n", "1"], { timeout: 10000 });
     return JSON.stringify({ ok: true, commit: log, message }, null, 2);
   } catch (err) {
     if (err.message.includes("nothing to commit") || err.message.includes("nothing added")) {

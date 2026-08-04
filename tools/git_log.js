@@ -1,8 +1,7 @@
 // git-tools / tools / git_log.js
 // 查看 git 提交历史。
 
-import { execSync } from "node:child_process";
-import { resolvePath } from "./_helpers.js";
+import { resolvePath, gitExec } from "./_helpers.js";
 
 export const name = "git_log";
 export const description = "查看 git 提交历史。返回最近 n 条提交的 hash、消息、作者、日期。";
@@ -28,10 +27,7 @@ export async function execute(input = {}) {
 
   try {
     const format = "%h|%s|%an|%ai";
-    const raw = execSync(
-      `git log --oneline --format="${format}" -n ${count}`,
-      { cwd, encoding: "utf8", timeout: 10000, windowsHide: true }
-    ).trim();
+    const raw = gitExec(cwd, ["log", "--oneline", `--format=${format}`, "-n", String(count)], { timeout: 10000 });
 
     if (!raw) {
       return JSON.stringify({ error: true, message: "没有提交记录" }, null, 2);
