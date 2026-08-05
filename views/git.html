@@ -3477,13 +3477,10 @@ function renderLog(data) {
       return false;
     };
 
-    // tag 角标（如果有）
-    let tagBadge = null;
-    if (c.tag) {
-      tagBadge = document.createElement("span");
-      tagBadge.style.cssText = "font-size:10px;color:#fff;background:#8b5cf6;padding:1px 4px;border-radius:3px;flex-shrink:0;width:44px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
-      tagBadge.textContent = c.tag;
-    }
+    // tag 列固定占位：没有版本号时也保留同样宽度，避免后面的 hash / 对比列错位。
+    const tagBadge = document.createElement("span");
+    tagBadge.style.cssText = "font-size:10px;color:#fff;background:#8b5cf6;padding:1px 4px;border-radius:3px;flex-shrink:0;width:44px;box-sizing:border-box;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;visibility:" + (c.tag ? "visible" : "hidden");
+    tagBadge.textContent = c.tag || "—";
 
     // tooltip 提示完整信息
     const tip = document.createElement("span");
@@ -3527,8 +3524,7 @@ function renderLog(data) {
     }
 
     // 组装：日期 → 消息 → 增删 → hash → tag → 对比按钮 → tooltip
-    const items = [dateSpan, msgSpan, statSpan, hashSpan];
-    if (tagBadge) items.push(tagBadge);
+    const items = [dateSpan, msgSpan, statSpan, hashSpan, tagBadge];
     if (compareBtn) items.push(compareBtn);
     items.push(tip);
     items.forEach(function(el) { li.appendChild(el); });
