@@ -263,13 +263,6 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .commit-hash{color:var(--hana-accent,#4a8cff);cursor:pointer;font-weight:500}
 .commit-msg{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
 .commit-date{font-size:11px;color:var(--hana-fg-muted,#6b7280);white-space:nowrap}
-.btn-rollback{
-  padding:1px 6px;border:1px solid #e74c3c;border-radius:4px;
-  background:transparent;color:#e74c3c;font-size:11px;cursor:pointer;transition:all .15s;
-  flex-shrink:0;width:38px;text-align:center;
-}
-.btn-rollback:hover{background:#e74c3c;color:#fff}
-
 /* 自定义 tooltip */
 .commit-list li .tip{
   display:none;position:fixed;z-index:9999;
@@ -989,7 +982,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
 <!-- reset 帮助气泡 -->
 <div id="resetHelpBubble" style="display:none;position:fixed;z-index:1000;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.8;box-shadow:0 4px 12px rgba(0,0,0,0.12);max-width:320px">
   <div style="font-weight:600;margin-bottom:4px">📜 提交记录 — 回滚模式说明</div>
-  <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:6px">点击 commit hash 或回滚按钮可选择回滚模式</div>
+  <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:6px">左键点击日期或 hash 可回滚；右键可修改提交记录</div>
   <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 8px">
     <span style="font-weight:600;color:#e67e22">soft</span>
     <span>仅移动 HEAD 指针，代码和暂存区不变</span>
@@ -3443,8 +3436,14 @@ function renderLog(data) {
     dateSpan.className = "commit-date-primary";
     dateSpan.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:600;color:var(--hana-accent,#5e6ad2);background:rgba(94,106,210,.08);padding:2px 0;border-radius:4px;flex-shrink:0;white-space:nowrap;min-width:68px;text-align:center;cursor:pointer";
     dateSpan.textContent = formatCommitDateFull(c.date);
-    dateSpan.title = c.date || "";
+    dateSpan.title = `${c.date || ""}\n左键回滚；右键修改提交记录`;
     dateSpan.onclick = () => doReset(c.hash);
+    dateSpan.oncontextmenu = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      doEditCommitMessage(c, dateSpan);
+      return false;
+    };
 
     // 2. 提交消息
     const msgSpan = document.createElement("span");
@@ -3469,8 +3468,14 @@ function renderLog(data) {
     hashSpan.className = "commit-hash-secondary";
     hashSpan.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--hana-fg-muted,#9ca3af);flex-shrink:0;cursor:pointer;padding:0 3px;width:48px;text-align:center";
     hashSpan.textContent = display;
-    hashSpan.title = "点击查看完整 hash / 复制 / 回滚";
+    hashSpan.title = "左键回滚；右键修改提交说明和版本号";
     hashSpan.onclick = (e) => { e.stopPropagation(); doReset(c.hash); };
+    hashSpan.oncontextmenu = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      doEditCommitMessage(c, hashSpan);
+      return false;
+    };
 
     // tag 角标（如果有）
     let tagBadge = null;
@@ -3490,7 +3495,7 @@ function renderLog(data) {
       `✍️  作者: ${c.author || ''}`,
       `💬 说明: ${c.message}`,
       ``,
-      `💡 点击左侧日期或 hash 可回滚到该版本`,
+      `💡 左键点击日期或 hash 可回滚；右键点击可修改提交说明和版本号`,
     ].filter(Boolean).join('\n');
     li.onmouseenter = function(e) {
       tip.classList.add("show");
@@ -3500,20 +3505,6 @@ function renderLog(data) {
     li.onmouseleave = function() {
       tip.classList.remove("show");
     };
-
-    // 编辑按钮：可同时修改提交说明和版本号。
-    const amendBtn = document.createElement("button");
-    amendBtn.className = "btn-amend";
-    amendBtn.textContent = "✏️";
-    amendBtn.title = "修改这条提交的说明和版本号";
-    amendBtn.style.cssText = "padding:1px 5px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:11px;cursor:pointer;flex-shrink:0;width:24px;text-align:center";
-    amendBtn.onclick = (e) => { e.stopPropagation(); doEditCommitMessage(c, amendBtn); };
-
-    // 回滚按钮
-    const rbBtn = document.createElement("button");
-    rbBtn.className = "btn-rollback";
-    rbBtn.textContent = "回滚";
-    rbBtn.onclick = (e) => { e.stopPropagation(); doReset(c.hash); };
 
     // 对比选择按钮
     let compareBtn = null;
@@ -3535,11 +3526,11 @@ function renderLog(data) {
       compareBtn.onclick = (e) => { e.stopPropagation(); pickCompare(c.hash); };
     }
 
-    // 组装：日期 → 消息 → 增删 → hash → tag → 对比按钮 → 改说明 → 回滚 → tooltip
+    // 组装：日期 → 消息 → 增删 → hash → tag → 对比按钮 → tooltip
     const items = [dateSpan, msgSpan, statSpan, hashSpan];
     if (tagBadge) items.push(tagBadge);
     if (compareBtn) items.push(compareBtn);
-    items.push(amendBtn, rbBtn, tip);
+    items.push(tip);
     items.forEach(function(el) { li.appendChild(el); });
     cl.appendChild(li);
   }
