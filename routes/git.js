@@ -221,6 +221,46 @@ function isValidRemoteUrl(url) {
   return /^(?:https?|ssh):\/\/[^\s]+$/.test(url) || /^git@[^\s:]+:[^\s]+$/.test(url);
 }
 
+function normalizeVersionTag(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const version = raw.replace(/^v/i, "");
+  return /^\d+\.\d+\.\d+$/.test(version) ? `v${version}` : null;
+}
+
+function getTagCommit(cwd, tag) {
+  if (!tag) return "";
+  return gitExecFile(cwd, ["rev-parse", `${tag}^{commit}`], { timeout: 10000 });
+}
+
+function inspectTagConflict(cwd, tag, targetCommit, allowedExisting = "") {
+  if (!tag) return null;
+  let existing = "";
+  try { existing = getTagCommit(cwd, tag); } catch {}
+  if (!existing || tag === allowedExisting) return null;
+  let onCurrentBranch = false;
+  try { gitExecFile(cwd, ["merge-base", "--is-ancestor", existing, "HEAD"], { timeout: 10000 }); onCurrentBranch = true; } catch {}
+  return {
+    tag,
+    existingCommit: existing,
+    targetCommit,
+    oldHistory: !onCurrentBranch,
+    message: onCurrentBranch
+      ? `版本号 ${tag.replace(/^v/, "")} 已经存在，请换一个版本号`
+      : `版本号 ${tag.replace(/^v/, "")} 已存在于旧历史，是否移动到当前提交？`,
+  };
+}
+
+function moveLightweightTag(cwd, fromTag, toTag, commit) {
+  // 先写入新 tag，再删除旧 tag，避免删除成功而写入新 tag 失败时造成版本号丢失。
+  if (toTag) {
+    gitExecFile(cwd, ["update-ref", `refs/tags/${toTag}`, commit], { timeout: 10000 });
+  }
+  if (fromTag && fromTag !== toTag) {
+    gitExecFile(cwd, ["update-ref", "-d", `refs/tags/${fromTag}`], { timeout: 10000 });
+  }
+}
+
 function validateBranchName(cwd, branch) {
   if (!branch || branch.startsWith("-")) return false;
   try {
@@ -611,14 +651,60 @@ export default function (app, ctx) {
     }
   });
 
+  // ======== API: 修改提交版本号（只操作 lightweight Git tag，不重写提交历史） ========
+  app.post("/api/tag-edit", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const path = repoPath(body.path);
+    const commit = String(body.commit || "").trim();
+    const currentTagRaw = String(body.currentTag || "").trim();
+    const currentTag = currentTagRaw ? normalizeVersionTag(currentTagRaw) : "";
+    const requestedVersion = normalizeVersionTag(body.version);
+    const allowMove = body.allowMove === true;
+
+    if (!commit) return c.json({ ok: false, message: "请指定提交 hash" });
+    if (!/^[0-9a-f]{4,64}$/i.test(commit)) return c.json({ ok: false, message: "提交 hash 格式不正确" });
+    if (currentTagRaw && currentTag === null) return c.json({ ok: false, code: "INVALID_VERSION", message: "当前版本号格式不正确" });
+    if (requestedVersion === null) return c.json({ ok: false, code: "INVALID_VERSION", message: "版本号格式错误，正确格式如 1.2.3" });
+
+    const releaseLock = tryAcquireRewordLock(path);
+    if (!releaseLock) return c.json({ ok: false, code: "REWORD_IN_PROGRESS", message: "当前仓库正在进行历史提交编辑，请等待当前操作完成" });
+    try {
+      const targetHash = gitExecFile(path, ["rev-parse", "--verify", `${commit}^{commit}`], { timeout: 10000 });
+      if (currentTag) {
+        if (getTagCommit(path, currentTag) !== targetHash) {
+          return c.json({ ok: false, code: "TAG_CHANGED", message: "当前版本号已经不再指向这条提交，请刷新后重试" });
+        }
+        if (gitExecFile(path, ["cat-file", "-t", `refs/tags/${currentTag}`], { timeout: 10000 }) !== "commit") {
+          return c.json({ ok: false, code: "ANNOTATED_TAG", message: "当前版本号是 annotated tag，暂不支持在插件内修改" });
+        }
+      }
+      const conflict = inspectTagConflict(path, requestedVersion, targetHash, currentTag);
+      if (conflict && !(conflict.oldHistory && allowMove)) {
+        return c.json({ ok: false, code: conflict.oldHistory ? "OLD_TAG_EXISTS" : "TAG_EXISTS", conflict, message: conflict.message });
+      }
+      moveLightweightTag(path, currentTag, requestedVersion, targetHash);
+      return c.json({ ok: true, tag: requestedVersion || "", message: requestedVersion ? `版本号已更新为 ${requestedVersion.replace(/^v/, "")}` : "版本号已删除" });
+    } catch (e) {
+      return c.json({ ok: false, message: `版本号修改失败：${commandErrorText(e) || "无法更新 Git tag"}` });
+    } finally {
+      releaseLock();
+    }
+  });
+
   // ======== API: 修改较早历史提交的说明（非交互式 git rebase -i / reword） ========
   app.post("/api/commit-reword", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const path = repoPath(body.path);
     const message = String(body.message || "").trim();
     const expectedHash = String(body.expectedHash || "").trim();
+    const rawCurrentTag = String(body.currentTag || "").trim();
+    const currentTag = rawCurrentTag ? normalizeVersionTag(rawCurrentTag) : "";
+    const requestedVersion = body.version === undefined ? undefined : normalizeVersionTag(body.version);
+    const allowMove = body.allowMove === true;
 
     if (!message) return c.json({ ok: false, message: "提交消息不能为空" });
+    if (rawCurrentTag && currentTag === null) return c.json({ ok: false, code: "INVALID_VERSION", message: "当前版本号格式不正确" });
+    if (requestedVersion === null) return c.json({ ok: false, code: "INVALID_VERSION", message: "版本号格式错误，正确格式如 1.2.3" });
     if (!/^[0-9a-f]{4,64}$/i.test(expectedHash)) {
       return c.json({ ok: false, message: "提交 hash 格式不正确" });
     }
@@ -630,6 +716,8 @@ export default function (app, ctx) {
 
     let backupRef = "";
     let originalHead = "";
+    let sourceTag = currentTag;
+    let targetTag = requestedVersion === undefined ? currentTag : requestedVersion;
     let rebaseStarted = false;
     let rebaseCompleted = false;
     let sequenceEditorFile = null;
@@ -705,6 +793,25 @@ export default function (app, ctx) {
         gitExecFile(path, ["merge-base", "--is-ancestor", targetHash, originalHead], { timeout: 10000 });
       } catch {
         return c.json({ ok: false, code: "NOT_REACHABLE", message: "目标提交不在当前分支的历史中" });
+      }
+
+      if (sourceTag) {
+        let sourceTarget = "";
+        try { sourceTarget = getTagCommit(path, sourceTag); } catch {}
+        if (sourceTarget !== targetHash) {
+          return c.json({ ok: false, code: "TAG_CHANGED", message: `版本号 ${sourceTag.replace(/^v/, "")} 已不再指向这条提交，请刷新后重试` });
+        }
+        try {
+          if (gitExecFile(path, ["cat-file", "-t", `refs/tags/${sourceTag}`], { timeout: 10000 }) !== "commit") {
+            return c.json({ ok: false, code: "ANNOTATED_TAG", message: `版本号 ${sourceTag.replace(/^v/, "")} 是 annotated tag，当前暂不自动改写，请手动处理` });
+          }
+        } catch {
+          return c.json({ ok: false, code: "TAG_CHANGED", message: `版本号 ${sourceTag.replace(/^v/, "")} 不存在，请刷新后重试` });
+        }
+      }
+      const tagConflict = inspectTagConflict(path, targetTag, targetHash, sourceTag);
+      if (tagConflict && !(tagConflict.oldHistory && allowMove)) {
+        return c.json({ ok: false, code: tagConflict.oldHistory ? "OLD_TAG_EXISTS" : "TAG_EXISTS", conflict: tagConflict, message: tagConflict.message });
       }
 
       // 当前版本只支持线性历史。merge commit 需要单独设计拓扑保留策略，先安全拒绝。
@@ -800,9 +907,19 @@ export default function (app, ctx) {
         const newRange = isRoot ? "HEAD" : `${upstream}..HEAD`;
         const newRangeCommits = gitExecFile(path, ["rev-list", "--reverse", newRange], { timeout: 30000 }).split("\n").filter(Boolean);
         const newTarget = newRangeCommits[targetIndex] || "";
-        const newMessage = newTarget ? gitExecFile(path, ["log", "-1", "--format=%s", newTarget], { timeout: 10000 }) : "";
+        if (!newTarget) throw new Error("无法定位 reword 后的目标提交");
+
+        // tag 更新必须在 rebase 成功后尽早执行；后续读取元信息失败也不能让版本号停留在旧提交。
+        let tagUpdateError = "";
+        if (sourceTag || targetTag) {
+          try { moveLightweightTag(path, sourceTag, targetTag, newTarget); }
+          catch (e) { tagUpdateError = commandErrorText(e) || "版本号更新失败"; }
+        }
+
+        const newMessage = gitExecFile(path, ["log", "-1", "--format=%s", newTarget], { timeout: 10000 });
         const rewrittenCount = parseInt(gitExecFile(path, ["rev-list", "--count", newRange], { timeout: 10000 }), 10) || 0;
-        const tagWarning = staleTags.length ? `；以下 tag 仍指向旧历史：${staleTags.join("、")}` : "";
+        const tagWarning = staleTags.length && !sourceTag ? `；以下旧 tag 仍指向旧历史：${staleTags.join("、")}` : "";
+        const tagDetail = tagUpdateError ? `；版本号更新失败：${tagUpdateError}，请手动检查 tag` : targetTag ? `，版本号已更新为 ${targetTag.replace(/^v/, "")}` : sourceTag ? "，版本号已删除" : "";
 
         return c.json({
           ok: true,
@@ -815,7 +932,9 @@ export default function (app, ctx) {
           rewrittenCount,
           backupRef,
           staleTags,
-          message: `已修改历史提交说明，重写了 ${rewrittenCount} 条提交${tagWarning}。如该分支已推送远程，后续需要使用 force-with-lease 推送。`,
+          tag: targetTag || "",
+          tagUpdateError,
+          message: `已修改历史提交说明${tagDetail}，重写了 ${rewrittenCount} 条提交${tagWarning}。如该分支已推送远程，后续需要使用 force-with-lease 推送。`,
         });
       } catch (e) {
         // 历史已经改完；保留备份引用并报告结果读取失败，绝不把成功的 reword 回滚掉。
@@ -830,7 +949,8 @@ export default function (app, ctx) {
           targetHash,
           backupRef,
           staleTags,
-          message: `历史提交说明已经修改成功，但读取新历史详情失败：${commandErrorText(e) || "无法读取 Git 结果"}。请刷新提交记录确认；备份引用为 ${backupRef}`,
+          tag: targetTag || "",
+          message: `历史提交说明已经修改成功${targetTag ? `，版本号目标为 ${targetTag.replace(/^v/, "")}` : sourceTag ? "，版本号已删除" : ""}，但读取新历史详情失败：${commandErrorText(e) || "无法读取 Git 结果"}。请刷新提交记录确认；备份引用为 ${backupRef}`,
         });
       }
     } catch (e) {
