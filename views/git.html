@@ -3484,13 +3484,13 @@ function renderLog(data) {
       tip.classList.remove("show");
     };
 
-    // 改说明按钮
+    // 修改说明按钮：最新提交走 amend，较早提交走非交互式 rebase/reword。
     const amendBtn = document.createElement("button");
     amendBtn.className = "btn-amend";
     amendBtn.textContent = "✏️";
-    amendBtn.title = "修改这条提交的说明（仅最近一条可改）";
+    amendBtn.title = "修改这条提交的说明（会重写该提交之后的历史）";
     amendBtn.style.cssText = "padding:1px 5px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:11px;cursor:pointer;flex-shrink:0;width:24px;text-align:center";
-    amendBtn.onclick = (e) => { e.stopPropagation(); doAmendMessage(c); };
+    amendBtn.onclick = (e) => { e.stopPropagation(); doEditCommitMessage(c, amendBtn); };
 
     // 回滚按钮
     const rbBtn = document.createElement("button");
@@ -3744,12 +3744,106 @@ async function loadStash() {
   } catch { list.style.display = "none"; count.textContent = ""; }
 }
 
-// ======== 修改提交说明（git commit --amend） ========
-async function doAmendMessage(commit) {
+// ======== 修改提交说明 ========
+let _commitMessageEditInProgress = false;
+
+function finishCommitMessageEdit(triggerButton) {
+  _commitMessageEditInProgress = false;
+  if (triggerButton) {
+    triggerButton.disabled = false;
+    triggerButton.style.opacity = "";
+  }
+}
+
+async function doEditCommitMessage(commit, triggerButton) {
+  if (_commitMessageEditInProgress) {
+    toast("已有一个历史提交说明修改正在进行", "info");
+    return;
+  }
+  const requestPath = currentPath || getSavedPath();
+  if (!requestPath) {
+    toast("请先选择 Git 仓库", "err");
+    return;
+  }
+  const originalPath = requestPath;
+  _commitMessageEditInProgress = true;
+  if (triggerButton) {
+    triggerButton.disabled = true;
+    triggerButton.style.opacity = "0.5";
+  }
+  let isHead = false;
+  try {
+    const res = await fetch(apiUrl("/api/log?count=1&path=" + encodeURIComponent(requestPath)));
+    const data = await res.json();
+    if (data.ok && data.commits && data.commits.length > 0) {
+      const headHash = data.commits[0].hash;
+      isHead = headHash.startsWith(commit.hash) || commit.hash.startsWith(headHash);
+    }
+  } catch (e) {}
+
+  if (isHead) {
+    doAmendMessage(commit, originalPath, triggerButton);
+    return;
+  }
+
+  customPrompt("修改历史提交的说明", commit.message, async function(newMsg) {
+    if (newMsg === null) { finishCommitMessageEdit(triggerButton); return; }
+    const trimmed = newMsg.trim();
+    if (!trimmed) { finishCommitMessageEdit(triggerButton); toast("提交消息不能为空", "err"); return; }
+    if (trimmed === (commit.message || "").trim()) {
+      finishCommitMessageEdit(triggerButton);
+      toast("未修改", "info");
+      return;
+    }
+
+    showConfirm(
+      "修改较早提交会重写该提交及其后续提交的 hash。操作前必须保持工作区干净。",
+      "开始修改",
+      async function(ok) {
+        if (!ok) { finishCommitMessageEdit(triggerButton); return; }
+        if ((currentPath || getSavedPath()) !== originalPath) {
+          finishCommitMessageEdit(triggerButton);
+          toast("仓库路径已改变，请重新选择要修改的提交", "err");
+          return;
+        }
+        try {
+          const res = await fetch(apiUrl("/api/commit-reword"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: trimmed, path: originalPath, expectedHash: commit.hash }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            toast("✅ " + data.message, "success");
+            cacheClear();
+            refresh();
+          } else if (data.code === "DIRTY") {
+            toast("⚠️ " + data.message, "err");
+          } else {
+            toast("❌ " + (data.message || "修改历史提交说明失败"), "err");
+          }
+        } catch (e) {
+          toast("❌ 修改历史提交说明失败：" + e.message, "err");
+        } finally {
+          finishCommitMessageEdit(triggerButton);
+        }
+      },
+      false,
+      {
+        title: "⚠️ 修改历史提交说明",
+        detailsHtml: `<div><b>目标提交：</b><code>${escapeHtml(commit.hash)}</code></div><div style="margin-top:4px"><b>原说明：</b>${escapeHtml(commit.message || "")}</div><div style="margin-top:8px;color:#b91c1c;font-weight:600">该提交之后的提交 hash 也会变化；如果已推送远程，后续需要 force-with-lease。</div>`,
+      }
+    );
+  });
+}
+
+// ======== 修改最新提交说明（git commit --amend） ========
+async function doAmendMessage(commit, requestPath, triggerButton) {
+  requestPath = requestPath || currentPath || getSavedPath();
   // 调后端检查这条 commit 是不是当前 HEAD（防用户点错）
   let isHead = false;
   try {
-    const res = await fetch(apiUrl("/api/log?count=1&path=" + encodeURIComponent(currentPath || getSavedPath())));
+    const res = await fetch(apiUrl("/api/log?count=1&path=" + encodeURIComponent(requestPath)));
     const data = await res.json();
     if (data.ok && data.commits && data.commits.length > 0) {
       const headHash = data.commits[0].hash;
@@ -3758,16 +3852,23 @@ async function doAmendMessage(commit) {
   } catch (e) {}
 
   if (!isHead) {
+    finishCommitMessageEdit(triggerButton);
     toast("⚠️ 只能修改最近一条提交。\n这条提交不是最新的，如需修改请在终端用 git rebase -i （高级操作）", "err");
     return;
   }
 
   // 弹输入框预填原消息
   customPrompt("修改这条提交的说明", commit.message, async function(newMsg) {
-    if (newMsg === null) return; // 用户取消
+    if (newMsg === null) { finishCommitMessageEdit(triggerButton); return; } // 用户取消
+    if ((currentPath || getSavedPath()) !== requestPath) {
+      finishCommitMessageEdit(triggerButton);
+      toast("仓库路径已改变，请重新选择要修改的提交", "err");
+      return;
+    }
     const trimmed = newMsg.trim();
-    if (!trimmed) { toast("提交消息不能为空", "err"); return; }
+    if (!trimmed) { finishCommitMessageEdit(triggerButton); toast("提交消息不能为空", "err"); return; }
     if (trimmed === (commit.message || "").trim()) {
+      finishCommitMessageEdit(triggerButton);
       toast("未修改", "info");
       return;
     }
@@ -3775,15 +3876,16 @@ async function doAmendMessage(commit) {
       const res = await fetch(apiUrl("/api/commit-amend"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, path: currentPath, expectedHash: commit.hash }),
+        body: JSON.stringify({ message: trimmed, path: requestPath, expectedHash: commit.hash }),
       });
       const data = await res.json();
       if (data.ok) {
         toast(`✅ ${data.commit}`, "success");
         refresh();
       } else if (data.code === "NO_IDENTITY") {
-        // 未配置身份：复用已有的弹窗
-        showIdentitySetupForAmend(trimmed, commit.hash);
+        // 未配置身份：复用已有的弹窗；当前按钮锁先释放，身份弹窗完成后由原流程重试。
+        finishCommitMessageEdit(triggerButton);
+        showIdentitySetupForAmend(trimmed, commit.hash, requestPath);
       } else if (data.code === "NOT_HEAD") {
         toast("⚠️ " + data.message, "err");
       } else if (data.code === "DIRTY") {
@@ -3793,14 +3895,17 @@ async function doAmendMessage(commit) {
       }
     } catch (e) {
       toast("❌ " + e.message, "err");
+    } finally {
+      finishCommitMessageEdit(triggerButton);
     }
   });
 }
 
 // 修改提交说明时的身份配置（复用 showIdentitySetup 的逻辑，但完成后重试 amend）
-function showIdentitySetupForAmend(message, hash) {
+function showIdentitySetupForAmend(message, hash, requestPath) {
   _pendingAmendMsg = message;
   _pendingAmendHash = hash;
+  _pendingAmendPath = requestPath || currentPath || getSavedPath();
   document.getElementById("identitySetupResult").textContent = "";
   document.getElementById("identitySetupResult").style.color = "";
   document.getElementById("identityName").value = "";
@@ -3813,6 +3918,7 @@ function showIdentitySetupForAmend(message, hash) {
 
 let _pendingAmendMsg = "";
 let _pendingAmendHash = "";
+let _pendingAmendPath = "";
 
 // 回滚
 function doReset(hash) {
@@ -4490,7 +4596,7 @@ async function submitIdentitySetup() {
         let url, body, parseRes;
         if (mode === "amend") {
           url = "/api/commit-amend";
-          body = { message: _pendingAmendMsg, path: currentPath, expectedHash: _pendingAmendHash };
+          body = { message: _pendingAmendMsg, path: _pendingAmendPath || currentPath, expectedHash: _pendingAmendHash };
           parseRes = function(d) { return d; };
         } else {
           url = "/api/commit";

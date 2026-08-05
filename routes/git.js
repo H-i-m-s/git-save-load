@@ -4,13 +4,64 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { readFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync, execFileSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const htmlPath = join(__dirname, "..", "views", "git.html");
 let cachedHtml = null;
+
+// 历史重写是仓库级别的危险操作。同一 HanaAgent 进程内，同一仓库只能同时执行一个 reword。
+const rewordLocks = new Set();
+
+function rewordLockKey(cwd) {
+  return resolve(cwd).replace(/[\\/]+$/, "").toLowerCase();
+}
+
+function tryAcquireRewordLock(cwd) {
+  const key = rewordLockKey(cwd);
+  if (rewordLocks.has(key)) return null;
+  rewordLocks.add(key);
+  return () => rewordLocks.delete(key);
+}
+
+function gitPathExists(cwd, name) {
+  try {
+    const gitPath = gitExecFile(cwd, ["rev-parse", "--git-path", name], { timeout: 10000 });
+    return existsSync(resolve(cwd, gitPath));
+  } catch {
+    return false;
+  }
+}
+
+function getGitOperationState(cwd) {
+  const names = [
+    "rebase-merge",
+    "rebase-apply",
+    "MERGE_HEAD",
+    "CHERRY_PICK_HEAD",
+    "REVERT_HEAD",
+    "sequencer",
+    "BISECT_LOG",
+  ];
+  return names.find(name => gitPathExists(cwd, name)) || "";
+}
+
+function getRebaseIdentity(cwd) {
+  for (const kind of ["rebase-merge", "rebase-apply"]) {
+    try {
+      const dir = resolve(cwd, gitExecFile(cwd, ["rev-parse", "--git-path", kind], { timeout: 10000 }));
+      if (!existsSync(dir)) continue;
+      let headName = "";
+      let originalHead = "";
+      try { headName = readFileSync(join(dir, "head-name"), "utf8").trim(); } catch {}
+      try { originalHead = readFileSync(join(dir, "orig-head"), "utf8").trim(); } catch {}
+      return { kind, dir, headName, originalHead };
+    } catch {}
+  }
+  return null;
+}
 
 async function loadHtml() {
   if (cachedHtml) return cachedHtml;
@@ -136,6 +187,20 @@ function gitExecFile(cwd, args, opts = {}) {
     windowsHide: true,
     env: gitEnv(),
     stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
+
+// 历史重写需要在不打开外部编辑器的情况下为 Git 注入临时编辑器环境。
+function gitExecFileWithEnv(cwd, args, extraEnv = {}, opts = {}) {
+  const timeout = opts.timeout || 60000;
+  return execFileSync(resolveGitPath(), args, {
+    cwd,
+    encoding: "utf8",
+    timeout,
+    windowsHide: true,
+    env: { ...gitEnv(), ...extraEnv },
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: opts.maxBuffer || 10 * 1024 * 1024,
   }).trim();
 }
 
@@ -543,6 +608,252 @@ export default function (app, ctx) {
       return c.json({ ok: false, message: `修改失败：${e.message}` });
     } finally {
       if (msgFile) { try { unlinkSync(msgFile); } catch {} }
+    }
+  });
+
+  // ======== API: 修改较早历史提交的说明（非交互式 git rebase -i / reword） ========
+  app.post("/api/commit-reword", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const path = repoPath(body.path);
+    const message = String(body.message || "").trim();
+    const expectedHash = String(body.expectedHash || "").trim();
+
+    if (!message) return c.json({ ok: false, message: "提交消息不能为空" });
+    if (!/^[0-9a-f]{4,64}$/i.test(expectedHash)) {
+      return c.json({ ok: false, message: "提交 hash 格式不正确" });
+    }
+
+    const releaseLock = tryAcquireRewordLock(path);
+    if (!releaseLock) {
+      return c.json({ ok: false, code: "REWORD_IN_PROGRESS", message: "当前仓库正在进行历史提交说明修改，请等待当前操作完成" });
+    }
+
+    let backupRef = "";
+    let originalHead = "";
+    let rebaseStarted = false;
+    let rebaseCompleted = false;
+    let sequenceEditorFile = null;
+    let messageEditorFile = null;
+    let messageContentFile = null;
+    let startBranch = "";
+    let startHead = "";
+    let startGitDir = "";
+
+    const cleanupTempEditors = () => {
+      for (const file of [sequenceEditorFile, messageEditorFile, messageContentFile]) {
+        if (file) { try { unlinkSync(file); } catch {} }
+      }
+    };
+
+    const recoverAfterFailure = () => {
+      if (!rebaseStarted || !originalHead) return "";
+      try {
+        const currentBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+        const currentGitDir = resolve(path, gitExecFile(path, ["rev-parse", "--git-dir"], { timeout: 10000 }));
+        const rebaseIdentity = getRebaseIdentity(path);
+        const currentBranchMatches = currentBranch === startBranch || !currentBranch;
+        const belongsToThisRequest = currentBranchMatches
+          && currentGitDir === startGitDir
+          && rebaseIdentity
+          && rebaseIdentity.headName === `refs/heads/${startBranch}`
+          && rebaseIdentity.originalHead === startHead;
+        if (!belongsToThisRequest) {
+          return `未自动恢复：仓库状态已发生变化，请检查当前 Git 状态；原始备份引用为 ${backupRef}`;
+        }
+        gitExecFile(path, ["rebase", "--abort"], { timeout: 30000 });
+        const restoredHead = gitExecFile(path, ["rev-parse", "HEAD"], { timeout: 10000 });
+        if (restoredHead !== originalHead) {
+          return `rebase 已终止但 HEAD 未回到原位置，请使用备份引用 ${backupRef} 恢复`;
+        }
+        return "";
+      } catch (e) {
+        return `自动恢复失败，请使用备份引用 ${backupRef} 恢复：${commandErrorText(e)}`;
+      }
+    };
+
+    try {
+      // 只允许在明确的本地分支上修改历史，避免 detached HEAD 下用户找不到新历史。
+      const branch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      if (!branch) {
+        return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到一个本地分支" });
+      }
+
+      // rebase / merge / cherry-pick / revert / bisect 未完成时，不允许嵌套历史重写。
+      const operationState = getGitOperationState(path);
+      if (operationState) {
+        return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
+      }
+
+      // 历史重写不能混入当前工作区的任何内容，也不自动 stash。
+      const status = gitExecFile(path, ["-c", "core.quotepath=false", "status", "--porcelain", "--untracked-files=all"], { timeout: 10000 });
+      if (status) {
+        return c.json({ ok: false, code: "DIRTY", message: "当前工作区不干净，请先提交或暂存这些修改后再修改历史提交说明" });
+      }
+
+      const localName = gitExecFile(path, ["config", "user.name"], { timeout: 10000 });
+      const localEmail = gitExecFile(path, ["config", "user.email"], { timeout: 10000 });
+      if (!localName || !localEmail) {
+        return c.json({ ok: false, code: "NO_IDENTITY", message: "Git 还未设置你的姓名和邮箱" });
+      }
+
+      originalHead = gitExecFile(path, ["rev-parse", "HEAD"], { timeout: 10000 });
+      startBranch = branch;
+      startHead = originalHead;
+      startGitDir = resolve(path, gitExecFile(path, ["rev-parse", "--git-dir"], { timeout: 10000 }));
+      const targetHash = gitExecFile(path, ["rev-parse", "--verify", `${expectedHash}^{commit}`], { timeout: 10000 });
+      try {
+        gitExecFile(path, ["merge-base", "--is-ancestor", targetHash, originalHead], { timeout: 10000 });
+      } catch {
+        return c.json({ ok: false, code: "NOT_REACHABLE", message: "目标提交不在当前分支的历史中" });
+      }
+
+      // 当前版本只支持线性历史。merge commit 需要单独设计拓扑保留策略，先安全拒绝。
+      const targetParentLine = gitExecFile(path, ["rev-list", "--parents", "-n", "1", targetHash], { timeout: 10000 }).trim();
+      const isRoot = targetParentLine.split(/\s+/).length === 1;
+      const rangeSpec = isRoot ? "HEAD" : `${targetHash}^..HEAD`;
+      const originalRangeCommits = gitExecFile(path, ["rev-list", "--reverse", rangeSpec], { timeout: 30000 })
+        .split("\n").filter(Boolean);
+      const targetIndex = isRoot
+        ? gitExecFile(path, ["rev-list", "--reverse", "HEAD"], { timeout: 30000 }).split("\n").filter(Boolean).indexOf(targetHash)
+        : 0;
+      const commitParents = gitExecFile(path, ["rev-list", "--parents", rangeSpec], { timeout: 30000 })
+        .split("\n").filter(Boolean);
+      if (targetIndex < 0 || originalRangeCommits.length === 0) {
+        return c.json({ ok: false, code: "NOT_REACHABLE", message: "无法确定目标提交在当前分支历史中的位置" });
+      }
+      if (commitParents.some(line => line.trim().split(/\s+/).length > 2)) {
+        return c.json({ ok: false, code: "MERGE_HISTORY", message: "当前版本暂不支持包含 merge commit 的历史，请先在纯线性分支上操作" });
+      }
+
+      // 标签仍然指向旧 commit，插件不自动移动或删除它们，只在结果中明确提示。
+      const rewrittenCommits = new Set(
+        gitExecFile(path, ["rev-list", rangeSpec], { timeout: 30000 }).split(String.fromCharCode(10)).filter(Boolean)
+      );
+      const staleTags = [];
+      let tagNames = [];
+      try { tagNames = gitExecFile(path, ["tag"], { timeout: 10000 }).split(String.fromCharCode(10)).filter(Boolean); } catch {}
+      for (const tag of tagNames) {
+        try {
+          const tagCommit = gitExecFile(path, ["rev-parse", `${tag}^{commit}`], { timeout: 10000 });
+          if (rewrittenCommits.has(tagCommit)) staleTags.push(tag);
+        } catch {}
+      }
+
+      const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+      backupRef = `refs/backup/git-save-load/reword-${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
+      gitExecFile(path, ["update-ref", backupRef, originalHead], { timeout: 10000 });
+
+      // Git 的交互式 rebase 通过两个编辑器完成：sequence editor 把目标行改成 reword，
+      // message editor 把目标提交的说明替换为用户输入。两者均使用临时 Node 脚本，避免打开外部编辑器。
+      sequenceEditorFile = join(tmpdir(), `git-sl-reword-sequence-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.cjs`);
+      messageEditorFile = join(tmpdir(), `git-sl-reword-message-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.cjs`);
+      writeFileSync(sequenceEditorFile, [
+        "const fs = require('node:fs');",
+        "const todo = process.argv[2];",
+        "const target = String(process.env.GIT_SAVE_LOAD_REWORD_TARGET || '').toLowerCase();",
+        "let text = fs.readFileSync(todo, 'utf8');",
+        "let changed = false;",
+        "text = text.split(/\\r?\\n/).map(line => {",
+        "  const m = line.match(/^(\\s*)(pick|reword|edit)\\s+([0-9a-f]+)(\\s+.*)?$/i);",
+        "  if (m && target.startsWith(m[3].toLowerCase())) { changed = true; return m[1] + 'reword ' + m[3] + (m[4] || ''); }",
+        "  return line;",
+        "}).join('\\n');",
+        "if (!changed) { console.error('目标提交未出现在 rebase todo 中'); process.exit(2); }",
+        "fs.writeFileSync(todo, text, 'utf8');",
+        "",
+      ].join("\n"), "utf8");
+      writeFileSync(messageEditorFile, [
+        "const fs = require('node:fs');",
+        "const target = process.argv[2];",
+        "const source = process.env.GIT_SAVE_LOAD_REWORD_MESSAGE_FILE;",
+        "if (!target || !source) process.exit(2);",
+        "fs.copyFileSync(source, target);",
+        "",
+      ].join("\n"), "utf8");
+
+      const quoteCommandPath = value => `"${String(value).replace(/"/g, '\\\"')}"`;
+      const editorEnv = {
+        GIT_SAVE_LOAD_REWORD_TARGET: targetHash,
+      };
+      messageContentFile = join(tmpdir(), `git-sl-reword-content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
+      editorEnv.GIT_SAVE_LOAD_REWORD_MESSAGE_FILE = messageContentFile;
+      writeFileSync(messageContentFile, message, "utf8");
+      editorEnv.GIT_SEQUENCE_EDITOR = `${quoteCommandPath(process.execPath)} ${quoteCommandPath(sequenceEditorFile)}`;
+      editorEnv.GIT_EDITOR = `${quoteCommandPath(process.execPath)} ${quoteCommandPath(messageEditorFile)}`;
+
+      const upstream = isRoot ? "" : gitExecFile(path, ["rev-parse", `${targetHash}^`], { timeout: 10000 });
+      const rebaseArgs = ["rebase", "-i"];
+      if (isRoot) rebaseArgs.push("--root");
+      else rebaseArgs.push(upstream);
+      rebaseStarted = true;
+      try {
+        gitExecFileWithEnv(path, rebaseArgs, editorEnv, { timeout: 300000 });
+      } catch (e) {
+        // 只有 rebase 命令本身失败，才进入外层恢复逻辑。
+        throw e;
+      }
+      // 从这一行开始，rebase 已经成功结束；后续任何信息读取失败都不能再 abort/reset。
+      rebaseCompleted = true;
+
+      try {
+        const newHead = gitExecFile(path, ["rev-parse", "HEAD"], { timeout: 10000 });
+        const newRange = isRoot ? "HEAD" : `${upstream}..HEAD`;
+        const newRangeCommits = gitExecFile(path, ["rev-list", "--reverse", newRange], { timeout: 30000 }).split("\n").filter(Boolean);
+        const newTarget = newRangeCommits[targetIndex] || "";
+        const newMessage = newTarget ? gitExecFile(path, ["log", "-1", "--format=%s", newTarget], { timeout: 10000 }) : "";
+        const rewrittenCount = parseInt(gitExecFile(path, ["rev-list", "--count", newRange], { timeout: 10000 }), 10) || 0;
+        const tagWarning = staleTags.length ? `；以下 tag 仍指向旧历史：${staleTags.join("、")}` : "";
+
+        return c.json({
+          ok: true,
+          branch,
+          originalHead,
+          newHead,
+          targetHash,
+          newTarget,
+          newMessage,
+          rewrittenCount,
+          backupRef,
+          staleTags,
+          message: `已修改历史提交说明，重写了 ${rewrittenCount} 条提交${tagWarning}。如该分支已推送远程，后续需要使用 force-with-lease 推送。`,
+        });
+      } catch (e) {
+        // 历史已经改完；保留备份引用并报告结果读取失败，绝不把成功的 reword 回滚掉。
+        let currentHead = "";
+        try { currentHead = gitExecFile(path, ["rev-parse", "HEAD"], { timeout: 10000 }); } catch {}
+        return c.json({
+          ok: true,
+          code: "REWORD_RESULT_READ_FAILED",
+          branch,
+          originalHead,
+          newHead: currentHead,
+          targetHash,
+          backupRef,
+          staleTags,
+          message: `历史提交说明已经修改成功，但读取新历史详情失败：${commandErrorText(e) || "无法读取 Git 结果"}。请刷新提交记录确认；备份引用为 ${backupRef}`,
+        });
+      }
+    } catch (e) {
+      if (rebaseCompleted) {
+        // 防御性分支：任何未来新增的 rebase 后处理异常，也不能触发恢复。
+        return c.json({
+          ok: true,
+          code: "REWORD_COMPLETED",
+          backupRef,
+          message: `历史提交说明已经修改完成，但后续处理出现异常：${commandErrorText(e) || "未知错误"}。请刷新提交记录确认；备份引用为 ${backupRef}`,
+        });
+      }
+      const recoveryMessage = recoverAfterFailure();
+      return c.json({
+        ok: false,
+        code: "REWORD_FAILED",
+        backupRef,
+        recovered: !recoveryMessage,
+        message: `修改历史提交说明失败：${commandErrorText(e) || "Git rebase 执行失败"}${recoveryMessage ? `；${recoveryMessage}` : "；已恢复到操作前状态"}`,
+      });
+    } finally {
+      cleanupTempEditors();
+      releaseLock();
     }
   });
 
