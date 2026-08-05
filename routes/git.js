@@ -691,6 +691,260 @@ export default function (app, ctx) {
     }
   });
 
+  // ======== API: 合并连续历史提交（非交互式 git rebase -i / squash） ========
+  app.post("/api/commit-squash", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const path = repoPath(body.path);
+    const requestedMessage = String(body.message || "").trim();
+    const messageAuto = body.messageAuto === true;
+    const requestedVersion = normalizeVersionTag(body.version);
+    const selectedRaw = Array.isArray(body.selectedCommits) ? body.selectedCommits.map(v => String(v || "").trim()).filter(Boolean) : [];
+    const expectedHead = String(body.expectedHead || "").trim();
+    const allowMove = body.allowMove === true;
+
+    if (!requestedMessage && !messageAuto) return c.json({ ok: false, message: "提交消息不能为空" });
+    if (requestedVersion === null) return c.json({ ok: false, code: "INVALID_VERSION", message: "版本号格式错误，正确格式如 1.2.3" });
+    if (selectedRaw.length < 2) return c.json({ ok: false, code: "TOO_FEW_COMMITS", message: "至少选择两条提交才能合并" });
+    if (selectedRaw.some(hash => !/^[0-9a-f]{4,64}$/i.test(hash))) {
+      return c.json({ ok: false, message: "提交 hash 格式不正确" });
+    }
+
+    const releaseLock = tryAcquireRewordLock(path);
+    if (!releaseLock) return c.json({ ok: false, code: "REWORD_IN_PROGRESS", message: "当前仓库正在进行历史重写，请等待当前操作完成" });
+
+    let backupRef = "";
+    let originalHead = "";
+    let rebaseStarted = false;
+    let rebaseCompleted = false;
+    let sequenceEditorFile = null;
+    let messageEditorFile = null;
+    let messageContentFile = null;
+    let startBranch = "";
+    let startHead = "";
+    let startGitDir = "";
+
+    const cleanupTempEditors = () => {
+      for (const file of [sequenceEditorFile, messageEditorFile, messageContentFile]) {
+        if (file) { try { unlinkSync(file); } catch {} }
+      }
+    };
+
+    const recoverAfterFailure = () => {
+      if (!rebaseStarted || !originalHead) return "";
+      try {
+        const currentBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+        const currentGitDir = resolve(path, gitExecFile(path, ["rev-parse", "--git-dir"], { timeout: 10000 }));
+        const rebaseIdentity = getRebaseIdentity(path);
+        const currentBranchMatches = currentBranch === startBranch || !currentBranch;
+        const belongsToThisRequest = currentBranchMatches
+          && currentGitDir === startGitDir
+          && rebaseIdentity
+          && rebaseIdentity.headName === `refs/heads/${startBranch}`
+          && rebaseIdentity.originalHead === startHead;
+        if (!belongsToThisRequest) return `未自动恢复：仓库状态已发生变化，请检查当前 Git 状态；原始备份引用为 ${backupRef}`;
+        gitExecFile(path, ["rebase", "--abort"], { timeout: 30000 });
+        const restoredHead = gitExecFile(path, ["rev-parse", "HEAD"], { timeout: 10000 });
+        if (restoredHead !== originalHead) return `rebase 已终止但 HEAD 未回到原位置，请使用备份引用 ${backupRef} 恢复`;
+        return "";
+      } catch (e) {
+        return `自动恢复失败，请使用备份引用 ${backupRef} 恢复：${commandErrorText(e)}`;
+      }
+    };
+
+    try {
+      const branch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      if (!branch) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到一个本地分支" });
+      const operationState = getGitOperationState(path);
+      if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
+      const status = gitExecFile(path, ["-c", "core.quotepath=false", "status", "--porcelain", "--untracked-files=all"], { timeout: 10000 });
+      if (status) return c.json({ ok: false, code: "DIRTY", message: "当前工作区不干净，请先提交或暂存这些修改后再合并历史提交" });
+      const localName = gitExecFile(path, ["config", "user.name"], { timeout: 10000 });
+      const localEmail = gitExecFile(path, ["config", "user.email"], { timeout: 10000 });
+      if (!localName || !localEmail) return c.json({ ok: false, code: "NO_IDENTITY", message: "Git 还未设置你的姓名和邮箱" });
+
+      originalHead = gitExecFile(path, ["rev-parse", "HEAD"], { timeout: 10000 });
+      startBranch = branch;
+      startHead = originalHead;
+      startGitDir = resolve(path, gitExecFile(path, ["rev-parse", "--git-dir"], { timeout: 10000 }));
+      if (expectedHead) {
+        if (!/^[0-9a-f]{4,64}$/i.test(expectedHead)) return c.json({ ok: false, code: "HEAD_CHANGED", message: "提交列表状态无效，请刷新后重试" });
+        const expectedFull = gitExecFile(path, ["rev-parse", "--verify", `${expectedHead}^{commit}`], { timeout: 10000 });
+        if (expectedFull !== originalHead) return c.json({ ok: false, code: "HEAD_CHANGED", message: "仓库在编辑期间发生了变化，请刷新提交记录后重试" });
+      }
+
+      const history = gitExecFile(path, ["rev-list", "--reverse", "HEAD"], { timeout: 30000 }).split("\n").filter(Boolean);
+      const selected = [];
+      const selectedSet = new Set();
+      for (const raw of selectedRaw) {
+        const full = gitExecFile(path, ["rev-parse", "--verify", `${raw}^{commit}`], { timeout: 10000 });
+        if (selectedSet.has(full)) return c.json({ ok: false, code: "DUPLICATE_COMMITS", message: "不能重复选择同一条提交" });
+        selected.push(full);
+        selectedSet.add(full);
+      }
+      const indexes = selected.map(hash => history.indexOf(hash));
+      if (indexes.some(index => index < 0)) return c.json({ ok: false, code: "NOT_REACHABLE", message: "选择的提交不在当前分支历史中" });
+      const minIndex = Math.min(...indexes);
+      const maxIndex = Math.max(...indexes);
+      if (maxIndex - minIndex + 1 !== selected.length) return c.json({ ok: false, code: "NON_CONTIGUOUS", message: "请选择连续的提交，不能跳过中间提交" });
+      const selectedOrdered = history.slice(minIndex, maxIndex + 1);
+      const selectedSubjects = selectedOrdered.map(hash => gitExecFile(path, ["show", "-s", "--format=%s", hash], { timeout: 10000 }).trim()).filter(Boolean);
+      const generatedMessage = selectedSubjects.join("+");
+      const message = messageAuto ? generatedMessage : requestedMessage;
+      if (!message) return c.json({ ok: false, message: "选中提交没有可用的提交说明" });
+      const earliest = selectedOrdered[0];
+      const rangeSpec = minIndex === 0 ? "HEAD" : `${earliest}^..HEAD`;
+      const rangeCommits = gitExecFile(path, ["rev-list", "--reverse", rangeSpec], { timeout: 30000 }).split("\n").filter(Boolean);
+      const commitParents = gitExecFile(path, ["rev-list", "--parents", rangeSpec], { timeout: 30000 }).split("\n").filter(Boolean);
+      if (commitParents.some(line => line.trim().split(/\s+/).length > 2)) {
+        return c.json({ ok: false, code: "MERGE_HISTORY", message: "当前版本暂不支持包含 merge commit 的历史，请先在纯线性分支上操作" });
+      }
+
+      // 读取所有 tag，准备在 rebase 成功后把 lightweight tag 映射到新提交。
+      const tagInfos = [];
+      let tagRaw = "";
+      try { tagRaw = gitExecFile(path, ["for-each-ref", "refs/tags", "--format=%(refname:short)|%(objecttype)|%(objectname)"], { timeout: 10000 }); } catch {}
+      for (const line of tagRaw.split("\n").filter(Boolean)) {
+        const parts = line.split("|");
+        const name = parts[0] || "";
+        const type = parts[1] || "";
+        if (!name) continue;
+        let commit = "";
+        try { commit = getTagCommit(path, name); } catch {}
+        tagInfos.push({ name, type, commit });
+      }
+      const rewrittenSet = new Set(rangeCommits);
+      const selectedVersionTags = tagInfos.filter(info => selectedSet.has(info.commit) && normalizeVersionTag(info.name));
+      const requestedInfo = requestedVersion ? tagInfos.find(info => info.name === requestedVersion) : null;
+      if (requestedInfo) {
+        if (requestedInfo.type !== "commit") return c.json({ ok: false, code: "ANNOTATED_TAG", message: `版本号 ${requestedVersion.replace(/^v/, "")} 是 annotated tag，当前暂不自动改写` });
+        const isSelectedTag = selectedSet.has(requestedInfo.commit);
+        const isRewrittenLaterTag = rewrittenSet.has(requestedInfo.commit) && !isSelectedTag;
+        if (!isSelectedTag && !isRewrittenLaterTag) {
+          let onCurrentBranch = false;
+          try { gitExecFile(path, ["merge-base", "--is-ancestor", requestedInfo.commit, originalHead], { timeout: 10000 }); onCurrentBranch = true; } catch {}
+          const conflict = { tag: requestedVersion, existingCommit: requestedInfo.commit, targetCommit: earliest, oldHistory: !onCurrentBranch };
+          if (!(conflict.oldHistory && allowMove)) return c.json({ ok: false, code: conflict.oldHistory ? "OLD_TAG_EXISTS" : "TAG_EXISTS", conflict, message: conflict.message || `版本号 ${requestedVersion.replace(/^v/, "")} 已经存在` });
+        }
+        if (isRewrittenLaterTag) return c.json({ ok: false, code: "TAG_EXISTS", message: `版本号 ${requestedVersion.replace(/^v/, "")} 位于合并范围之后的提交，不能覆盖` });
+      }
+      for (const info of tagInfos) {
+        if (rewrittenSet.has(info.commit) && info.type !== "commit") {
+          return c.json({ ok: false, code: "ANNOTATED_TAG", message: `提交 ${info.commit.slice(0, 7)} 上存在 annotated tag ${info.name}，当前暂不自动改写` });
+        }
+      }
+
+      const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+      backupRef = `refs/backup/git-save-load/squash-${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
+      gitExecFile(path, ["update-ref", backupRef, originalHead], { timeout: 10000 });
+
+      sequenceEditorFile = join(tmpdir(), `git-sl-squash-sequence-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.cjs`);
+      messageEditorFile = join(tmpdir(), `git-sl-squash-message-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.cjs`);
+      writeFileSync(sequenceEditorFile, [
+        "const fs = require('node:fs');",
+        "const todo = process.argv[2];",
+        "const selected = new Set(String(process.env.GIT_SAVE_LOAD_SQUASH_SELECTED || '').split(',').filter(Boolean).map(v => v.toLowerCase()));",
+        "let text = fs.readFileSync(todo, 'utf8');",
+        "let selectedSeen = 0;",
+        "text = text.split(/\\r?\\n/).map(line => {",
+        "  const m = line.match(/^(\\s*)(pick|reword|edit|squash|fixup)\\s+([0-9a-f]+)(\\s+.*)?$/i);",
+        "  if (!m) return line;",
+        "  const hash = m[3].toLowerCase();",
+        "  if (!selected.has(hash) && !Array.from(selected).some(target => target.startsWith(hash) || hash.startsWith(target))) return line;",
+        "  selectedSeen += 1;",
+        "  return m[1] + (selectedSeen === 1 ? 'pick ' : 'squash ') + m[3] + (m[4] || '');",
+        "}).join('\\n');",
+        "if (selectedSeen !== selected.size) { console.error('selected commit not found in rebase todo'); process.exit(2); }",
+        "fs.writeFileSync(todo, text, 'utf8');",
+        "",
+      ].join("\n"), "utf8");
+      writeFileSync(messageEditorFile, [
+        "const fs = require('node:fs');",
+        "const target = process.argv[2];",
+        "const source = process.env.GIT_SAVE_LOAD_SQUASH_MESSAGE_FILE;",
+        "if (!target || !source) process.exit(2);",
+        "fs.copyFileSync(source, target);",
+        "",
+      ].join("\n"), "utf8");
+      const quoteCommandPath = value => `"${String(value).replace(/"/g, '\\\"')}"`;
+      messageContentFile = join(tmpdir(), `git-sl-squash-content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
+      writeFileSync(messageContentFile, message, "utf8");
+      const editorEnv = {
+        GIT_SAVE_LOAD_SQUASH_SELECTED: selectedOrdered.join(","),
+        GIT_SAVE_LOAD_SQUASH_MESSAGE_FILE: messageContentFile,
+        GIT_SEQUENCE_EDITOR: `${quoteCommandPath(process.execPath)} ${quoteCommandPath(sequenceEditorFile)}`,
+        GIT_EDITOR: `${quoteCommandPath(process.execPath)} ${quoteCommandPath(messageEditorFile)}`,
+      };
+      const upstream = minIndex === 0 ? "" : gitExecFile(path, ["rev-parse", `${earliest}^`], { timeout: 10000 });
+      const rebaseArgs = ["rebase", "-i"];
+      if (minIndex === 0) rebaseArgs.push("--root"); else rebaseArgs.push(upstream);
+      rebaseStarted = true;
+      gitExecFileWithEnv(path, rebaseArgs, editorEnv, { timeout: 300000 });
+      rebaseCompleted = true;
+
+      const newHead = gitExecFile(path, ["rev-parse", "HEAD"], { timeout: 10000 });
+      const newRangeSpec = minIndex === 0 ? "HEAD" : `${upstream}..HEAD`;
+      const newRangeCommits = gitExecFile(path, ["rev-list", "--reverse", newRangeSpec], { timeout: 30000 }).split("\n").filter(Boolean);
+      const rangeStartIndex = minIndex === 0 ? 0 : minIndex;
+      const selectedStartInRange = minIndex - rangeStartIndex;
+      const newSquashed = newRangeCommits[selectedStartInRange] || "";
+      if (!newSquashed) throw new Error("无法定位合并后的提交");
+      const newIndexByOld = new Map();
+      for (let i = 0; i < rangeCommits.length; i++) {
+        const newIndex = i < selectedStartInRange
+          ? i
+          : i < selectedStartInRange + selectedOrdered.length
+            ? selectedStartInRange
+            : i - selectedOrdered.length + 1;
+        newIndexByOld.set(rangeCommits[i], newRangeCommits[newIndex] || "");
+      }
+      let tagUpdateError = "";
+      try {
+        for (const info of tagInfos) {
+          if (!rewrittenSet.has(info.commit)) continue;
+          const newTarget = newIndexByOld.get(info.commit);
+          if (!newTarget) continue;
+          const selectedTag = selectedSet.has(info.commit);
+          const versionTag = !!normalizeVersionTag(info.name);
+          if (selectedTag && versionTag) {
+            if (requestedVersion && info.name === requestedVersion) gitExecFile(path, ["update-ref", `refs/tags/${info.name}`, newSquashed], { timeout: 10000 });
+            else gitExecFile(path, ["update-ref", "-d", `refs/tags/${info.name}`], { timeout: 10000 });
+          } else {
+            gitExecFile(path, ["update-ref", `refs/tags/${info.name}`, newTarget], { timeout: 10000 });
+          }
+        }
+        if (requestedVersion) {
+          gitExecFile(path, ["update-ref", `refs/tags/${requestedVersion}`, newSquashed], { timeout: 10000 });
+        }
+      } catch (e) {
+        tagUpdateError = commandErrorText(e) || "版本号更新失败";
+      }
+      const rewrittenCount = rangeCommits.length;
+      const tagDetail = requestedVersion ? `，版本号已更新为 ${requestedVersion.replace(/^v/, "")}` : selectedVersionTags.length ? "，选中提交上的版本号已清理" : "";
+      return c.json({
+        ok: true,
+        branch,
+        originalHead,
+        newHead,
+        newSquashed,
+        selectedCommits: selectedOrdered,
+        rewrittenCount,
+        backupRef,
+        tag: requestedVersion || "",
+        tagUpdateError,
+        message: `已合并 ${selectedOrdered.length} 条连续提交${tagDetail}${tagUpdateError ? `；${tagUpdateError}` : ""}，并重写了后续 ${rewrittenCount} 条提交。如该分支已推送远程，后续需要使用 force-with-lease 推送。`,
+      });
+    } catch (e) {
+      if (rebaseCompleted) {
+        return c.json({ ok: true, code: "SQUASH_COMPLETED", backupRef, message: `提交合并已经完成，但后续处理出现异常：${commandErrorText(e) || "未知错误"}。请刷新提交记录确认；备份引用为 ${backupRef}` });
+      }
+      const recoveryMessage = recoverAfterFailure();
+      return c.json({ ok: false, code: "SQUASH_FAILED", backupRef, recovered: !recoveryMessage, message: `合并历史提交失败：${commandErrorText(e) || "Git rebase 执行失败"}${recoveryMessage ? `；${recoveryMessage}` : "；已恢复到操作前状态"}` });
+    } finally {
+      cleanupTempEditors();
+      releaseLock();
+    }
+  });
+
   // ======== API: 修改较早历史提交的说明（非交互式 git rebase -i / reword） ========
   app.post("/api/commit-reword", async (c) => {
     const body = await c.req.json().catch(() => ({}));

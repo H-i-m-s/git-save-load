@@ -264,7 +264,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .commit-msg{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
 .commit-date{font-size:11px;color:var(--hana-fg-muted,#6b7280);white-space:nowrap}
 /* 自定义 tooltip */
-.commit-list li .tip{
+.commit-tooltip{
   display:none;position:fixed;z-index:9999;
   background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24);
   border:1px solid var(--hana-border,#e2e5ea);
@@ -273,8 +273,10 @@ select:disabled{opacity:.5;cursor:not-allowed}
   white-space:pre-wrap;word-break:break-all;
   line-height:1.6;max-width:320px;
   box-shadow:0 4px 12px rgba(0,0,0,0.15);
+  pointer-events:none;user-select:text;-webkit-user-select:text;cursor:default;-webkit-user-drag:none;
 }
-.commit-list li .tip.show{display:block}
+.commit-tooltip.show{display:block}
+.commit-tooltip.interactive{pointer-events:auto;cursor:text;}
 
 /* diff 颜色 */
 .diff-add{background:#e6ffed;color:#1a7f37;padding:0 4px}
@@ -938,13 +940,19 @@ select:disabled{opacity:.5;cursor:not-allowed}
 
 <!-- 提交说明和版本号编辑弹框 -->
 <div id="commitEditModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:2200;background:rgba(0,0,0,.3);align-items:center;justify-content:center;padding:20px;box-sizing:border-box" onclick="if(event.target===this)cancelCommitEditModal()">
-  <div style="background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:10px;padding:16px;width:360px;max-width:100%;box-shadow:0 8px 24px rgba(0,0,0,.15);color:var(--hana-fg,#1a1d24)">
+  <div style="background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:10px;padding:16px;width:480px;max-width:100%;box-shadow:0 8px 24px rgba(0,0,0,.15);color:var(--hana-fg,#1a1d24)">
     <div id="commitEditTitle" style="font-size:14px;font-weight:600;margin-bottom:12px">编辑提交</div>
-    <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px">提交说明</div>
+    <div id="commitEditMessageLabel" style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px">提交说明</div>
     <input type="text" id="commitEditMessage" style="width:100%;padding:8px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box" autocomplete="off" onkeydown="if(event.key==='Enter')submitCommitEditModal();if(event.key==='Escape')cancelCommitEditModal()">
     <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin:12px 0 4px">版本号</div>
     <input type="text" id="commitEditVersion" placeholder="例如 1.2.3；留空删除" style="width:100%;padding:8px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box" autocomplete="off" onkeydown="if(event.key==='Enter')submitCommitEditModal();if(event.key==='Escape')cancelCommitEditModal()">
     <div id="commitEditHint" style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-top:5px;line-height:1.5">版本号实际是 Git tag；没有版本号的提交也可以在这里新增。</div>
+    <div style="font-size:12px;font-weight:600;margin-top:14px;margin-bottom:6px">合并连续提交</div>
+    <div style="display:grid;grid-template-columns:32px 72px minmax(0,1fr);gap:6px;padding:4px 8px;font-size:10px;color:var(--hana-fg-muted,#6b7280);background:var(--hana-bg-muted,#eef0f3);border:1px solid var(--hana-border,#d0d5dd);border-bottom:0;border-radius:7px 7px 0 0">
+      <span style="text-align:center">选择</span><span>版本号</span><span>提交说明</span>
+    </div>
+    <div id="commitEditSelection" style="border:1px solid var(--hana-border,#d0d5dd);border-radius:0 0 7px 7px;max-height:190px;overflow-y:auto;overflow-x:hidden;background:var(--hana-bg,#f5f6f8)"></div>
+    <div style="font-size:10px;color:var(--hana-fg-muted,#6b7280);margin-top:5px;line-height:1.5">勾选两条或以上连续提交后，会将它们合并为一个提交；只勾选一条则只修改该提交。</div>
     <div id="commitEditResult" style="font-size:11px;min-height:16px;margin-top:8px;color:#b91c1c"></div>
     <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
       <button onclick="cancelCommitEditModal()" style="padding:6px 14px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">取消</button>
@@ -983,6 +991,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
 <div id="resetHelpBubble" style="display:none;position:fixed;z-index:1000;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.8;box-shadow:0 4px 12px rgba(0,0,0,0.12);max-width:320px">
   <div style="font-weight:600;margin-bottom:4px">📜 提交记录 — 回滚模式说明</div>
   <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:6px">左键点击日期或 hash 可回滚；右键可修改提交记录</div>
+  <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:6px">查看记录时提示块会跟随当前行；想选中文字时，先按住 Shift 再移入提示块，Shift 期间不会切换到其他行。</div>
   <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 8px">
     <span style="font-weight:600;color:#e67e22">soft</span>
     <span>仅移动 HEAD 指针，代码和暂存区不变</span>
@@ -1209,7 +1218,7 @@ function initCardDrag() {
   // 元素级事件
   container.addEventListener("dragstart", function(e) {
     // 兑底：即使 mousedown 拦截失效，也要阻止 input 上的 drag
-    if (e.target.closest('input, textarea, select, [contenteditable]')) {
+    if (e.target.closest('input, textarea, select, [contenteditable], .commit-tooltip')) {
       e.preventDefault();
       return;
     }
@@ -1223,7 +1232,7 @@ function initCardDrag() {
   // 让浏览器在决定"拖卡片"或"文本选择"时走文本选择路径。
   // 注意用捕获阶段，保证发生在浏览器默认判定之前。
   container.addEventListener("mousedown", function(e) {
-    if (!e.target.closest('input, textarea, select, [contenteditable]')) return;
+    if (!e.target.closest('input, textarea, select, [contenteditable], .commit-tooltip')) return;
     var card = e.target.closest('.card');
     if (!card || !card.getAttribute('draggable')) return;
     card.setAttribute('draggable', 'false');
@@ -3411,7 +3420,104 @@ function compareCleanup() {
 }
 
 // 渲染提交历史
+let commitTooltipEl = null;
+let activeCommitTip = null;
+let activeCommitTipHideTimer = null;
+let commitTooltipInteractive = false;
+let commitTooltipLocked = false;
+let commitTooltipIntentBound = false;
+
+function setCommitTooltipInteractive(enabled) {
+  commitTooltipInteractive = !!enabled;
+  if (commitTooltipEl) commitTooltipEl.classList.toggle("interactive", commitTooltipInteractive);
+}
+
+function bindCommitTooltipIntent() {
+  if (commitTooltipIntentBound) return;
+  commitTooltipIntentBound = true;
+  document.addEventListener("keydown", function(e) {
+    if (e.key !== "Shift" || e.repeat || !activeCommitTip || !commitTooltipEl) return;
+    commitTooltipLocked = true;
+    setCommitTooltipInteractive(true);
+  });
+  document.addEventListener("keyup", function(e) {
+    if (e.key !== "Shift" || !activeCommitTip || !commitTooltipEl) return;
+    // Shift 释放后仍保持当前提示块锁定，直到鼠标离开提示块。
+    if (commitTooltipEl.matches(":hover")) setCommitTooltipInteractive(true);
+  });
+}
+
+function ensureCommitTooltip() {
+  bindCommitTooltipIntent();
+  if (commitTooltipEl && document.body.contains(commitTooltipEl)) return commitTooltipEl;
+  commitTooltipEl = document.createElement("span");
+  commitTooltipEl.id = "globalCommitTooltip";
+  commitTooltipEl.className = "commit-tooltip";
+  commitTooltipEl.onmouseenter = function() {
+    if (!commitTooltipInteractive) return;
+    if (activeCommitTipHideTimer) {
+      clearTimeout(activeCommitTipHideTimer);
+      activeCommitTipHideTimer = null;
+    }
+    activeCommitTip = commitTooltipEl;
+    commitTooltipEl.classList.add("show");
+  };
+  commitTooltipEl.onmouseleave = function() {
+    if (commitTooltipInteractive) {
+      commitTooltipLocked = false;
+      setCommitTooltipInteractive(false);
+      scheduleActiveCommitTipHide(commitTooltipEl);
+    }
+  };
+  commitTooltipEl.onmousedown = function(e) {
+    // 保留浏览器默认行为，让提示文字可以正常拖选和复制。
+    e.stopPropagation();
+  };
+  document.body.appendChild(commitTooltipEl);
+  return commitTooltipEl;
+}
+
+function hideActiveCommitTip() {
+  if (activeCommitTipHideTimer) {
+    clearTimeout(activeCommitTipHideTimer);
+    activeCommitTipHideTimer = null;
+  }
+  if (activeCommitTip) activeCommitTip.classList.remove("show");
+  activeCommitTip = null;
+  commitTooltipLocked = false;
+  setCommitTooltipInteractive(false);
+}
+
+function scheduleActiveCommitTipHide(tip) {
+  if (activeCommitTipHideTimer) clearTimeout(activeCommitTipHideTimer);
+  activeCommitTipHideTimer = setTimeout(function() {
+    if (activeCommitTip === tip && !tip.matches(":hover")) hideActiveCommitTip();
+    activeCommitTipHideTimer = null;
+  }, 180);
+}
+
+function showCommitTooltip(commit, event) {
+  const tip = ensureCommitTooltip();
+  if (commitTooltipLocked) return;
+  hideActiveCommitTip();
+  setCommitTooltipInteractive(false);
+  tip.textContent = [
+    `📅 完整时间: ${commit.date || ''}`,
+    `🔖 Hash: ${commit.hash}`,
+    commit.tag ? `🏷️  Tag: ${commit.tag}` : null,
+    `✍️  作者: ${commit.author || ''}`,
+    `💬 说明: ${commit.message}`,
+    ``,
+    `💡 左键点击日期或 hash 可回滚；右键点击可修改提交说明和版本号`,
+  ].filter(Boolean).join("\n");
+  activeCommitTip = tip;
+  tip.classList.add("show");
+  tip.style.left = Math.max(6, event.clientX - 10) + "px";
+  tip.style.top = Math.max(6, event.clientY - tip.offsetHeight - 8) + "px";
+}
+
 function renderLog(data) {
+  hideActiveCommitTip();
   const cl = document.getElementById("commitList");
   cl.innerHTML = "";
 
@@ -3482,25 +3588,14 @@ function renderLog(data) {
     tagBadge.style.cssText = "font-size:10px;color:#fff;background:#8b5cf6;padding:1px 4px;border-radius:3px;flex-shrink:0;width:44px;box-sizing:border-box;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;visibility:" + (c.tag ? "visible" : "hidden");
     tagBadge.textContent = c.tag || "—";
 
-    // tooltip 提示完整信息
-    const tip = document.createElement("span");
-    tip.className = "tip";
-    tip.textContent = [
-      `📅 完整时间: ${c.date || ''}`,
-      `🔖 Hash: ${c.hash}`,
-      c.tag ? `🏷️  Tag: ${c.tag}` : null,
-      `✍️  作者: ${c.author || ''}`,
-      `💬 说明: ${c.message}`,
-      ``,
-      `💡 左键点击日期或 hash 可回滚；右键点击可修改提交说明和版本号`,
-    ].filter(Boolean).join('\n');
+    // 提示块统一挂到 body，避免 fixed 浮层仍受提交行 hover 关系影响。
     li.onmouseenter = function(e) {
-      tip.classList.add("show");
-      tip.style.left = (e.clientX - 10) + "px";
-      tip.style.top = (e.clientY - tip.offsetHeight - 8) + "px";
+      if (!commitTooltipLocked) showCommitTooltip(c, e);
     };
     li.onmouseleave = function() {
-      tip.classList.remove("show");
+      if (!commitTooltipInteractive) {
+        scheduleActiveCommitTipHide(commitTooltipEl);
+      }
     };
 
     // 对比选择按钮
@@ -3526,7 +3621,6 @@ function renderLog(data) {
     // 组装：日期 → 消息 → 增删 → hash → tag → 对比按钮 → tooltip
     const items = [dateSpan, msgSpan, statSpan, hashSpan, tagBadge];
     if (compareBtn) items.push(compareBtn);
-    items.push(tip);
     items.forEach(function(el) { li.appendChild(el); });
     cl.appendChild(li);
   }
@@ -3751,6 +3845,61 @@ async function loadStash() {
 // ======== 修改提交说明和版本号 ========
 let _commitMessageEditInProgress = false;
 let _commitEditContext = null;
+let _commitEditSelection = new Set();
+let _commitEditMessageAuto = true;
+let _commitEditMessageAutoValue = "";
+
+function getSelectedCommitMessage(commits) {
+  return commits
+    .filter(c => _commitEditSelection.has(c.hash))
+    .slice()
+    .sort((a, b) => commits.indexOf(b) - commits.indexOf(a))
+    .map(c => (c.message || "").trim())
+    .filter(Boolean)
+    .join("+");
+}
+
+function syncCommitEditMessageFromSelection(commits) {
+  const input = document.getElementById("commitEditMessage");
+  if (!input || !_commitEditMessageAuto) return;
+  const generated = getSelectedCommitMessage(commits);
+  _commitEditMessageAutoValue = generated;
+  input.value = generated;
+}
+
+function renderCommitEditSelection(commits, selectedHash) {
+  const box = document.getElementById("commitEditSelection");
+  if (!box) return;
+  _commitEditSelection = new Set([selectedHash]);
+  _commitEditMessageAuto = true;
+  _commitEditMessageAutoValue = "";
+  box.innerHTML = commits.map(function(c) {
+    const checked = c.hash === selectedHash ? " checked" : "";
+    const tag = (c.tag || "").replace(/^v/i, "");
+    return `<label style="display:grid;grid-template-columns:32px 72px minmax(0,1fr);align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--hana-border,#e2e5ea);font-size:11px;cursor:pointer;background:var(--hana-surface,#fff)" title="${escapeHtml(c.hash)}\n${escapeHtml(c.date || "")}">
+      <span style="text-align:center"><input type="checkbox" data-commit-hash="${escapeHtml(c.hash)}"${checked} style="cursor:pointer"></span>
+      <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:${tag ? "#8b5cf6" : "var(--hana-fg-muted,#9ca3af)"};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(tag || "—")}</span>
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg,#1a1d24)">${escapeHtml(c.message || "")}</span>
+    </label>`;
+  }).join("");
+  box.querySelectorAll("input[data-commit-hash]").forEach(function(input) {
+    input.addEventListener("change", function() {
+      const hash = input.getAttribute("data-commit-hash");
+      if (input.checked) _commitEditSelection.add(hash);
+      else _commitEditSelection.delete(hash);
+      const selected = commits.filter(c => _commitEditSelection.has(c.hash));
+      if (selected.length === 1) {
+        _commitEditMessageAuto = true;
+        const messageInput = document.getElementById("commitEditMessage");
+        messageInput.value = selected[0].message || "";
+        _commitEditMessageAutoValue = messageInput.value;
+        document.getElementById("commitEditVersion").value = (selected[0].tag || "").replace(/^v/i, "");
+      } else if (selected.length >= 2) {
+        syncCommitEditMessageFromSelection(commits);
+      }
+    });
+  });
+}
 
 function finishCommitMessageEdit(triggerButton) {
   _commitMessageEditInProgress = false;
@@ -3782,11 +3931,24 @@ async function doEditCommitMessage(commit, triggerButton) {
   } catch (e) {}
 
   const oldVersion = (commit.tag || "").replace(/^v/i, "");
-  _commitEditContext = { commit, triggerButton, originalPath, isHead, oldVersion };
+  let commits = [];
+  try {
+    const logRes = await fetch(apiUrl("/api/log?count=100&path=" + encodeURIComponent(requestPath)));
+    const logData = await logRes.json();
+    if (logData.ok && Array.isArray(logData.commits)) commits = logData.commits;
+  } catch (e) {}
+  if (!commits.length) commits = [commit];
+  _commitEditContext = { commit, triggerButton, originalPath, isHead, oldVersion, commits };
   document.getElementById("commitEditTitle").textContent = isHead ? "编辑提交" : "编辑历史提交";
   document.getElementById("commitEditMessage").value = commit.message || "";
+  _commitEditMessageAutoValue = commit.message || "";
   document.getElementById("commitEditVersion").value = oldVersion;
+  const messageInput = document.getElementById("commitEditMessage");
+  messageInput.oninput = function() {
+    if (messageInput.value !== _commitEditMessageAutoValue) _commitEditMessageAuto = false;
+  };
   document.getElementById("commitEditResult").textContent = "";
+  renderCommitEditSelection(commits, commit.hash);
   document.getElementById("commitEditModal").style.display = "flex";
   setTimeout(function() { document.getElementById("commitEditMessage").focus(); document.getElementById("commitEditMessage").select(); }, 50);
 }
@@ -3804,13 +3966,60 @@ async function submitCommitEditModal() {
   const result = document.getElementById("commitEditResult");
   const trimmed = document.getElementById("commitEditMessage").value.trim();
   const version = document.getElementById("commitEditVersion").value.trim().replace(/^v/i, "");
-  if (!trimmed) { result.textContent = "提交消息不能为空"; return; }
+  const selectedCommits = ctx.commits.filter(c => _commitEditSelection.has(c.hash));
+  const autoMergedMessage = getSelectedCommitMessage(ctx.commits);
+  const finalMessage = selectedCommits.length >= 2 && _commitEditMessageAuto ? autoMergedMessage : trimmed;
+  if (!finalMessage) { result.textContent = "提交消息不能为空"; return; }
   if (version && !/^\d+\.\d+\.\d+$/.test(version)) { result.textContent = "版本号格式错误，正确格式如 1.2.3"; return; }
-  if (trimmed === (ctx.commit.message || "").trim() && version === ctx.oldVersion) { result.textContent = "未修改"; return; }
+  if (selectedCommits.length < 1) { result.textContent = "至少选择一条提交"; return; }
+  const selectedIndexes = selectedCommits.map(c => ctx.commits.indexOf(c)).sort((a, b) => a - b);
+  if (selectedIndexes.some((index, i) => i > 0 && index !== selectedIndexes[i - 1] + 1)) { result.textContent = "请选择连续的提交，不能跳过中间提交"; return; }
+  if (selectedCommits.length === 1 && trimmed === (ctx.commit.message || "").trim() && version === ctx.oldVersion) { result.textContent = "未修改"; return; }
   document.getElementById("commitEditModal").style.display = "none";
   if ((currentPath || getSavedPath()) !== ctx.originalPath) {
     toast("仓库路径已改变，请重新选择要修改的提交", "err");
     finishCommitMessageEdit(ctx.triggerButton); _commitEditContext = null; return;
+  }
+  const selectedHashes = selectedCommits.map(c => c.hash);
+  if (selectedCommits.length >= 2) {
+    showConfirm(
+      `确定要合并选中的 ${selectedCommits.length} 条连续提交吗？合并后这些提交会变成一个新提交，后续提交 hash 也会变化。`,
+      "确认合并",
+      async function(ok) {
+        if (!ok) { finishCommitMessageEdit(ctx.triggerButton); _commitEditContext = null; return; }
+        try {
+          const body = { message: finalMessage, messageAuto: _commitEditMessageAuto, version, selectedCommits: selectedHashes, expectedHead: ctx.commits[0]?.hash || "", path: ctx.originalPath };
+          const res = await fetch(apiUrl("/api/commit-squash"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          const data = await res.json();
+          if (data.code === "OLD_TAG_EXISTS" && data.conflict) {
+            showConfirm(
+              `版本号 ${version} 已存在于旧历史，是否移动到合并后的提交？`,
+              "移动并合并",
+              async function(move) {
+                if (!move) { finishCommitMessageEdit(ctx.triggerButton); _commitEditContext = null; return; }
+                try {
+                  const retryBody = { ...body, allowMove: true };
+                  const retry = await fetch(apiUrl("/api/commit-squash"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(retryBody) });
+                  const retryData = await retry.json();
+                  if (retryData.ok) { toast("✅ " + retryData.message, "success"); cacheClear(); refresh(); }
+                  else toast("❌ " + (retryData.message || "合并失败"), "err");
+                } catch (e) { toast("❌ 合并失败：" + e.message, "err"); }
+                finally { finishCommitMessageEdit(ctx.triggerButton); _commitEditContext = null; }
+              },
+              false,
+              { title: "⚠️ 移动旧版本号并合并", detailsHtml: `<div><b>版本号：</b>${escapeHtml(version)}</div><div style="margin-top:4px"><b>旧提交：</b><code>${escapeHtml(data.conflict.existingCommit)}</code></div><div style="margin-top:8px;color:#b91c1c">确认后会移动版本号并执行合并。</div>` }
+            );
+            return;
+          }
+          if (data.ok) { toast("✅ " + data.message, "success"); cacheClear(); refresh(); }
+          else toast("❌ " + (data.message || "合并失败"), "err");
+        } catch (e) { toast("❌ 合并失败：" + e.message, "err"); }
+        finally { finishCommitMessageEdit(ctx.triggerButton); _commitEditContext = null; }
+      },
+      false,
+      { title: "⚠️ 合并连续提交", detailsHtml: selectedCommits.slice().sort((a, b) => ctx.commits.indexOf(b) - ctx.commits.indexOf(a)).map(c => `<div><code>${escapeHtml(c.hash)}</code>　${escapeHtml(c.message)}</div>`).join("") + `<div style="margin-top:8px"><b>合并后说明：</b>${escapeHtml(finalMessage)}</div><div><b>合并后版本号：</b>${escapeHtml(version || "无")}</div>` }
+    );
+    return;
   }
   showConfirm(
     "修改提交说明或版本号。版本号实际是 Git tag；修改历史提交会重写该提交及其后续提交的 hash。",
@@ -3818,10 +4027,10 @@ async function submitCommitEditModal() {
     async function(ok) {
       if (!ok) { finishCommitMessageEdit(ctx.triggerButton); _commitEditContext = null; return; }
       try {
-        const messageChanged = trimmed !== (ctx.commit.message || "").trim();
+        const messageChanged = finalMessage !== (ctx.commit.message || "").trim();
         const endpoint = messageChanged ? "/api/commit-reword" : "/api/tag-edit";
         const body = messageChanged
-          ? { message: trimmed, version, currentTag: ctx.commit.tag || "", path: ctx.originalPath, expectedHash: ctx.commit.hash }
+          ? { message: finalMessage, version, currentTag: ctx.commit.tag || "", path: ctx.originalPath, expectedHash: ctx.commit.hash }
           : { version, currentTag: ctx.commit.tag || "", commit: ctx.commit.hash, path: ctx.originalPath };
         const res = await fetch(apiUrl(endpoint), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         const data = await res.json();
