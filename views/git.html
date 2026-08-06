@@ -1252,6 +1252,8 @@ select:disabled{opacity:.5;cursor:not-allowed}
 <script>
 const BASE = window.location.pathname.replace(/\/widget\/?$/, "");
 let currentPath = "";
+let _remotePanelPath = "";
+let _remoteLoadGeneration = 0;
 
 // 提交记录分页：首屏 20 条，滚动接近底部时自动追加下一页。
 const LOG_PAGE_SIZE = 20;
@@ -2501,20 +2503,36 @@ function renderLocalRemotes(data) {
   updateGhBodyHeight();
 }
 
-async function loadLocalRemotes(preferredRemote, preferredBranch) {
-  const p = currentPath || getSavedPath();
+function onCurrentRepoChanged(path) {
+  const normalized = String(path || "").trim();
+  _remotePanelPath = normalized;
+  _remoteLoadGeneration++;
+  const el = document.getElementById("ghRemoteList");
+  if (el) el.innerHTML = normalized
+    ? '<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在切换远程仓库...</div>'
+    : '<div style="font-size:10px;color:#c0392b">请先选择本地仓库</div>';
+  if (normalized) loadLocalRemotes(undefined, undefined, normalized);
+  else renderRemoteOverview({ remotes: [], branch: "", pushRemote: "", fetchRemote: "" });
+}
+
+async function loadLocalRemotes(preferredRemote, preferredBranch, requestedPath) {
+  const p = String(requestedPath || currentPath || getSavedPath()).trim();
+  const generation = ++_remoteLoadGeneration;
+  _remotePanelPath = p;
   const el = document.getElementById("ghRemoteList");
   if (!p) { if (el) el.innerHTML = '<div style="font-size:10px;color:#c0392b">请先选择本地仓库</div>'; return; }
-  if (el) el.innerHTML = '<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在读取本地远程...</div>';
+  if (el && p === currentPath) el.innerHTML = '<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在读取本地远程...</div>';
   try {
     const query = "/api/remotes?path=" + encodeURIComponent(p)
       + (preferredRemote ? "&remote=" + encodeURIComponent(preferredRemote) : "")
       + (preferredBranch ? "&remoteBranch=" + encodeURIComponent(preferredBranch) : "");
     const res = await fetch(apiUrl(query));
     const data = await res.json();
+    if (generation !== _remoteLoadGeneration || p !== currentPath || p !== _remotePanelPath) return;
     renderLocalRemotes(data);
     refreshDefaultRemoteLabels();
   } catch (e) {
+    if (generation !== _remoteLoadGeneration || p !== currentPath || p !== _remotePanelPath) return;
     renderLocalRemotes({ ok: false, message: e.message });
     refreshDefaultRemoteLabels();
   }
@@ -2977,6 +2995,7 @@ function savePath() {
   saveConfigPath(p);
   currentPath = p;
   _highlightedPath = p;            // 点击后的“预期”路径已成为事实
+  onCurrentRepoChanged(p);
   cancelEditPath();
   refresh();
 }
@@ -3986,7 +4005,9 @@ function renderStatus(data) {
   document.getElementById("commitCard").style.display = "";
   document.getElementById("logCard").style.display = "";
 
+  const previousPath = currentPath;
   currentPath = data.path;
+  if (previousPath !== data.path) onCurrentRepoChanged(data.path);
   // 首次打开时自动保存默认路径
   if (!getSavedPath()) {
     savePathToStorage(data.path);
@@ -5477,6 +5498,7 @@ async function doInit() {
       addRepoHistory(data.path);
       saveConfigPath(data.path);
       currentPath = data.path;
+      onCurrentRepoChanged(data.path);
       // 手动切换 UI
       document.getElementById("initArea").style.display = "none";
       document.getElementById("fileCard").style.display = "";
