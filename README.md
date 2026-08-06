@@ -140,11 +140,11 @@ chore: 更新配置文件
 
 #### 推送
 
-「推送」会同步当前分支的本地提交：
+「推送」会同步当前分支的本地提交。实际远程由远程卡片中的“默认推送目标”决定：
 
 ```bash
-git fetch --prune origin
-git push origin 当前分支:当前分支
+git fetch --prune <默认获取远程>
+git push <默认推送远程> 当前分支:当前分支
 ```
 
 推送前插件会检查本地与远程的关系：
@@ -163,20 +163,30 @@ git push origin 当前分支:当前分支
 
 #### 拉取
 
-主操作区的「从 origin 拉取」默认从 `origin` 的实际 tracking 或默认分支拉取到当前本地分支，支持：
+主操作区的「拉取」默认从插件设置的默认获取远程的实际 tracking 或默认分支拉取到当前本地分支，支持：
 
 - `merge`：合并远程变化
 - `rebase`：将本地提交变基到远程最新提交
 - `ff-only`：只允许快进，禁止自动合并
 
-#### 双远程工作流：origin + upstream
+#### 多远程工作流与默认角色
 
-关联页现在支持管理多个本地远程。推荐将自己的仓库命名为 `origin`，将原作者仓库命名为 `upstream`：
+关联页支持管理任意数量的本地远程。`origin` 和 `upstream` 只是 Git 社区常见的默认命名，不是固定要求：
 
 ```text
-origin   → 你的私有仓库，用于推送
-upstream → 原作者仓库，用于获取更新
+personal → 你的私有仓库，可设为默认推送目标
+official → 原作者仓库，可设为默认获取来源
+mirror   → 镜像或备份仓库
 ```
+
+每个远程都可以在更多菜单中：
+
+- 重命名远程
+- 设为默认推送目标
+- 设为默认获取来源
+- 取消特殊角色
+
+重命名会执行本地 Git 的 `git remote rename`，同时迁移远程跟踪分支和插件保存的默认远程设置；不会修改 GitHub 仓库名称、URL 或提交历史。
 
 关联页会显示每个远程的脱敏地址、实际远程分支、当前本地分支状态，并提供：
 
@@ -188,7 +198,17 @@ upstream → 原作者仓库，用于获取更新
 
 插件会优先使用当前分支已有的 tracking 远程分支；没有 tracking 配置时使用远程 HEAD、`main`、`master` 或远程列表中的第一个分支。
 
-建议工作流：
+建议工作流（命令行示例）：
+
+```bash
+git fetch official
+git merge official/main
+git push personal main
+```
+
+插件会读取远程实际分支列表和远程 HEAD；如果本地分支是 `feature/login`，也可以选择 `official/main` 合并到当前的 `feature/login`。插件界面中「获取更新」只执行 fetch，不会修改当前文件；「合并到当前分支」才会改变本地分支。合并前要求工作区干净，产生冲突时使用现有的冲突解决面板处理。
+
+如果仍使用传统命名，也可以直接使用：
 
 ```bash
 git fetch upstream
@@ -196,9 +216,7 @@ git merge upstream/main
 git push origin main
 ```
 
-插件会读取远程实际分支列表和远程 HEAD；如果本地分支是 `feature/login`，也可以选择 `upstream/main` 合并到当前的 `feature/login`。插件界面中「获取更新」只执行 fetch，不会修改当前文件；「合并到当前分支」才会改变本地分支。合并前要求工作区干净，产生冲突时使用现有的冲突解决面板处理。
-
-如果从原作者仓库克隆后，原地址已经叫 `origin`，建议按以下顺序调整：先用原作者 URL 添加 `upstream`，再用你自己的私有仓库 URL 更新 `origin`，确认替换旧的 `origin` 地址。不要把原作者地址继续保留为 `origin` 后直接点击推送。
+如果从原作者仓库克隆后，可以保留传统的 `origin` / `upstream` 命名，也可以在远程卡片中把它们重命名为 `personal` / `official` 等名称，再分别设置默认推送目标和默认获取来源。不要把原作者地址误设为默认推送目标后直接推送。
 
 #### 推送边界
 
@@ -211,11 +229,11 @@ git push origin main
 
 当前推送按钮主要推送分支，不会替你执行 `git add` 或 `git commit`。版本号输入框中的下一个版本建议也不会因为点击推送而生效。
 
-版本 Tag 是独立的 Git 引用。若需要明确同步 Tag，应在命令行单独执行：
+版本 Tag 是独立的 Git 引用。若需要明确同步 Tag，应在命令行单独执行，并将远程名称替换为“默认推送目标”：
 
 ```bash
-git push origin v1.8.0
-git push origin --tags
+git push <默认推送远程> v1.8.0
+git push <默认推送远程> --tags
 ```
 
 ### 5. 提交记录

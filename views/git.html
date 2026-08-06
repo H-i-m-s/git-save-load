@@ -237,6 +237,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .remote-role-badge{max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 6px;border-radius:999px;font-size:9px;line-height:13px;color:var(--hana-fg-muted,#6b7280);background:var(--hana-bg-muted,#f6f7f7);border:1px solid var(--hana-border,#e2e5ea)}
 .remote-role-badge.remote-role-push{color:#218838;background:rgba(39,174,96,.09);border-color:rgba(39,174,96,.20)}
 .remote-role-badge.remote-role-upstream{color:var(--hana-accent,#5e6ad2);background:color-mix(in srgb,var(--hana-accent,#5e6ad2) 9%,transparent);border-color:color-mix(in srgb,var(--hana-accent,#5e6ad2) 22%,var(--hana-border,#e2e5ea))}
+.remote-role-badge.remote-role-both{color:#6d4bb8;background:rgba(139,92,246,.10);border-color:rgba(139,92,246,.20)}
 .remote-more-btn{margin-left:auto;width:25px;height:25px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:16px;line-height:20px;cursor:pointer;flex-shrink:0}
 .remote-more-btn:hover{border-color:var(--hana-border,#d0d5dd);background:var(--hana-bg-muted,#f6f7f7);color:var(--hana-fg,#1a1d24)}
 .remote-card-url{display:flex;align-items:center;gap:5px;margin:6px 0 8px 15px;min-width:0;color:var(--hana-fg-muted,#6b7280);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
@@ -713,10 +714,10 @@ select:disabled{opacity:.5;cursor:not-allowed}
     <input type="text" id="versionInput" placeholder="可选" value="0.0.1" autocomplete="off" style="width:80px;padding:6px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;font-family:monospace;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;flex-shrink:0">
     <button id="btnCommit" onclick="doCommit()" style="padding:6px 14px;border:0;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:var(--hana-accent,#4a8cff);color:#fff;white-space:nowrap;transition:opacity .15s">存档</button>
     <span id="pushActionSlot" class="commit-action-slot">
-      <button onclick="doPush(this)" style="padding:6px 10px 6px 7.5px;border:1px solid #27ae60;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:#27ae60;white-space:nowrap" title="把本地存档推送到 origin 远程仓库">📤 推送</button>
+      <button id="btnPush" onclick="doPush(this)" style="padding:6px 10px 6px 7.5px;border:1px solid #27ae60;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:#27ae60;white-space:nowrap" title="把本地存档推送到默认远程仓库">📤 推送</button>
     </span>
     <span id="pullActionSlot" class="commit-action-slot">
-      <button onclick="doPull(this)" style="padding:6px 10px 6px 7.5px;border:1px solid var(--hana-accent,#4a8cff);border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:var(--hana-accent,#4a8cff);white-space:nowrap" title="从 origin 远程仓库拉取最新存档">📥 拉取</button>
+      <button id="btnPull" onclick="doPull(this)" style="padding:6px 10px 6px 7.5px;border:1px solid var(--hana-accent,#4a8cff);border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:var(--hana-accent,#4a8cff);white-space:nowrap" title="从默认远程仓库拉取最新存档">📥 拉取</button>
     </span>
   </div>
 </div>
@@ -889,6 +890,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
     <div class="remote-overview" aria-live="polite">
       <div class="remote-overview-item"><span class="remote-overview-label">当前分支</span><code id="ghRemoteCurrentBranch">读取中…</code></div>
       <div class="remote-overview-item"><span class="remote-overview-label">默认推送</span><code id="ghRemotePushTarget">读取中…</code></div>
+      <div class="remote-overview-item"><span class="remote-overview-label">默认获取</span><code id="ghRemoteFetchSource">读取中…</code></div>
       <div class="remote-overview-count" id="ghRemoteCount">读取中…</div>
     </div>
     <div class="remote-section-note">一个本地仓库可以连接多个远程。<code>origin</code> 和 <code>upstream</code> 只是常见命名，实际操作以每张远程卡片为准。</div>
@@ -2081,8 +2083,9 @@ function remoteStatusInfo(remoteInfo, detached) {
 var remoteBranchSelectSeq = 0;
 
 function remoteRoleInfo(remoteInfo) {
-  if (remoteInfo.name === "origin") return { label: "推送目标", cls: "remote-role-push" };
-  if (remoteInfo.name === "upstream") return { label: "更新来源", cls: "remote-role-upstream" };
+  if (remoteInfo.isDefaultPush && remoteInfo.isDefaultFetch) return { label: "推送 · 获取", cls: "remote-role-both" };
+  if (remoteInfo.isDefaultPush) return { label: "推送目标", cls: "remote-role-push" };
+  if (remoteInfo.isDefaultFetch) return { label: "更新来源", cls: "remote-role-upstream" };
   return { label: "自定义远程", cls: "" };
 }
 
@@ -2103,6 +2106,9 @@ function appendRemoteMoreMenu(button, remoteInfo) {
     };
     addItem("复制远程地址", function() { copyGhUrl(url); });
     addItem("在浏览器中打开", function() { openGhUrl(url); });
+    addItem("重命名远程", function() { renameLocalRemote(remoteInfo); });
+    addItem(remoteInfo.isDefaultPush ? "取消默认推送目标" : "设为默认推送目标", function() { setRemoteRole(remoteInfo.name, remoteInfo.isDefaultPush ? "other" : "push-target"); });
+    addItem(remoteInfo.isDefaultFetch ? "取消默认获取来源" : "设为默认获取来源", function() { setRemoteRole(remoteInfo.name, remoteInfo.isDefaultFetch ? "other" : "update-source"); });
     addItem("移除远程", function() { removeLocalRemote(remoteInfo.name); }, true);
     openCtxMenuWithAnim(menu, e.clientX, e.clientY, 150, 120);
   });
@@ -2120,6 +2126,56 @@ function bindLocalRemoteActions(container) {
   });
 }
 
+async function setRemoteRole(remote, role) {
+  const p = currentPath || getSavedPath();
+  if (!p) return;
+  try {
+    const res = await fetch(apiUrl("/api/remote-role"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: p, remote, role }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast("❌ " + (data.message || "设置远程角色失败"), "err"); return; }
+    toast("✅ " + data.message, "success");
+    loadLocalRemotes(remote, "");
+  } catch (e) { toast("设置远程角色失败：" + e.message, "err"); }
+}
+
+function renameLocalRemote(remoteInfo) {
+  const oldRemote = remoteInfo && remoteInfo.name ? remoteInfo.name : "";
+  if (!oldRemote) return;
+  customPrompt(`重命名远程：${oldRemote}`, oldRemote, function(value) {
+    const newRemote = String(value || "").trim();
+    if (!newRemote || newRemote === oldRemote) return;
+    performRenameLocalRemote(oldRemote, newRemote, false);
+  });
+}
+
+async function performRenameLocalRemote(oldRemote, newRemote, confirmed) {
+  const p = currentPath || getSavedPath();
+  if (!p) return;
+  try {
+    const res = await fetch(apiUrl("/api/remote-rename"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: p, oldRemote, newRemote, confirmed: !!confirmed }),
+    });
+    const data = await res.json();
+    if (data.code === "REMOTE_RENAME_CONFIRM") {
+      showConfirm(
+        `确定将本地远程 ${oldRemote} 重命名为 ${newRemote} 吗？`,
+        "确认重命名远程",
+        function(ok) { if (ok) performRenameLocalRemote(oldRemote, newRemote, true); },
+        false,
+        { title: "重命名远程", detailsHtml: `<div style='margin-bottom:6px'><b>远程地址：</b>${escapeHtml(data.currentUrl || "未知")}</div><div style='margin-bottom:6px'><b>默认推送：</b>${escapeHtml(data.pushRemote || "未设置")}</div><div><b>默认获取：</b>${escapeHtml(data.fetchRemote || "未设置")}</div><div style='margin-top:8px;color:var(--hana-fg-muted,#6b7280)'>本地远程跟踪分支和插件默认远程设置会一起迁移。</div>` }
+      );
+      return;
+    }
+    if (!data.ok) { toast("❌ " + (data.message || "重命名远程失败"), "err"); return; }
+    toast(`✅ 已将 ${oldRemote} 重命名为 ${newRemote}`, "success");
+    loadLocalRemotes(newRemote, "");
+  } catch (e) { toast("重命名远程失败：" + e.message, "err"); }
+}
+
 function toggleRemoteAddForm(forceOpen) {
   const form = document.getElementById("ghAddRemoteForm");
   const toggle = document.getElementById("ghAddRemoteToggle");
@@ -2134,10 +2190,11 @@ function toggleRemoteAddForm(forceOpen) {
 function renderRemoteOverview(data) {
   const branchEl = document.getElementById("ghRemoteCurrentBranch");
   const pushEl = document.getElementById("ghRemotePushTarget");
+  const fetchEl = document.getElementById("ghRemoteFetchSource");
   const countEl = document.getElementById("ghRemoteCount");
   if (branchEl) branchEl.textContent = data.detached ? "detached HEAD" : (data.branch || "未检出分支");
-  const origin = (data.remotes || []).find(function(r) { return r.name === "origin"; });
-  if (pushEl) pushEl.textContent = origin ? "origin" : "未设置";
+  if (pushEl) pushEl.textContent = data.pushRemote || "未设置";
+  if (fetchEl) fetchEl.textContent = data.fetchRemote || "未设置";
   if (countEl) countEl.textContent = `${(data.remotes || []).length} 个远程`;
 }
 
@@ -2282,7 +2339,7 @@ function renderLocalRemotes(data) {
 
     const actions = document.createElement("div");
     actions.className = "remote-card-actions";
-    const fetchButton = remoteButton("获取更新", remoteInfo.name === "upstream", "fetch", remoteInfo.name, branch);
+    const fetchButton = remoteButton("获取更新", remoteInfo.isDefaultFetch, "fetch", remoteInfo.name, branch);
     actions.appendChild(fetchButton);
     if (remoteInfo.hasRemoteBranch && remoteInfo.remoteAhead > 0 && branch && !data.detached) {
       actions.appendChild(remoteButton(`合并 ${remoteInfo.remoteAhead} 个提交`, true, "merge", remoteInfo.name, branch));
@@ -2308,9 +2365,12 @@ async function loadLocalRemotes(preferredRemote, preferredBranch) {
       + (preferredRemote ? "&remote=" + encodeURIComponent(preferredRemote) : "")
       + (preferredBranch ? "&remoteBranch=" + encodeURIComponent(preferredBranch) : "");
     const res = await fetch(apiUrl(query));
-    renderLocalRemotes(await res.json());
+    const data = await res.json();
+    renderLocalRemotes(data);
+    refreshDefaultRemoteLabels();
   } catch (e) {
     renderLocalRemotes({ ok: false, message: e.message });
+    refreshDefaultRemoteLabels();
   }
 }
 
@@ -2351,11 +2411,11 @@ async function performRemoveLocalRemote(remote, confirmed) {
     const data = await res.json();
     if (data.code === "REMOTE_REMOVE_CONFIRM") {
       showConfirm(
-        `远程 ${remote} 当前地址为：${data.currentUrl || "未知"}。移除后默认推送或上游更新流程可能失效，继续吗？`,
+        `远程 ${remote} 当前地址为：${data.currentUrl || "未知"}。移除后默认推送或默认获取流程可能失效，继续吗？`,
         "确认移除远程",
         function(ok) { if (ok) performRemoveLocalRemote(remote, true); },
         false,
-        { title: "⚠️ 移除关键远程", detailsHtml: remote === "origin" ? "移除 origin 后，主界面的推送和从 origin 拉取将失效。" : "移除 upstream 后，将无法从原作者仓库获取更新。" }
+        { title: "⚠️ 移除关键远程", detailsHtml: data.message || "该远程当前承担默认推送或默认获取角色。" }
       );
       return;
     }
@@ -3726,6 +3786,7 @@ async function refresh() {
       await loadLogPage(currentPath, false);
     }
     loadStash();
+    refreshDefaultRemoteLabels();
   } catch (e) {
     toast("刷新失败：" + e.message, "err");
   } finally {
@@ -4339,6 +4400,20 @@ function setupCommitActionLayout() {
   syncCommitActionLayout();
 }
 
+async function refreshDefaultRemoteLabels() {
+  const p = currentPath || getSavedPath();
+  if (!p) return;
+  try {
+    const res = await fetch(apiUrl("/api/remotes?path=" + encodeURIComponent(p)));
+    const data = await res.json();
+    if (!data || !data.ok) return;
+    const pushBtn = document.getElementById("btnPush");
+    const pullBtn = document.getElementById("btnPull");
+    if (pushBtn) pushBtn.title = `把本地存档推送到 ${data.pushRemote || "默认"} 远程仓库`;
+    if (pullBtn) pullBtn.title = `从 ${data.fetchRemote || "默认"} 远程仓库拉取最新存档`;
+  } catch {}
+}
+
 async function doPush(btn, forceContext) {
   cacheClear();
   Bus.emit("push");
@@ -4347,11 +4422,11 @@ async function doPush(btn, forceContext) {
   btn.disabled = true; btn.style.opacity = ".5"; btn.textContent = forceContext ? "覆盖中..." : "检查中...";
   const safeTimer = setTimeout(() => { btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig; }, 180000);
   try {
-    const body = { path: p, remote: "origin" };
+    const body = { path: p };
     if (forceContext) {
       body.force = true;
       body.expectedRemoteHash = forceContext.remoteHash;
-      body.remote = forceContext.remote || "origin";
+      body.remote = forceContext.remote || "";
       body.branch = forceContext.branch || "";
     }
     const res = await fetch(apiUrl("/api/push"), {
@@ -4375,7 +4450,7 @@ async function doPush(btn, forceContext) {
         false,
         {
           title: "⚠️ 本地版本将覆盖云端",
-          detailsHtml: `<div style='margin-bottom:6px'><b>本地仓库：</b>${escapeHtml(p)}</div><div style='margin-bottom:6px'><b>远程仓库：</b>${escapeHtml(data.remote || "origin")}/${escapeHtml(data.branch || "")}</div>${syncDetailHtml(data)}<div style='margin-top:10px;color:#b91c1c;font-weight:600'>确认后，远程新增提交及其文件变化将被本地版本覆盖。</div>`
+          detailsHtml: `<div style='margin-bottom:6px'><b>本地仓库：</b>${escapeHtml(p)}</div><div style='margin-bottom:6px'><b>远程仓库：</b>${escapeHtml(data.remote || "默认推送远程")}/${escapeHtml(data.branch || "")}</div>${syncDetailHtml(data)}<div style='margin-top:10px;color:#b91c1c;font-weight:600'>确认后，远程新增提交及其文件变化将被本地版本覆盖。</div>`
         }
       );
     } else {
@@ -4404,7 +4479,7 @@ async function doPull(btn) {
   try {
     const res = await fetch(apiUrl("/api/pull"), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: p, remote: "origin", remoteBranch: "", mode: getSavedPullMode() }),
+      body: JSON.stringify({ path: p, remoteBranch: "", mode: getSavedPullMode() }),
     });
     const data = await res.json();
     btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig;
