@@ -1,298 +1,593 @@
 <div align="center">
 
-<!-- Hero Banner -->
-<svg width="800" height="280" viewBox="0 0 800 280" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="800" y2="280" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0f1011"/>
-      <stop offset="50%" stop-color="#141516"/>
-      <stop offset="100%" stop-color="#0f1011"/>
-    </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="200" y2="0" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#5e6ad2"/>
-      <stop offset="100%" stop-color="#8b5cf6"/>
-    </linearGradient>
-    <linearGradient id="glow" x1="400" y1="100" x2="400" y2="280" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#5e6ad2" stop-opacity="0.15"/>
-      <stop offset="100%" stop-color="#5e6ad2" stop-opacity="0"/>
-    </linearGradient>
-    <filter id="blur">
-      <feGaussianBlur stdDeviation="40"/>
-    </filter>
-  </defs>
-  <!-- Background -->
-  <rect width="800" height="280" rx="16" fill="url(#bg)"/>
-  <!-- Grid dots -->
-  <pattern id="dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-    <circle cx="12" cy="12" r="0.8" fill="#5e6ad2" opacity="0.15"/>
-  </pattern>
-  <rect width="800" height="280" rx="16" fill="url(#dots)"/>
-  <!-- Glow -->
-  <ellipse cx="400" cy="180" rx="200" ry="100" fill="#5e6ad2" opacity="0.08" filter="url(#blur)"/>
-  <!-- Git branch tree decoration -->
-  <g opacity="0.2" stroke="#5e6ad2" stroke-width="1.5" fill="none">
-    <!-- Main line -->
-    <path d="M 100 80 L 100 200 L 700 200"/>
-    <!-- Branches -->
-    <circle cx="100" cy="80" r="4" fill="#5e6ad2"/>
-    <path d="M 100 120 C 100 120, 180 120, 220 100"/>
-    <circle cx="220" cy="100" r="3" fill="#8b5cf6"/>
-    <path d="M 100 140 C 100 140, 160 160, 200 160"/>
-    <circle cx="200" cy="160" r="3" fill="#e67e22"/>
-    <path d="M 300 200 C 300 200, 350 180, 400 180"/>
-    <circle cx="400" cy="180" r="3" fill="#27a644"/>
-    <path d="M 500 200 C 500 200, 520 160, 560 160"/>
-    <circle cx="560" cy="160" r="3" fill="#e74c3c"/>
-    <path d="M 600 200 C 600 200, 620 140, 660 140"/>
-    <circle cx="660" cy="140" r="3" fill="#06b6d4"/>
-    <!-- Nodes on main line -->
-    <circle cx="300" cy="200" r="4" fill="#27a644"/>
-    <circle cx="500" cy="200" r="4" fill="#27a644"/>
-    <circle cx="600" cy="200" r="4" fill="#27a644"/>
-    <circle cx="700" cy="200" r="4" fill="#27a644"/>
-  </g>
-  <!-- Title -->
-  <text x="400" y="52" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="32" font-weight="700" fill="#f7f8f8">
-    Git Save/Load
-  </text>
-  <text x="400" y="76" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="14" fill="#8a8f98">
-    HanaAgent 侧栏 Widget · 存档与读档 · 分支管理 · GitHub 集成
-  </text>
-</svg>
+# Git Save/Load
 
-<br/>
+**HanaAgent 侧栏里的 Git 存档、读档与远程仓库管理工具**
 
-[![HanaAgent](https://img.shields.io/badge/HanaAgent-Plugin-5e6ad2?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyem0tMiAxNS01LTUtMS40MSAxLjQxTDEwIDE5bDMtMyAxLjQxIDEuNDEtNC00em00LTgtMyAzLTEuNDEtMS40MUwxMiA2bC0zIDMgMS40MSAxLjQxTDEzIDlsMy0zIDEuNDEgMS40MUwxMyA5bDMtMyAxLjQxIDEuNDEtNC00eiIvPjwvc3ZnPg==)](https://github.com/liliMozi/openhanako)
-[![Version](https://img.shields.io/badge/version-1.0.0-27a644?style=flat-square)](https://github.com/H-i-m-s/doc-intake)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+<p>
+  <a href="https://github.com/liliMozi/openhanako"><img src="https://img.shields.io/badge/HanaAgent-Plugin-5e6ad2?style=flat-square" alt="HanaAgent Plugin"></a>
+  <a href="https://github.com/H-i-m-s/git-save-load"><img src="https://img.shields.io/badge/version-1.9.0-27a644?style=flat-square" alt="Version 1.9.0"></a>
+  <a href="https://git-scm.com/"><img src="https://img.shields.io/badge/Git-required-f05032?style=flat-square&logo=git&logoColor=white" alt="Git required"></a>
+  <a href="https://cli.github.com/"><img src="https://img.shields.io/badge/GitHub%20CLI-optional-181717?style=flat-square&logo=github" alt="GitHub CLI optional"></a>
+</p>
+
+<p>
+  <code>修改文件</code> → <code>存档</code> → <code>检查状态</code> → <code>推送</code>
+</p>
 
 </div>
 
 ---
 
-## ✨ 特性
+## 它解决什么问题
 
-<table>
-<tr>
-<td width="50%">
+Git Save/Load 是一个运行在 HanaAgent 侧栏中的 Widget，用图形界面把日常 Git 操作集中到一个面板里：
 
-### 🎯 核心功能
-- **一键存档** — 提交消息 + 可选版本号 Tag
-- **提交历史** — 时间线浏览，点击回滚（soft / mixed / hard）
-- **分支管理** — 创建、切换、删除、可视化画布
-- **暂存管理** — 临时存放修改，随时恢复
+- 查看当前工作区到底改了什么
+- 把修改保存成 Git 提交，并可附加版本号 Tag
+- 浏览、对比、回滚和整理提交历史
+- 管理分支、暂存区和冲突文件
+- 将本地已提交历史同步到远程仓库
+- 通过 GitHub CLI 创建、关联、克隆、搜索和管理 GitHub 仓库
 
-</td>
-<td width="50%">
+它适合个人项目、课程作业、实验代码等需要频繁保存阶段性成果的仓库。
 
-### 🚀 GitHub 集成
-- **创建仓库** — 一键在 GitHub 建仓并关联本地，可选择开源许可证
-- **关联已有仓库** — 支持输入 URL 或从“我的 GitHub 仓库”中选择
-- **克隆仓库** — 从 URL 克隆到本地
-- **仓库列表** — 浏览、打开、复制地址和删除 GitHub 仓库
-- **搜索仓库** — 搜索公开仓库，可将结果带入关联页
+## 核心工作流
 
-</td>
-</tr>
-<tr>
-<td>
+```text
+1. 选择一个本地 Git 仓库
+        ↓
+2. 修改文件，查看「变更文件」
+        ↓
+3. 输入提交说明，点击「存档」
+        ↓
+4. 可选：输入版本号并创建 Git tag
+        ↓
+5. 确认工作区和提交历史后，点击「推送」同步到远程
+```
 
-### 🎨 主题系统
-- 自动跟随 HanaAgent 主题
-- 14 种内置主题（浅色 / 深色 / 暖纸 / 青夜 等）
-- 纸质纹理效果（SVG 噪声叠加）
-
-</td>
-<td>
-
-### 🧩 灵活配置
-- 多种推送模式（普通 / 安全强制 / 强制）
-- 多种拉取模式（合并 / 变基 / 仅快进）
-- 暂存模式（仅跟踪 / 包含未跟踪 / 全部）
-- 卡片顺序自由拖拽排列
-
-</td>
-</tr>
-</table>
+> **重要：**「存档」和「推送」是两个独立动作。存档会创建本地提交；推送只会同步已经存在的提交，不会自动把尚未存档的工作区修改上传到 GitHub。
 
 ---
 
-## 📦 安装
+## 功能总览
+
+| 模块 | 能做什么 |
+| --- | --- |
+| 仓库 | 选择、切换、记忆多个本地仓库路径，显示仓库名、远程地址和当前分支 |
+| 初始化 | 将目录初始化为 Git 仓库，可选择 Node.js、Python、Java `.gitignore` 模板并编辑排除项 |
+| 变更文件 | 显示修改、新增、删除、重命名、未跟踪和冲突状态，查看文件 Diff 与增删统计 |
+| 存档 | `git add .` + `git commit`，可创建三段式版本号 Tag，并在缺少身份时配置当前仓库的 Git 姓名和邮箱 |
+| 提交记录 | 查看日期、消息、增删统计、Hash 和 Tag；支持自动分页、回滚、对比、编辑和连续提交合并 |
+| 暂存 | 使用 Git Stash 临时保存当前修改，支持恢复和删除 |
+| 分支 | 创建、切换、删除分支，并通过可拖拽的分支画布进行整理 |
+| 远程同步 | 检查本地与远程的 ahead/behind 状态，支持推送、拉取和安全覆盖 |
+| 冲突解决 | 查看冲突文件和冲突块，逐块选择保留本地或远程内容，并执行 `git add` |
+| GitHub | 创建、关联、克隆、列表、搜索、打开、复制、编辑和删除 GitHub 仓库 |
+| 主题 | 自动、浅色、深色、暖纸、青夜、沉思等 14 种主题，以及可选纸质纹理 |
+| Agent 工具 | 提供状态、存档、历史和回滚等可调用工具 |
+
+---
+
+## 详细功能
+
+### 1. 仓库路径与初始化
+
+顶部「仓库」卡片用于选择当前操作的本地仓库：
+
+- 输入本地 Git 仓库完整路径
+- 记录最近使用的仓库路径
+- 自动读取仓库名、路径尾部、远程地址和默认分支
+- 当前目录不是 Git 仓库时，显示「初始化仓库」卡片
+- 初始化时可选择 `.gitignore` 模板，并手动添加、编辑或删除排除项
+
+内置 `.gitignore` 模板：
+
+- Node.js
+- Python
+- Java
+
+插件会自动探测 Git 的常见安装位置。即使 Git 没有加入系统 PATH，也会尝试从常见目录寻找 Git 可执行文件。
+
+### 2. 变更文件与 Diff
+
+「变更文件」卡片展示当前工作区状态，包括：
+
+- 🟠 已修改
+- 🟢 新增
+- 🔴 已删除
+- 🔄 重命名
+- ⚪ 未跟踪文件
+- ⚠ 冲突
+
+每个文件可以显示增删行数。点击文件名可以展开 Diff，并在「详细 / 精简」两种模式之间切换：
+
+- **详细**：显示完整差异内容
+- **精简**：只保留更紧凑的差异概览
+
+遇到冲突文件时，行末会出现「解决」入口。
+
+### 3. 存档与版本号
+
+在「存档」卡片输入提交说明后，插件会执行：
+
+```bash
+git add .
+git commit ...
+```
+
+如果输入了版本号，例如 `1.8.0`，提交成功后会在当前提交上创建：
+
+```text
+v1.8.0
+```
+
+版本号输入框会根据本地已有的最高版本 Tag 自动给出下一个补丁版本建议。例如已有 `v1.8.0` 时，默认建议 `1.8.1`。
+
+提交前如果当前仓库没有配置 `user.name` 或 `user.email`，插件会弹出配置窗口。身份只写入当前仓库，不修改全局 Git 配置。
+
+建议使用清晰的提交说明，例如：
+
+```text
+feat: 添加登录页面
+fix: 修复分支切换后的刷新问题
+chore: 更新配置文件
+```
+
+提交前缀只是约定，不会被插件强制识别或自动分类。
+
+### 4. 推送与拉取
+
+#### 推送
+
+「推送」会同步当前分支的本地提交：
+
+```bash
+git fetch --prune origin
+git push origin 当前分支:当前分支
+```
+
+推送前插件会检查本地与远程的关系：
+
+- 本地领先：正常推送
+- 远程领先：展示远程新增提交和涉及文件，并要求确认
+- 本地与远程分叉：展示双方状态，并要求确认是否覆盖远程
+- 确认覆盖后：使用绑定确认时远程 Hash 的 `force-with-lease`
+- 确认期间远程再次发生变化：停止覆盖并要求重新检查
+
+推送模式可以设置为：
+
+- `normal`：普通推送
+- `force-with-lease`：带保护的强制推送
+- `force`：强制推送
+
+#### 拉取
+
+「拉取」默认针对 `origin` 和当前分支，支持：
+
+- `merge`：合并远程变化
+- `rebase`：将本地提交变基到远程最新提交
+- `ff-only`：只允许快进，禁止自动合并
+
+#### 推送边界
+
+推送只同步 Git 已经提交的对象和当前分支引用：
+
+```text
+工作区未存档修改  ──不会直接推送──> GitHub
+本地已提交历史    ──可以推送──> GitHub
+```
+
+当前推送按钮主要推送分支，不会替你执行 `git add` 或 `git commit`。版本号输入框中的下一个版本建议也不会因为点击推送而生效。
+
+版本 Tag 是独立的 Git 引用。若需要明确同步 Tag，应在命令行单独执行：
+
+```bash
+git push origin v1.8.0
+git push origin --tags
+```
+
+### 5. 提交记录
+
+提交记录列表显示：
+
+- 提交日期
+- 提交说明
+- 文件增删统计
+- Hash
+- 版本 Tag
+
+支持的交互：
+
+- 点击日期或 Hash：选择回滚
+- 切换 `tag / hash` 显示
+- 开启「对比」后选择两个提交进行 Diff 对比
+- 悬停查看完整提交信息
+- 按住 Shift 可锁定提示块并复制内容
+- 右键或编辑入口：修改提交说明和版本号
+
+提交记录采用滚动加载：
+
+- 首屏加载最近 20 条
+- 距离底部约 64px 时自动加载下一批
+- 后续记录直接追加，不清空已加载内容
+- 刷新、切换仓库或切换分支时重置分页
+
+### 6. 回滚
+
+支持三种 Git Reset 模式：
+
+| 模式 | 行为 | 风险 |
+| --- | --- | --- |
+| `soft` | 移动 HEAD，保留工作区和暂存区 | 低 |
+| `mixed` | 移动 HEAD，清空暂存区，保留工作区文件 | 中 |
+| `hard` | 移动 HEAD，同时还原工作区和暂存区 | 高 |
+
+`hard` 会丢弃目标提交之后的未提交修改。执行前请确认重要文件已经存档或暂存。
+
+回滚后，插件会检查失效的版本 Tag，并清理已经不再位于当前 HEAD 历史中的 Tag。
+
+### 7. 编辑提交说明、版本号与历史
+
+点击提交记录中的编辑入口，可以：
+
+- 修改最近一次提交说明
+- 修改历史提交说明
+- 新增、修改、删除 lightweight Git tag
+- 将已经存在于旧历史的版本号移动到当前提交
+- 选择多条连续提交并合并为一条提交
+- 自动使用选中提交说明拼接合并后的说明，也可以手动修改
+
+历史重写前会检查：
+
+- 当前必须处于明确的本地分支，不能是 detached HEAD
+- 工作区必须干净
+- 不能有未完成的 rebase、merge、cherry-pick、revert 或 bisect
+- 当前仓库必须配置 Git 身份
+- 目标提交必须属于当前分支历史
+- 合并提交暂不支持历史重写
+- 合并的提交必须连续，不能跳过中间提交
+- 版本号必须通过冲突检查
+
+历史重写会：
+
+- 使用仓库级并发锁，避免多个危险操作同时执行
+- 创建备份引用
+- 失败时尝试自动恢复
+- 重新计算后续提交 Hash
+- 对已推送到远程的历史给出 `force-with-lease` 提示
+
+> 修改历史提交或合并提交不是普通的文本编辑，它会改变该提交及后续提交的 Hash。已经推送到远程的分支需要谨慎处理。
+
+### 8. 暂存区 Stash
+
+暂存卡片支持：
+
+- 输入可选备注
+- 暂存当前修改
+- 恢复指定 Stash
+- 删除指定 Stash
+
+当前暂存操作使用：
+
+```bash
+git stash push -u
+```
+
+因此未跟踪文件也会被包含在暂存操作中。恢复暂存后，插件会重新读取工作区状态。
+
+### 9. 分支管理与分支画布
+
+分支功能支持：
+
+- 查看本地分支及最近提交
+- 创建普通分支
+- 基于当前分支创建子分支
+- 基于指定提交创建分支
+- 切换分支
+- 删除本地分支
+- 查看当前分支和分支数量
+
+分支画布支持：
+
+- 拖拽分支方块
+- 拖拽空白区域平移画布
+- 自动绘制分支之间的连接线
+- 右键创建、切换、删除分支
+- 为分支设置颜色
+- 为分支添加备注
+- 编辑连接线标注
+- 按仓库分别保存画布布局
+
+画布中的父子关系主要根据分支命名约定推断，例如：
+
+```text
+main
+├── feature/login
+├── fix/header
+└── release/1.9
+```
+
+它是一个辅助可视化视图，不替代 Git 本身的提交拓扑。
+
+### 10. 冲突解决
+
+当拉取或其他 Git 操作产生冲突时，插件可以：
+
+1. 检测冲突文件
+2. 读取冲突标记块
+3. 展示当前分支内容和对方内容
+4. 对每个冲突块选择保留本地或远程内容
+5. 写回文件并执行 `git add`
+
+冲突解决完成后，仍可能需要由用户继续完成提交或合并流程。
+
+### 11. GitHub 仓库管理
+
+GitHub 面板依赖本机安装并登录 GitHub CLI：
+
+```bash
+gh auth login
+gh auth status
+```
+
+面板包含五个标签：
+
+#### 创建
+
+创建公开或私有 GitHub 仓库，可填写：
+
+- 仓库名
+- 描述
+- 可见性
+- MIT、Apache-2.0、GPL-3.0、BSD-3-Clause、LGPL-3.0、MPL-2.0、Unlicense 等许可证
+
+如果当前本地仓库已经有提交，选择许可证时插件会先在本地生成 `LICENSE` 并提交，再创建远程仓库并关联，避免远程单独产生初始提交造成分叉。
+
+#### 关联
+
+将当前本地仓库关联到已有远程仓库：
+
+- 输入远程 URL
+- 从自己的 GitHub 仓库列表中选择
+- 自定义远程名称，默认是 `origin`
+- 如果远程名称已经存在，先显示旧地址并要求确认是否替换
+- 关联后执行 fetch，检查远程是否可访问
+
+#### 克隆
+
+从 GitHub URL 克隆仓库。目标目录可以手动填写；留空时会根据当前仓库路径所在目录和远程仓库名推断。
+
+#### 列表
+
+查看自己的 GitHub 仓库，并支持：
+
+- 打开仓库
+- 复制仓库地址
+- 查看描述、可见性、更新时间和许可证
+- 右键编辑仓库
+- 右键删除仓库
+
+删除远程仓库需要二次确认，删除后无法通过此操作恢复。
+
+#### 搜索
+
+搜索公开 GitHub 仓库，并支持：
+
+- 查看搜索结果
+- 打开仓库
+- 将结果 URL 带入「关联」表单
+
+#### 编辑仓库
+
+支持编辑：
+
+- 仓库名
+- 描述
+- 公开 / 私有状态
+- 许可证
+
+仓库改名后，如果插件检测到本地远程地址仍指向旧地址，会询问是否同步更新本地 remote URL。
+
+### 12. 主题、布局与交互
+
+插件采用卡片式侧栏布局，支持：
+
+- 卡片拖拽排序，顺序持久化保存
+- 自动跟随 HanaAgent 主题
+- 浅色、深色、暖纸、青夜、沉思、珊瑚等 14 种主题
+- 可选纸质纹理
+- 提交记录和操作按钮的响应式布局
+- 推送、拉取按钮按最长状态预留换行空间，状态文案变化时避免布局跳动
+- GitHub 面板动态展开和高度同步
+- 首次使用引导与三步保存流程提示
+
+---
+
+## 安装
 
 ### 前置条件
 
-- [HanaAgent](https://github.com/liliMozi/openhanako) ≥ 0.3.0
-- [Git](https://git-scm.com/) 已安装并在 PATH 中
-- [GitHub CLI](https://cli.github.com/)（可选，仅 GitHub 功能需要）
+- HanaAgent `0.82.0` 或更高版本
+- Git
+- GitHub CLI `gh`：仅 GitHub 面板需要
+- 如果要执行提交，需要为当前仓库配置 Git 姓名和邮箱
 
-### 方式一：通过 HanaAgent 安装
-
-```
-在 HanaAgent 设置 → 插件 → 搜索 "git-save-load" → 安装
-```
-
-### 方式二：手动安装
+Git 身份可以在插件第一次提交时配置，也可以手动执行：
 
 ```bash
-cd ~/.hanako/plugins
-git clone https://github.com/H-i-m-s/doc-intake.git git-save-load
+git config user.name "Your Name"
+git config user.email "you@example.com"
 ```
 
-重启 HanaAgent 后在侧栏即可看到。
+### 通过 HanaAgent 安装
+
+在 HanaAgent 中打开：
+
+```text
+设置 → 插件 → 搜索 git-save-load → 安装并启用
+```
+
+### 手动安装
+
+```bash
+git clone https://github.com/H-i-m-s/git-save-load.git "$env:USERPROFILE\.hanako\plugins\git-save-load"
+```
+
+安装后重启 HanaAgent，或通过插件管理界面重新加载插件。
 
 ---
 
-## 🚀 快速开始
+## Agent 可调用工具
 
+插件同时提供基础 Git 工具：
+
+| 工具 | 作用 |
+| --- | --- |
+| `git_status` | 查看仓库路径、当前分支、已修改文件和未跟踪文件 |
+| `git_commit` | 暂存所有变更并创建提交 |
+| `git_log` | 查看最近提交的 Hash、消息、作者和日期 |
+| `git_reset` | 以 soft、mixed 或 hard 模式回滚到指定提交 |
+
+工具默认使用输入中的 `path`；未传路径时使用当前工作目录。历史查询默认返回 20 条，最多 100 条。
+
+---
+
+## 配置项
+
+| 配置项 | 可选值 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `repoPath` | 本地路径 | 空 | 当前管理的 Git 仓库 |
+| `stashMode` | `normal` / `untracked` / `all` | `untracked` | 暂存模式选项；当前暂存动作固定包含未跟踪文件 |
+| `pushMode` | `normal` / `force-with-lease` / `force` | `normal` | 推送模式 |
+| `pullMode` | `merge` / `rebase` / `ff-only` | `merge` | 拉取模式 |
+| `defaultDiffMode` | `detail` / `simple` | `detail` | 默认 Diff 展示方式 |
+| `theme` | 14 种主题 | `auto` | 主题选择 |
+| `paperTexture` | `on` / `off` | `off` | 纸质纹理 |
+| `ghOpenMode` | `internal` / `external` | `internal` | GitHub 链接打开方式 |
+
+---
+
+## 安全边界与注意事项
+
+### 工作区与远程仓库是两套状态
+
+Git Save/Load 不会把本地工作区当作远程文件直接上传。推荐始终按下面的顺序操作：
+
+```text
+查看变更 → 存档 → 检查提交 → 推送
 ```
-1. 打开侧栏 → Git Save/Load
-2. 输入你的 Git 仓库路径 → 回车
-3. 修改文件 → 写提交消息 → 点「存档」
-4. 需要远程备份 → 点「推送」；若云端有新增提交，插件会先展示远程提交和文件差异，再由你确认是否用本地版本覆盖
-5. 需要回退 → 点提交记录中的 hash → 选回滚模式
+
+点击「推送」前，如果工作区还有未存档修改，GitHub 仍然只会看到最近一次已提交的内容。
+
+### 危险操作会要求确认
+
+以下操作会改变或删除已有状态：
+
+- `hard` 回滚
+- 覆盖远程分支
+- 修改历史提交说明
+- 合并连续提交
+- 移动版本 Tag
+- 删除 GitHub 仓库
+- 替换已有远程地址
+- 删除本地分支
+
+### 历史重写限制
+
+当前历史编辑和连续提交合并主要针对干净的线性历史：
+
+- 不支持 detached HEAD
+- 不支持包含 merge commit 的历史重写
+- 不支持跳过中间提交的非连续合并
+- 工作区必须干净
+- 已推送历史重写后通常需要 `git push --force-with-lease`
+
+### 版本号是 Git Tag
+
+版本号不是 GitHub Release，也不会自动生成 GitHub Release 页面。插件创建的是本地 lightweight tag，例如：
+
+```text
+v1.8.0 → 指向某一个具体提交
+```
+
+如需在远程保留这个 Tag，请明确推送 Tag：
+
+```bash
+git push origin v1.8.0
+# 或
+git push origin --tags
 ```
 
 ---
 
-### GitHub 面板
+## 项目结构
 
-GitHub 面板保留五个标签：`创建 | 关联 | 克隆 | 列表 | 搜索`。
-
-- **创建**：选择公开/私有和开源许可证；已有本地提交时，许可证会先进入本地提交，再创建远程并推送，避免远程单独产生初始提交。
-- **关联**：可以输入远程 URL，也可以从“我的 GitHub 仓库”下拉选择；两种方式最终都通过“关联当前仓库”执行。
-- **克隆**：从已有远程创建新的本地副本。
-- **列表**：浏览自己的仓库，支持打开、复制地址和右键删除。
-- **搜索**：搜索公开仓库，可将结果地址带入“关联”页，但不会直接修改本地仓库。
-
-## 🖼 界面预览
-
-<div align="center">
-
-```
-┌─────────────────────────────────────────┐
-│  📁 D:/Projects/my-app                  │
-│  分支: main                              │
-│                                         │
-│  💾 存档                                 │
-│  ┌─────────────────────────────┐        │
-│  │ 例：feat: 添加了登录页      │        │
-│  └─────────────────────────────┘        │
-│  [0.0.1] [存档] [📤 推送] [📥 拉取]     │
-│                                         │
-│  📦 暂存                                │
-│  [暂存当前修改]                          │
-│                                         │
-│  📜 提交记录                    [tag][对比]│
-│  ┌─ a1b2c3d  07-18 23:08  feat: xxx    │
-│  ├─ e4f5g6h  07-18 22:15  fix: yyy     │
-│  └─ i7j8k9l  07-18 21:30  chore: init  │
-│                                         │
-│  ⚙ 设置                                 │
-│  ─────────────────────────────          │
-│  主题 [自动 ▾]  纸质纹理 [OFF]           │
-│  暂存模式 [包含未跟踪 ▾]                 │
-│  推送模式 [普通推送 ▾]                   │
-└─────────────────────────────────────────┘
-```
-
-</div>
-
----
-
-## 🎨 分支画布
-
-点击顶部 `🌳` 按钮进入可视化分支视图：
-
-- **方块** = 每个分支
-- **颜色** = 按分支类型自动着色
-  - 🟢 `master / main` — 稳定主分支
-  - 🟣 `feature/*` — 新功能开发
-  - 🟠 `fix/* / bugfix/*` — Bug 修复
-  - 🔴 `hotfix/*` — 紧急修复
-  - 🔵 `develop` — 日常开发
-- **连线** = 分支继承关系
-- **拖拽** = 自由排列，布局自动保存
-- **右键** = 创建子分支、切换、删除、改颜色
-
----
-
-## ⚙ 配置项
-
-| 配置 | 选项 | 默认值 |
-|------|------|--------|
-| 暂存模式 | 仅跟踪 / 包含未跟踪 / 全部 | 包含未跟踪 |
-| 推送模式 | 普通 / 安全强制 / 强制覆盖 | 普通 |
-| 拉取模式 | 合并 / 变基 / 仅快进 | 合并 |
-| Diff 模式 | 详细 / 精简 | 详细 |
-| 主题 | 自动 / 浅色 / 深色 / 14种主题 | 自动 |
-| 纸质纹理 | 开 / 关 | 关 |
-| GitHub 打开方式 | 内部窗口 / 外部浏览器 | 内部窗口 |
-
----
-
-## 📁 项目结构
-
-```
+```text
 git-save-load/
-├── manifest.json          # 插件清单
+├── manifest.json          # HanaAgent 插件清单与配置项
 ├── routes/
-│   └── git.js             # 后端路由（Git / GitHub CLI 封装）
-├── tools/                 # Agent 工具定义
-│   ├── git_commit.js
-│   ├── git_log.js
-│   ├── git_reset.js
-│   └── git_status.js
+│   └── git.js             # Widget 页面与 Git / GitHub 后端路由
+├── tools/
+│   ├── _helpers.js        # Git 路径探测与命令辅助
+│   ├── git_status.js      # Agent：查看状态
+│   ├── git_commit.js      # Agent：创建提交
+│   ├── git_log.js         # Agent：查看历史
+│   └── git_reset.js       # Agent：回滚提交
 ├── views/
-│   └── git.html           # 前端界面（单文件，内联 CSS+JS）
-└── docs/
-    ├── 简易使用文档.md
-    ├── 架构文档.md
-    └── 踩坑记录.md
+│   └── git.html           # 侧栏界面、样式和交互逻辑
+├── docs/
+│   ├── 简易使用文档.md
+│   ├── 架构文档.md
+│   └── 踩坑记录.md
+├── DESIGN.md              # 设计规范
+└── README.md
 ```
+
+插件采用前端单页面 Widget + Node.js 路由的结构。界面内部通过事件总线刷新文件状态、提交记录和 Stash 卡片；Git 命令使用参数数组执行，尽量避免 shell 字符串拼接带来的注入和转义问题。
 
 ---
 
-## 🔧 开发
+## 开发
 
 ```bash
-# 克隆仓库
-git clone https://github.com/H-i-m-s/doc-intake.git
-cd doc-intake
-
-# 本地开发：将插件目录软链到 HanaAgent 插件目录
-# Windows
-mklink /D "%USERPROFILE%\.hanako\plugins\git-save-load" "本仓库路径"
-
-# 重启 HanaAgent 后即可看到插件
-# 修改 views/git.html 或 routes/git.js 后刷新侧栏即可热更新
+git clone https://github.com/H-i-m-s/git-save-load.git
+cd git-save-load
 ```
 
----
+插件主体没有独立的前端构建步骤，主要修改文件为：
 
-## 📝 提交规范
+- `views/git.html`：界面、CSS 和前端交互
+- `routes/git.js`：Git / GitHub CLI 后端路由
+- `tools/*.js`：Agent 可调用工具
+- `manifest.json`：插件元数据与配置
 
-插件支持以下提交前缀（存档时自动识别）：
-
-| 前缀 | 用途 |
-|------|------|
-| `feat:` | 新功能 |
-| `fix:` | Bug 修复 |
-| `chore:` | 杂务（构建、工具等） |
-| `docs:` | 文档 |
-| `style:` | 代码格式 |
-| `refactor:` | 重构 |
-| `test:` | 测试 |
+在 HanaAgent 中使用插件开发工具加载本地插件后，修改页面或路由并重新加载插件即可验证。
 
 ---
 
-## 🤝 相关项目
+## 当前版本
 
-- [HanaAgent](https://github.com/liliMozi/openhanako) — 开源 AI Agent 平台
-- [GitHub CLI](https://cli.github.com/) — GitHub 官方命令行工具
+```text
+v1.9.0
+```
+
+1.9.0 重点更新：
+
+- 提交记录首屏加载 20 条，接近底部自动加载更早记录
+- 提交记录分页接口增加 `skip` 与 `hasMore`
+- 改善已有记录追加时的滚动体验
+- 完善推送、拉取按钮在不同状态文案下的换行布局
+- 延续提交历史编辑、版本号管理和连续提交合并能力
+
+---
+
+## 相关项目
+
+- [HanaAgent](https://github.com/liliMozi/openhanako) — HanaAgent 平台
 - [Git](https://git-scm.com/) — 分布式版本控制系统
+- [GitHub CLI](https://cli.github.com/) — GitHub 官方命令行工具
 
----
+## 许可证
 
-## 📄 License
-
-[MIT](LICENSE)
+当前仓库目录中未发现 `LICENSE` 文件。发布前请补充明确的许可证文件，并将此处说明与实际许可证保持一致。
