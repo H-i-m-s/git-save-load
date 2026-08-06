@@ -273,6 +273,13 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .remote-form-row{display:flex;align-items:center;gap:5px;min-width:0;margin-top:5px}
 .remote-add-form input{width:100%;min-width:0;height:28px;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24);font:inherit;font-size:11px;outline:none}
 .remote-add-form input:focus{border-color:var(--hana-accent,#5e6ad2);box-shadow:0 0 0 3px color-mix(in srgb,var(--hana-accent,#5e6ad2) 12%,transparent)}
+.remote-url-edit-label{margin-top:6px;margin-bottom:4px;color:var(--hana-fg-muted,#6b7280);font-size:10px}
+.remote-url-edit-row{display:flex;align-items:center;gap:5px;min-width:0}
+.remote-url-edit-row .hana-select{min-width:0;flex:1;width:100%;box-sizing:border-box;font-size:11px}
+.remote-url-edit-or{display:flex;align-items:center;gap:7px;margin:10px 0 7px;color:var(--hana-fg-subtle,#9ca3af);font-size:9px}
+.remote-url-edit-or::before,.remote-url-edit-or::after{content:"";height:1px;flex:1;background:var(--hana-border,#e2e5ea)}
+.remote-url-edit-input{width:100%;height:29px;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;background:var(--hana-bg-muted,#f6f7f7);color:var(--hana-fg,#1a1d24);font:inherit;font-size:11px;outline:none;box-sizing:border-box}
+.remote-url-edit-input:focus{border-color:var(--hana-accent,#5e6ad2);box-shadow:0 0 0 3px color-mix(in srgb,var(--hana-accent,#5e6ad2) 12%,transparent)}
 .remote-form-secondary,.remote-form-primary{height:28px;padding:0 8px;border-radius:6px;font-size:10px;cursor:pointer;white-space:nowrap}
 .remote-form-secondary{border:1px solid var(--hana-border,#d0d5dd);background:transparent;color:var(--hana-fg-muted,#6b7280)}
 .remote-form-primary{border:1px solid var(--hana-accent,#5e6ad2);background:var(--hana-accent,#5e6ad2);color:#fff;font-weight:550}
@@ -1083,6 +1090,31 @@ select:disabled{opacity:.5;cursor:not-allowed}
     <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
       <button onclick="cancelPrompt()" style="padding:6px 14px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">取消</button>
       <button onclick="confirmPrompt()" style="padding:6px 14px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 修改远程地址弹窗 -->
+<div id="remoteUrlEditModal" style="display:none;position:fixed;inset:0;z-index:2200;background:rgba(0,0,0,.34);align-items:center;justify-content:center;padding:16px;box-sizing:border-box" onclick="if(event.target===this)closeRemoteUrlEdit()">
+  <div style="width:430px;max-width:100%;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:10px;padding:15px;box-shadow:0 10px 30px rgba(0,0,0,.2);color:var(--hana-fg,#1a1d24)">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <div id="remoteUrlEditTitle" style="font-size:13px;font-weight:650;flex:1">修改远程地址</div>
+      <button type="button" onclick="closeRemoteUrlEdit()" style="border:0;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:18px;cursor:pointer">×</button>
+    </div>
+    <div id="remoteUrlEditHint" style="font-size:10px;color:var(--hana-fg-muted,#6b7280);line-height:15px;margin-bottom:9px">可以从你的 GitHub 仓库中选择，也可以手动输入新的 URL。</div>
+    <div class="remote-url-edit-label">选择我的 GitHub 仓库</div>
+    <div class="remote-url-edit-row">
+      <div id="remoteUrlRepoSelectWrap" style="display:flex;flex:1;min-width:0">
+        <select id="remoteUrlRepoSelect" style="width:100%;font-size:11px"><option value="">点击加载我的 GitHub 仓库</option></select>
+      </div>
+      <button type="button" class="remote-form-secondary" onclick="loadRemoteUrlRepos()">刷新</button>
+    </div>
+    <div class="remote-url-edit-or"><span>或手动输入</span></div>
+    <input id="remoteUrlEditInput" class="remote-url-edit-input" type="text" placeholder="https://github.com/user/repository.git" autocomplete="off" onkeydown="if(event.key==='Enter')submitRemoteUrlEdit();if(event.key==='Escape')closeRemoteUrlEdit()">
+    <div id="remoteUrlEditResult" class="remote-form-result"></div>
+    <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:12px">
+      <button type="button" class="remote-form-secondary" onclick="closeRemoteUrlEdit()">取消</button>
+      <button type="button" class="remote-form-primary" onclick="submitRemoteUrlEdit()">验证并更新</button>
     </div>
   </div>
 </div>
@@ -2142,15 +2174,85 @@ async function setRemoteRole(remote, role) {
   } catch (e) { toast("设置远程角色失败：" + e.message, "err"); }
 }
 
+var _remoteUrlEditRemote = "";
+var _remoteUrlEditCurrentUrl = "";
+
 function editLocalRemoteUrl(remoteInfo) {
   const remote = remoteInfo && remoteInfo.name ? remoteInfo.name : "";
   if (!remote) return;
-  const currentUrl = remoteInfo.displayUrl || remoteInfo.fetchUrl || "";
-  customPrompt(`修改远程地址：${remote}`, "", function(value) {
-    const newUrl = String(value || "").trim();
-    if (!newUrl || newUrl === currentUrl) return;
-    performEditLocalRemoteUrl(remote, newUrl, false);
-  });
+  _remoteUrlEditRemote = remote;
+  _remoteUrlEditCurrentUrl = remoteInfo.displayUrl || remoteInfo.fetchUrl || "";
+  const modal = document.getElementById("remoteUrlEditModal");
+  const title = document.getElementById("remoteUrlEditTitle");
+  const input = document.getElementById("remoteUrlEditInput");
+  const result = document.getElementById("remoteUrlEditResult");
+  const select = document.getElementById("remoteUrlRepoSelect");
+  if (!modal || !input) return;
+  if (title) title.textContent = `修改远程地址：${remote}`;
+  input.value = "";
+  if (result) result.textContent = "";
+  if (select) { select.value = ""; if (select._hanaSelect) select._hanaSelect.sync(); }
+  modal.style.display = "flex";
+  loadRemoteUrlRepos();
+  setTimeout(function() { input.focus(); }, 50);
+  updateGhBodyHeight();
+}
+
+function closeRemoteUrlEdit() {
+  const modal = document.getElementById("remoteUrlEditModal");
+  const select = document.getElementById("remoteUrlRepoSelect");
+  if (select && select._hanaSelect) {
+    select._hanaSelect.close();
+    select.value = "";
+    select._hanaSelect.sync();
+  }
+  if (modal) modal.style.display = "none";
+  _remoteUrlEditRemote = "";
+  _remoteUrlEditCurrentUrl = "";
+  updateGhBodyHeight();
+}
+
+async function loadRemoteUrlRepos() {
+  const select = document.getElementById("remoteUrlRepoSelect");
+  if (!select || select.dataset.loading === "1") return;
+  select.dataset.loading = "1";
+  select.innerHTML = '<option value="">正在加载 GitHub 仓库...</option>';
+  if (select._hanaSelect) select._hanaSelect.replaceOptions(select.options);
+  try {
+    const res = await fetch(apiUrl("/api/gh/list"));
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.repos)) throw new Error(data.message || "加载失败");
+    select.innerHTML = '<option value="">请选择一个仓库</option>' + data.repos.map(function(repo) {
+      const owner = repo.owner && repo.owner.login ? repo.owner.login + "/" : "";
+      const label = owner + repo.name + (repo.isPrivate ? " 🔒" : "");
+      return '<option value="' + escapeAttr(repo.url || "") + '">' + escapeHtml(label) + '</option>';
+    }).join("");
+    if (select._hanaSelect) select._hanaSelect.replaceOptions(select.options);
+  } catch (e) {
+    select.innerHTML = '<option value="">仓库列表加载失败</option>';
+    if (select._hanaSelect) select._hanaSelect.replaceOptions(select.options);
+    const result = document.getElementById("remoteUrlEditResult");
+    if (result) result.textContent = "加载失败：" + e.message;
+  } finally {
+    select.dataset.loading = "0";
+    updateGhBodyHeight();
+  }
+}
+
+function onRemoteUrlRepoSelect() {
+  const select = document.getElementById("remoteUrlRepoSelect");
+  const input = document.getElementById("remoteUrlEditInput");
+  if (select && input && select.value) input.value = select.value;
+}
+
+async function submitRemoteUrlEdit() {
+  const remote = _remoteUrlEditRemote;
+  const input = document.getElementById("remoteUrlEditInput");
+  const result = document.getElementById("remoteUrlEditResult");
+  const newUrl = input ? input.value.trim() : "";
+  if (!remote || !newUrl) { if (result) result.textContent = "请选择仓库或输入新的远程 URL"; return; }
+  if (result) result.textContent = "检查远程地址中...";
+  await performEditLocalRemoteUrl(remote, newUrl, false);
 }
 
 async function performEditLocalRemoteUrl(remote, newUrl, confirmed) {
@@ -2163,6 +2265,7 @@ async function performEditLocalRemoteUrl(remote, newUrl, confirmed) {
     });
     const data = await res.json();
     if (data.code === "REMOTE_URL_CONFIRM") {
+      closeRemoteUrlEdit();
       showConfirm(
         `确定修改远程 ${remote} 的地址吗？`,
         "确认修改远程地址",
@@ -2172,7 +2275,13 @@ async function performEditLocalRemoteUrl(remote, newUrl, confirmed) {
       );
       return;
     }
-    if (!data.ok) { toast("❌ " + (data.message || "修改远程地址失败"), "err"); return; }
+    if (!data.ok) {
+      const result = document.getElementById("remoteUrlEditResult");
+      if (result) result.textContent = data.message || "修改远程地址失败";
+      toast("❌ " + (data.message || "修改远程地址失败"), "err");
+      return;
+    }
+    closeRemoteUrlEdit();
     toast(`✅ ${remote} 地址已更新并验证`, "success");
     loadLocalRemotes(remote, "");
   } catch (e) { toast("修改远程地址失败：" + e.message, "err"); }
@@ -3388,6 +3497,9 @@ function initHanaSelects() {
   replaceSelectWithHanaSelect("ghEditVisibility", { fullWidth: true, preferBelow: true });
   replaceSelectWithHanaSelect("ghConnectRepoSelect", {
     onChange: function(v) { onGhConnectRepoSelect(); }
+  });
+  replaceSelectWithHanaSelect("remoteUrlRepoSelect", {
+    onChange: function(v) { onRemoteUrlRepoSelect(); }
   });
   // cfgStashMode
   replaceSelectWithHanaSelect("cfgStashMode", {
@@ -5696,6 +5808,8 @@ async function submitIdentitySetup() {
   if (typeof initHanaSelects === "function") initHanaSelects();
   const connectSelect = document.getElementById("ghConnectRepoSelect");
   if (connectSelect) connectSelect.dataset.loading = "0";
+  const remoteUrlSelect = document.getElementById("remoteUrlRepoSelect");
+  if (remoteUrlSelect) remoteUrlSelect.dataset.loading = "0";
   initCardDrag();
   setupCommitActionLayout();
   setupLogInfiniteScroll();
