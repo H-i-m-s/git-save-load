@@ -1000,7 +1000,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
 </div>
 
 <!-- reset 帮助气泡 -->
-<div id="resetHelpBubble" style="display:none;position:fixed;z-index:1000;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.8;box-shadow:0 4px 12px rgba(0,0,0,0.12);max-width:320px">
+<div id="resetHelpBubble" style="display:none;position:fixed;z-index:1000;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.8;box-shadow:0 4px 12px rgba(0,0,0,0.12);width:380px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);box-sizing:border-box;overflow-y:auto;overflow-x:hidden;overflow-wrap:anywhere;word-break:break-word;scrollbar-width:thin">
   <div style="font-weight:600;margin-bottom:4px">📜 提交记录 — 回滚模式说明</div>
   <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:6px">左键点击日期或 hash 可回滚；右键可修改提交记录</div>
   <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:6px">查看记录时提示块会跟随当前行；想选中文字时，先按住 Shift 再移入提示块，Shift 期间不会切换到其他行。</div>
@@ -3593,8 +3593,6 @@ function showCommitTooltip(commit, event) {
     commit.tag ? `🏷️  Tag: ${commit.tag}` : null,
     `✍️  作者: ${commit.author || ''}`,
     `💬 说明: ${commit.message}`,
-    ``,
-    `💡 左键点击日期或 hash 可回滚；右键点击可修改提交说明和版本号`,
   ].filter(Boolean).join("\n");
   activeCommitTip = tip;
   tip.classList.add("show");
@@ -4516,10 +4514,38 @@ function showResetHelp() {
   if (bubble.style.display !== "none") { bubble.style.display = "none"; return; }
   const btn = event.target;
   const rect = btn.getBoundingClientRect();
-  bubble.style.right = (window.innerWidth - rect.right) + "px";
-  bubble.style.left = "auto";
-  bubble.style.top = (rect.bottom + 4) + "px";
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 320;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 480;
+  const viewportPadding = 8;
+  const gap = 4;
+
+  // 先脱离按钮右侧的 right 锚点再测量，避免宽提示框向左展开到可视区域外。
+  bubble.style.right = "auto";
+  bubble.style.left = "-9999px";
+  bubble.style.top = "-9999px";
+  bubble.style.maxHeight = "none";
+  bubble.style.width = Math.min(380, Math.max(120, viewportWidth - viewportPadding * 2)) + "px";
   bubble.style.display = "";
+
+  const bubbleWidth = bubble.offsetWidth || Math.min(380, viewportWidth - viewportPadding * 2);
+  const maxLeft = Math.max(viewportPadding, viewportWidth - bubbleWidth - viewportPadding);
+  // 相比原来的右对齐位置，整体向右偏移 48px；越过视口时自动收回到边界内。
+  const preferredLeft = rect.right - bubbleWidth + 48;
+  const left = Math.max(viewportPadding, Math.min(preferredLeft, maxLeft));
+  bubble.style.left = left + "px";
+
+  // 优先放在按钮下方；下方空间不足时移到按钮上方，并把超出的内容交给滚动条。
+  const naturalHeight = bubble.scrollHeight;
+  const spaceBelow = Math.max(0, viewportHeight - rect.bottom - viewportPadding);
+  const spaceAbove = Math.max(0, rect.top - viewportPadding);
+  if (spaceBelow < naturalHeight && spaceAbove > spaceBelow) {
+    const height = Math.min(naturalHeight, spaceAbove);
+    bubble.style.maxHeight = Math.max(1, spaceAbove) + "px";
+    bubble.style.top = Math.max(viewportPadding, rect.top - height - gap) + "px";
+  } else {
+    bubble.style.maxHeight = Math.max(1, spaceBelow) + "px";
+    bubble.style.top = (rect.bottom + gap) + "px";
+  }
   if (resetHelpListener) document.removeEventListener("click", resetHelpListener);
   resetHelpListener = (e) => {
     if (!bubble.contains(e.target) && e.target !== btn) {
