@@ -1486,26 +1486,31 @@ async function saveConfigPath(p) {
 // Toast 消息
 let _toastTimer = null;
 let _toastDismissHandler = null;
+let _toastDismissEvent = "click";
 function hideToast() {
   const el = document.getElementById("toast");
   el.style.display = "none";
   if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
-  if (_toastDismissHandler) { document.removeEventListener("click", _toastDismissHandler, true); _toastDismissHandler = null; }
+  if (_toastDismissHandler) {
+    document.removeEventListener(_toastDismissEvent, _toastDismissHandler, true);
+    _toastDismissHandler = null;
+  }
 }
-function toast(msg, type = "info") {
+function toast(msg, type = "info", options = {}) {
   hideToast(); // 清理上一次的计时器和点击监听
   const el = document.getElementById("toast");
   el.textContent = msg;
   el.className = "msg-toast " + type;
   el.style.display = "block";
-  // 给提示足够阅读时间；点击提示框外部的空白区域仍可立即关闭
-  const duration = type === "err" ? 12000 : 8000;
+  // 默认行为保持不变；单独的提示可传入自己的时长和外部关闭事件。
+  const defaultDuration = type === "err" ? 12000 : 8000;
+  const duration = Number.isFinite(options.duration) ? options.duration : defaultDuration;
   _toastTimer = setTimeout(hideToast, duration);
-  // 点击 toast 以外的任意位置立即收起
+  _toastDismissEvent = options.dismissEvent || "click";
   _toastDismissHandler = (e) => {
     if (el !== e.target && !el.contains(e.target)) hideToast();
   };
-  document.addEventListener("click", _toastDismissHandler, true);
+  document.addEventListener(_toastDismissEvent, _toastDismissHandler, true);
 }
 
 // 获取命令路径（带 token，正确处理已有 query 的情况）
@@ -4918,15 +4923,15 @@ async function submitIdentitySetup() {
   // 注册卡片（事件驱动的自动刷新）
   Cards.register("fileCard", { events: ["commit","push","pull","reset","branch-switch","refresh-all"], refresh: function(){
     var p = currentPath || getSavedPath();
-    if (p) { fetch(apiUrl("/api/status?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){renderStatus(d); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success")}}catch{}}); }
+    if (p) { fetch(apiUrl("/api/status?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){renderStatus(d); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success",{duration:1200,dismissEvent:"pointerdown"})}}catch{}}); }
   }});
   Cards.register("logCard", { events: ["commit","reset","branch-switch","refresh-all"], refresh: function(){
     var p = currentPath || getSavedPath();
-    if (p) { fetch(apiUrl("/api/log?count=10&path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){renderLog(d); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success")}}catch{}}); }
+    if (p) { fetch(apiUrl("/api/log?count=10&path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){renderLog(d); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success",{duration:1200,dismissEvent:"pointerdown"})}}catch{}}); }
   }});
   Cards.register("stashCard", { events: ["commit","stash-push","stash-pop","stash-drop","refresh-all"], refresh: function(){
     var p = currentPath || getSavedPath();
-    if (p) { fetch(apiUrl("/api/stash/list?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){loadStash(); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success")}}catch{}}); }
+    if (p) { fetch(apiUrl("/api/stash/list?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){loadStash(); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success",{duration:1200,dismissEvent:"pointerdown"})}}catch{}}); }
   }});
   refresh();
 
