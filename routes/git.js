@@ -1235,6 +1235,7 @@ export default function (app, ctx) {
   app.get("/api/log", async (c) => {
     const path = repoPath(c.req.query("path"));
     const count = Math.min(Math.max(1, parseInt(c.req.query("count") || "20", 10)), 100);
+    const offset = Math.max(0, parseInt(c.req.query("skip") || "0", 10));
 
     try {
       // 获取 tag → hash 映射
@@ -1249,7 +1250,8 @@ export default function (app, ctx) {
 
       // 用 --numstat 一次性获取每次提交的增删统计
       const format = "%h|%s|%an|%ai";
-      const raw = gitExec(path, `git log --format="${format}" --numstat -n ${count}`);
+      // 多取一条，用于判断当前页后面是否还有更早的提交。
+      const raw = gitExec(path, `git log --format="${format}" --numstat -n ${count + 1} --skip ${offset}`);
       const commits = [];
       let cur = null;
       for (const line of raw.split("\n")) {
@@ -1270,8 +1272,14 @@ export default function (app, ctx) {
         }
       }
       if (cur) commits.push(cur);
+      const pageCommits = commits.slice(0, count);
 
-      return c.json({ ok: true, commits });
+      return c.json({
+        ok: true,
+        commits: pageCommits,
+        offset,
+        hasMore: commits.length > count,
+      });
     } catch (e) {
       return c.json({ ok: false, message: e.message });
     }

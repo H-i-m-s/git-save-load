@@ -1118,6 +1118,19 @@ select:disabled{opacity:.5;cursor:not-allowed}
 <script>
 const BASE = window.location.pathname.replace(/\/widget\/?$/, "");
 let currentPath = "";
+
+// 提交记录分页：首屏 20 条，滚动接近底部时自动追加下一页。
+const LOG_PAGE_SIZE = 20;
+const LOG_SCROLL_THRESHOLD = 64;
+var logPager = {
+  path: "",
+  offset: 0,
+  hasMore: false,
+  loading: false,
+  generation: 0,
+  commits: [],
+};
+
 // ======== 事件总线（卡片间通信） ========
 var Bus = {
   _handlers: {},
@@ -3141,6 +3154,69 @@ async function createChildBranch(parentName) {
   });
 }
 
+// 提交记录分页加载
+function resetLogPager(path) {
+  logPager.generation += 1;
+  logPager.path = path || "";
+  logPager.offset = 0;
+  logPager.hasMore = !!path;
+  logPager.loading = false;
+  logPager.commits = [];
+  var cl = document.getElementById("commitList");
+  if (cl) cl._commits = [];
+}
+
+async function loadLogPage(path, append) {
+  path = path || currentPath || getSavedPath();
+  if (!path || logPager.loading) return;
+  if (append && (logPager.path !== path || !logPager.hasMore)) return;
+
+  if (!append && logPager.path !== path) resetLogPager(path);
+  var requestGeneration = logPager.generation;
+  var offset = append ? logPager.offset : 0;
+  logPager.loading = true;
+  try {
+    var url = apiUrl("/api/log?count=" + LOG_PAGE_SIZE + "&skip=" + offset + "&path=" + encodeURIComponent(path));
+    var res = await fetch(url);
+    var data = await res.json();
+    if (requestGeneration !== logPager.generation || logPager.path !== path) return;
+    if (!data.ok) {
+      if (!append) renderLog(data);
+      return;
+    }
+    renderLog(data, append);
+    logPager.path = path;
+    logPager.offset = offset + (data.commits || []).length;
+    logPager.hasMore = !!data.hasMore;
+    logPager.commits = document.getElementById("commitList")._commits || [];
+
+    // 内容还没填满滚动区时，继续补一页，避免用户必须先制造一次滚动。
+    var cl = document.getElementById("commitList");
+    if (logPager.hasMore && cl && cl.scrollHeight <= cl.clientHeight + LOG_SCROLL_THRESHOLD) {
+      setTimeout(function() { loadLogPage(path, true); }, 0);
+    }
+  } catch (e) {
+    if (!append) toast("提交记录加载失败：" + e.message, "err");
+  } finally {
+    if (requestGeneration === logPager.generation) logPager.loading = false;
+  }
+}
+
+function maybeLoadMoreLog() {
+  var cl = document.getElementById("commitList");
+  if (!cl || logPager.loading || !logPager.hasMore) return;
+  if (cl.scrollHeight - cl.scrollTop - cl.clientHeight <= LOG_SCROLL_THRESHOLD) {
+    loadLogPage(logPager.path, true);
+  }
+}
+
+function setupLogInfiniteScroll() {
+  var cl = document.getElementById("commitList");
+  if (!cl || cl.dataset.infiniteScrollBound === "1") return;
+  cl.dataset.infiniteScrollBound = "1";
+  cl.addEventListener("scroll", maybeLoadMoreLog, { passive: true });
+}
+
 // 刷新所有状态
 function doRefreshAll() {
   compareCleanup();
@@ -3185,14 +3261,8 @@ async function refresh() {
     // 历史 + 版本号
     if (status.ok) {
       loadNextVersion();
-      var logCached = cacheGet("log-" + currentPath);
-      if (logCached) { renderLog(logCached); }
-      else {
-        const logRes = await fetch(apiUrl("/api/log?count=10&path=" + encodeURIComponent(currentPath)));
-        const log = await logRes.json();
-        cacheSet("log-" + currentPath, log);
-        renderLog(log);
-      }
+      resetLogPager(currentPath);
+      await loadLogPage(currentPath, false);
     }
     loadStash();
   } catch (e) {
@@ -3211,9 +3281,8 @@ async function refreshWithPath(path) {
     const status = await statusRes.json();
     renderStatus(status);
     if (status.ok) {
-      const logRes = await fetch(apiUrl("/api/log?count=10&path=" + encodeURIComponent(path)));
-      const log = await logRes.json();
-      renderLog(log);
+      resetLogPager(path);
+      await loadLogPage(path, false);
       loadStash();
     }
   } catch (e) {
@@ -3533,22 +3602,27 @@ function showCommitTooltip(commit, event) {
   tip.style.top = Math.max(6, event.clientY - tip.offsetHeight - 8) + "px";
 }
 
-function renderLog(data) {
+function renderLog(data, append) {
   hideActiveCommitTip();
   const cl = document.getElementById("commitList");
-  cl.innerHTML = "";
+  append = !!append;
+  if (!append) cl.innerHTML = "";
 
   // 说明列 flex:1 1 0 → 容器宽度响应天然渐进：
   // - 容器宽度 ≤ 必需列总宽（≈256px）：其他列已占满 li，msg = 0（说明列被压没）
   // - 容器宽度 > 必需列总宽：msg 从剩余空间逐渐扩张，列间距保持 4px
 
   if (!data.ok || !data.commits || data.commits.length === 0) {
-    cl.innerHTML = '<li class="empty-hint">暂无提交记录<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 改一下文件，然后点上面的「存档」按钮</span></li>';
+    if (!append) {
+      cl._commits = [];
+      cl.innerHTML = '<li class="empty-hint">暂无提交记录<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 改一下文件，然后点上面的「存档」按钮</span></li>';
+    }
     return;
   }
 
-  // 存数据供切换时重新渲染
-  cl._commits = data.commits;
+  // 首次加载替换列表，后续加载只追加，保留已有滚动位置和交互状态。
+  const previousCommits = append && Array.isArray(cl._commits) ? cl._commits : [];
+  cl._commits = append ? previousCommits.concat(data.commits) : data.commits.slice();
 
   for (const c of data.commits) {
     const li = document.createElement("li");
@@ -5025,6 +5099,7 @@ async function submitIdentitySetup() {
   if (connectSelect) connectSelect.dataset.loading = "0";
   initCardDrag();
   setupCommitActionLayout();
+  setupLogInfiniteScroll();
   // 注册卡片（事件驱动的自动刷新）
   Cards.register("fileCard", { events: ["commit","push","pull","reset","branch-switch","refresh-all"], refresh: function(){
     var p = currentPath || getSavedPath();
@@ -5032,7 +5107,19 @@ async function submitIdentitySetup() {
   }});
   Cards.register("logCard", { events: ["commit","reset","branch-switch","refresh-all"], refresh: function(){
     var p = currentPath || getSavedPath();
-    if (p) { fetch(apiUrl("/api/log?count=10&path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){renderLog(d); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success",{duration:1200,dismissEvent:"pointerdown"})}}catch{}}); }
+    if (p) {
+      resetLogPager(p);
+      loadLogPage(p, false).then(function(){
+        try {
+          window._refreshDone++;
+          if (window._refreshDone >= window._refreshPending) {
+            var b = document.getElementById("btnRefresh");
+            if (b) b.classList.remove("spinning");
+            toast("刷新完成", "success", { duration: 1200, dismissEvent: "pointerdown" });
+          }
+        } catch {}
+      });
+    }
   }});
   Cards.register("stashCard", { events: ["commit","stash-push","stash-pop","stash-drop","refresh-all"], refresh: function(){
     var p = currentPath || getSavedPath();
