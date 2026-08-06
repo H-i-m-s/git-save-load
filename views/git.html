@@ -252,6 +252,14 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .commit-area button:disabled{opacity:.5;cursor:not-allowed}
 .commit-area button:hover:not(:disabled){opacity:.85}
 
+/* 推送 / 拉取动作槽：槽位按最长状态参与换行，按钮本体保持当前状态的自然宽度 */
+.commit-action-slot{
+  position:relative;display:block;min-width:0;min-height:34px;
+  flex:0 0 var(--commit-slot-width,auto);width:var(--commit-slot-width,auto);
+  transform:translateX(var(--commit-slot-shift,0px));
+}
+.commit-action-slot>button{position:absolute;left:0;top:0}
+
 /* 提交历史 */
 .commit-list{list-style:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:200px;overflow-y:auto;overflow-x:auto;padding-right:3px}
 #logCard{overflow:visible}
@@ -626,8 +634,12 @@ select:disabled{opacity:.5;cursor:not-allowed}
   <div class="commit-area">
     <input type="text" id="versionInput" placeholder="可选" value="0.0.1" autocomplete="off" style="width:80px;padding:6px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;font-family:monospace;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;flex-shrink:0">
     <button id="btnCommit" onclick="doCommit()" style="padding:6px 14px;border:0;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:var(--hana-accent,#4a8cff);color:#fff;white-space:nowrap;transition:opacity .15s">存档</button>
-    <button onclick="doPush(this)" style="padding:6px 10px 6px 7.5px;border:1px solid #27ae60;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:#27ae60;white-space:nowrap" title="把本地存档发送到云端 GitHub">📤 推送</button>
-    <button onclick="doPull(this)" style="padding:6px 10px 6px 7.5px;border:1px solid var(--hana-accent,#4a8cff);border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:var(--hana-accent,#4a8cff);white-space:nowrap" title="从云端 GitHub 拉取最新存档">📥 拉取</button>
+    <span id="pushActionSlot" class="commit-action-slot">
+      <button onclick="doPush(this)" style="padding:6px 10px 6px 7.5px;border:1px solid #27ae60;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:#27ae60;white-space:nowrap" title="把本地存档发送到云端 GitHub">📤 推送</button>
+    </span>
+    <span id="pullActionSlot" class="commit-action-slot">
+      <button onclick="doPull(this)" style="padding:6px 10px 6px 7.5px;border:1px solid var(--hana-accent,#4a8cff);border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:var(--hana-accent,#4a8cff);white-space:nowrap" title="从云端 GitHub 拉取最新存档">📥 拉取</button>
+    </span>
   </div>
 </div>
 
@@ -3702,6 +3714,98 @@ function syncDetailHtml(data) {
   return commitHtml + fileHtml;
 }
 
+// 推送 / 拉取的视觉宽度与换行宽度分离：
+// 槽位按所有状态中的最长按钮占位，按钮本体再向左收回空出的视觉宽度。
+var _commitActionLayoutFrame = 0;
+var _commitActionLayoutObserver = null;
+
+function measureCommitActionWidth(button, states) {
+  var maxWidth = button.offsetWidth || 0;
+  var probe = button.cloneNode(false);
+  probe.style.position = "absolute";
+  probe.style.left = "-10000px";
+  probe.style.top = "0";
+  probe.style.width = "max-content";
+  probe.style.minWidth = "0";
+  probe.style.flex = "none";
+  probe.style.visibility = "hidden";
+  probe.style.pointerEvents = "none";
+  document.body.appendChild(probe);
+  for (var i = 0; i < states.length; i++) {
+    probe.textContent = states[i];
+    maxWidth = Math.max(maxWidth, probe.offsetWidth || 0);
+  }
+  probe.remove();
+  return Math.ceil(maxWidth);
+}
+
+function syncCommitActionLayout() {
+  if (_commitActionLayoutFrame) return;
+  _commitActionLayoutFrame = requestAnimationFrame(function() {
+    _commitActionLayoutFrame = 0;
+    var area = document.querySelector(".commit-area");
+    var slots = [
+      { el: document.getElementById("pushActionSlot"), states: ["📤 推送", "检查中...", "覆盖中...", "✅ 已推送", "✅ 已覆盖"] },
+      { el: document.getElementById("pullActionSlot"), states: ["📥 拉取", "拉取中...", "✅ 已拉取"] },
+    ];
+    if (!area || slots.some(function(item) { return !item.el || !item.el.querySelector("button"); })) return;
+
+    // 先清除视觉位移，确保下面拿到的是未变换的真实换行结果。
+    slots.forEach(function(item) {
+      item.el.style.setProperty("--commit-slot-shift", "0px");
+    });
+    slots.forEach(function(item) {
+      var button = item.el.querySelector("button");
+      var width = measureCommitActionWidth(button, item.states);
+      item.el.style.setProperty("--commit-slot-width", width + "px");
+    });
+
+    // 强制一次布局，让 flex 根据最长状态槽位重新决定换行。
+    area.offsetHeight;
+    var areaRect = area.getBoundingClientRect();
+    var children = Array.prototype.slice.call(area.children);
+    var rects = new Map(children.map(function(child) {
+      return [child, child.getBoundingClientRect()];
+    }));
+    var gap = parseFloat(getComputedStyle(area).columnGap) || 0;
+
+    // 每个动作槽只在自己所在行内向前收回空白，不影响 flex 的换行判定。
+    var previousInRow = null;
+    children.forEach(function(child) {
+      var rect = rects.get(child);
+      var isSlot = child.classList && child.classList.contains("commit-action-slot");
+      if (isSlot) {
+        var button = child.querySelector("button");
+        var buttonWidth = button ? button.offsetWidth : 0;
+        var sameRow = previousInRow && Math.abs(rect.top - previousInRow.rect.top) < 1;
+        var desiredLeft = sameRow ? previousInRow.right + gap : areaRect.left;
+        var shift = desiredLeft - rect.left;
+        child.style.setProperty("--commit-slot-shift", shift.toFixed(2) + "px");
+        previousInRow = { rect: rect, right: desiredLeft + buttonWidth };
+      } else {
+        previousInRow = { rect: rect, right: rect.right };
+      }
+    });
+    requestHostResize();
+  });
+}
+
+function setupCommitActionLayout() {
+  if (_commitActionLayoutObserver) return;
+  var area = document.querySelector(".commit-area");
+  if (!area) return;
+  var buttons = area.querySelectorAll("#pushActionSlot button, #pullActionSlot button");
+  var textObserver = new MutationObserver(syncCommitActionLayout);
+  buttons.forEach(function(button) {
+    textObserver.observe(button, { childList: true, characterData: true, subtree: true });
+  });
+  var resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(syncCommitActionLayout) : null;
+  if (resizeObserver) resizeObserver.observe(area);
+  _commitActionLayoutObserver = { text: textObserver, resize: resizeObserver };
+  window.addEventListener("resize", syncCommitActionLayout);
+  syncCommitActionLayout();
+}
+
 async function doPush(btn, forceContext) {
   cacheClear();
   Bus.emit("push");
@@ -4920,6 +5024,7 @@ async function submitIdentitySetup() {
   const connectSelect = document.getElementById("ghConnectRepoSelect");
   if (connectSelect) connectSelect.dataset.loading = "0";
   initCardDrag();
+  setupCommitActionLayout();
   // 注册卡片（事件驱动的自动刷新）
   Cards.register("fileCard", { events: ["commit","push","pull","reset","branch-switch","refresh-all"], refresh: function(){
     var p = currentPath || getSavedPath();
