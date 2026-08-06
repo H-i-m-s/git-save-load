@@ -221,6 +221,117 @@ function isValidRemoteUrl(url) {
   return /^(?:https?|ssh):\/\/[^\s]+$/.test(url) || /^git@[^\s:]+:[^\s]+$/.test(url);
 }
 
+function sanitizeRemoteUrl(value) {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  try {
+    if (/^(?:https?|ssh):\/\//i.test(url)) {
+      const parsed = new URL(url);
+      if (parsed.username || parsed.password) {
+        parsed.username = "***";
+        parsed.password = "";
+      }
+      return parsed.toString().replace(/\/$/, "");
+    }
+  } catch {}
+  return url.replace(/^([^@\s]+)@([^:\s]+):/, "***@$2:");
+}
+
+function listRemoteBranches(cwd, remote) {
+  try {
+    const raw = gitExecFile(cwd, ["for-each-ref", "--format=%(refname:strip=3)", `refs/remotes/${remote}`], { timeout: 10000 });
+    return raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean).filter(name => name !== "HEAD");
+  } catch {
+    return [];
+  }
+}
+
+function getRemoteHeadBranch(cwd, remote, branches) {
+  try {
+    const symbolic = gitExecFile(cwd, ["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`], { timeout: 10000 });
+    const prefix = `${remote}/`;
+    if (symbolic.startsWith(prefix)) {
+      const branch = symbolic.slice(prefix.length);
+      if (branches.includes(branch)) return branch;
+    }
+  } catch {}
+  return branches.includes("main") ? "main" : (branches.includes("master") ? "master" : (branches[0] || ""));
+}
+
+function getTrackedRemoteBranch(cwd, localBranch, remote) {
+  if (!localBranch) return "";
+  try {
+    const tracked = gitExecFile(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], { timeout: 10000 });
+    const prefix = `${remote}/`;
+    if (tracked.startsWith(prefix)) return tracked.slice(prefix.length);
+  } catch {}
+  return "";
+}
+
+function chooseRemoteBranch(cwd, remote, localBranch, branches, requestedBranch = "") {
+  if (requestedBranch) {
+    if (!branches.includes(requestedBranch)) return null;
+    return requestedBranch;
+  }
+  const tracked = getTrackedRemoteBranch(cwd, localBranch, remote);
+  if (tracked && branches.includes(tracked)) return tracked;
+  return getRemoteHeadBranch(cwd, remote, branches);
+}
+
+function listRemoteDetails(cwd) {
+  const names = gitExecFile(cwd, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  return names.map((name) => {
+    let fetchUrl = "";
+    let pushUrl = "";
+    try { fetchUrl = gitExecFile(cwd, ["remote", "get-url", name], { timeout: 10000 }); } catch {}
+    try { pushUrl = gitExecFile(cwd, ["remote", "get-url", "--push", name], { timeout: 10000 }); } catch { pushUrl = fetchUrl; }
+    const branches = listRemoteBranches(cwd, name);
+    const defaultBranch = getRemoteHeadBranch(cwd, name, branches);
+    return {
+      name,
+      fetchUrl: sanitizeRemoteUrl(fetchUrl),
+      pushUrl: sanitizeRemoteUrl(pushUrl || fetchUrl),
+      displayUrl: sanitizeRemoteUrl(fetchUrl || pushUrl),
+      branches,
+      defaultBranch,
+      role: name === "origin" ? "push" : (name === "upstream" ? "upstream" : "other"),
+    };
+  });
+}
+
+function getRemoteBranchSnapshot(cwd, remote, remoteBranch, targetBranch) {
+  const remoteRef = `${remote}/${remoteBranch}`;
+  let remoteHash = "";
+  try { remoteHash = gitExecFile(cwd, ["rev-parse", "--verify", `${remoteRef}^{commit}`], { timeout: 10000 }); } catch {}
+  if (!remoteHash) {
+    return { remoteRef, remoteBranch, targetBranch, remoteHash: "", hasRemoteBranch: false, comparisonStatus: "REMOTE_BRANCH_MISSING", remoteAhead: 0, localAhead: 0, commits: [], files: [] };
+  }
+  let targetHash = "";
+  try { targetHash = gitExecFile(cwd, ["rev-parse", "--verify", `${targetBranch}^{commit}`], { timeout: 10000 }); } catch {}
+  if (!targetHash) {
+    return { remoteRef, remoteBranch, targetBranch, remoteHash, hasRemoteBranch: true, comparisonStatus: "LOCAL_BRANCH_UNCOMMITTED", remoteAhead: 0, localAhead: 0, commits: [], files: [] };
+  }
+
+  let counts;
+  try {
+    counts = gitExecFile(cwd, ["rev-list", "--left-right", "--count", `${remoteRef}...${targetBranch}`], { timeout: 10000 }).split(/\s+/).map(Number);
+  } catch {
+    return { remoteRef, remoteBranch, targetBranch, remoteHash, hasRemoteBranch: true, comparisonStatus: "COMPARE_FAILED", remoteAhead: 0, localAhead: 0, commits: [], files: [] };
+  }
+  const remoteAhead = Number.isFinite(counts[0]) ? counts[0] : 0;
+  const localAhead = Number.isFinite(counts[1]) ? counts[1] : 0;
+  let commits = [];
+  let files = [];
+  try {
+    commits = parseCommitList(gitExecFile(cwd, ["log", "--format=%H|%s", "-n", "20", `${targetBranch}..${remoteRef}`], { timeout: 10000 }))
+      .map((item) => ({ hash: item.hash.slice(0, 12), subject: item.subject }));
+    files = parseNameStatus(gitExecFile(cwd, ["diff", "--name-status", `${targetBranch}..${remoteRef}`], { timeout: 10000 }));
+  } catch {
+    return { remoteRef, remoteBranch, targetBranch, remoteHash, hasRemoteBranch: true, comparisonStatus: "COMPARE_FAILED", remoteAhead, localAhead, commits: [], files: [] };
+  }
+  return { remoteRef, remoteBranch, targetBranch, remoteHash, hasRemoteBranch: true, comparisonStatus: "OK", remoteAhead, localAhead, commits, files };
+}
+
 function normalizeVersionTag(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -1709,7 +1820,7 @@ export default function (app, ctx) {
               let url = "";
               try { url = gitExecFile(localPath, ["remote", "get-url", rn], { timeout: 10000 }); } catch {}
               if (url && url.includes(oldSuffix)) {
-                localRemote = { localPath, remote: rn, oldUrl: url, newUrl: url.replace(oldSuffix, `${owner}/${newName}`) };
+                localRemote = { localPath, remote: rn, oldUrl: sanitizeRemoteUrl(url), newUrl: sanitizeRemoteUrl(url.replace(oldSuffix, `${owner}/${newName}`)) };
                 break;
               }
             }
@@ -1788,7 +1899,7 @@ export default function (app, ctx) {
       let previousUrl = "";
       try { previousUrl = gitExecFile(localPath, ["remote", "get-url", remote], { timeout: 10000 }); } catch {}
       if (previousUrl && !body.confirmed) {
-        return c.json({ ok: false, code: "REMOTE_REPLACE_CONFIRM", requiresConfirmation: true, remote, previousUrl, nextUrl: remoteUrl, message: "当前远程名称已经存在，需要确认是否替换" });
+        return c.json({ ok: false, code: "REMOTE_REPLACE_CONFIRM", requiresConfirmation: true, remote, previousUrl: sanitizeRemoteUrl(previousUrl), nextUrl: sanitizeRemoteUrl(remoteUrl), message: "当前远程名称已经存在，需要确认是否替换" });
       }
       if (previousUrl) {
         gitExecFile(localPath, ["remote", "set-url", remote, remoteUrl], { timeout: 10000 });
@@ -1801,13 +1912,115 @@ export default function (app, ctx) {
       return c.json({
         ok: true,
         remote,
-        remoteUrl,
-        previousUrl,
+        remoteUrl: sanitizeRemoteUrl(remoteUrl),
+        previousUrl: sanitizeRemoteUrl(previousUrl),
         branch: currentBranch,
         message: previousUrl ? "已更新远程仓库关联" : "已关联远程仓库",
       });
     } catch (e) {
       return c.json({ ok: false, message: `关联失败：${commandErrorText(e) || "无法访问远程仓库"}` });
+    }
+  });
+
+  // ======== API: 读取本地远程仓库列表 ========
+  app.get("/api/remotes", async (c) => {
+    const path = repoPath(c.req.query("path"));
+    try {
+      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      const branch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      const preferredRemote = String(c.req.query("remote") || "").trim();
+      const preferredBranch = String(c.req.query("remoteBranch") || "").trim();
+      const remotes = listRemoteDetails(path);
+      if (!branch || !validateBranchName(path, branch)) {
+        return c.json({ ok: true, path, branch: "", detached: true, remotes, message: "当前处于 detached HEAD 或尚未检出本地分支" });
+      }
+      for (const remoteInfo of remotes) {
+        const requested = remoteInfo.name === preferredRemote ? preferredBranch : "";
+        const remoteBranch = chooseRemoteBranch(path, remoteInfo.name, branch, remoteInfo.branches, requested);
+        remoteInfo.targetBranch = branch;
+        remoteInfo.remoteBranch = remoteBranch || "";
+        if (remoteBranch) Object.assign(remoteInfo, getRemoteBranchSnapshot(path, remoteInfo.name, remoteBranch, branch));
+        else Object.assign(remoteInfo, { hasRemoteBranch: false, comparisonStatus: "REMOTE_BRANCH_MISSING", remoteAhead: 0, localAhead: 0, commits: [], files: [] });
+      }
+      return c.json({ ok: true, path, branch, detached: false, remotes });
+    } catch (e) {
+      return c.json({ ok: false, message: commandErrorText(e) || "读取远程仓库失败" });
+    }
+  });
+
+  // ======== API: 获取指定远程的最新提交 ========
+  app.post("/api/remote-fetch", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const path = repoPath(body.path);
+    const remote = String(body.remote || "").trim();
+    const requestedBranch = String(body.remoteBranch || body.branch || "").trim();
+    if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
+    try {
+      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      const targetBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      if (!targetBranch || !validateBranchName(path, targetBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
+      const remoteUrl = gitExecFile(path, ["remote", "get-url", remote], { timeout: 10000 });
+      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
+      const branches = listRemoteBranches(path, remote);
+      const remoteBranch = chooseRemoteBranch(path, remote, targetBranch, branches, requestedBranch);
+      if (requestedBranch && !remoteBranch) return c.json({ ok: false, code: "REMOTE_BRANCH_MISSING", remote, remoteBranch: requestedBranch, targetBranch, branches, message: `远程分支 ${remote}/${requestedBranch} 不存在` });
+      const snapshot = remoteBranch ? getRemoteBranchSnapshot(path, remote, remoteBranch, targetBranch) : { hasRemoteBranch: false, comparisonStatus: "REMOTE_BRANCH_MISSING", remoteBranch: "", targetBranch, remoteAhead: 0, localAhead: 0, commits: [], files: [] };
+      return c.json({ ok: true, remote, remoteUrl: sanitizeRemoteUrl(remoteUrl), targetBranch, branches, ...snapshot, message: snapshot.hasRemoteBranch ? `已获取 ${remote} 的最新更新` : `已获取 ${remote}，但没有可比较的远程分支` });
+    } catch (e) {
+      return c.json({ ok: false, message: `获取更新失败：${commandErrorText(e) || "无法访问远程仓库"}` });
+    }
+  });
+
+  // ======== API: 将指定远程分支合并到当前本地分支 ========
+  app.post("/api/remote-merge", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const path = repoPath(body.path);
+    const remote = String(body.remote || "").trim();
+    const requestedBranch = String(body.remoteBranch || body.branch || "").trim();
+    if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
+    try {
+      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      const targetBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      if (!targetBranch || !validateBranchName(path, targetBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
+      const operationState = getGitOperationState(path);
+      if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
+      const status = gitExecFile(path, ["status", "--porcelain"], { timeout: 10000 });
+      if (status) return c.json({ ok: false, code: "DIRTY", message: "当前工作区有未提交修改，请先存档、暂存或清理后再合并上游更新" });
+      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
+      const branches = listRemoteBranches(path, remote);
+      const remoteBranch = chooseRemoteBranch(path, remote, targetBranch, branches, requestedBranch);
+      if (!remoteBranch) return c.json({ ok: false, code: "REMOTE_BRANCH_MISSING", remote, remoteBranch: requestedBranch, targetBranch, branches, message: requestedBranch ? `远程分支 ${remote}/${requestedBranch} 不存在` : `远程 ${remote} 没有可用的默认分支` });
+      const remoteRef = `${remote}/${remoteBranch}`;
+      gitExecFile(path, ["rev-parse", "--verify", `${remoteRef}^{commit}`], { timeout: 10000 });
+      const raw = gitExecFile(path, ["merge", "--no-edit", remoteRef], { timeout: 120000 });
+      if (getGitOperationState(path) === "MERGE_HEAD") return c.json({ ok: false, code: "MERGE_CONFLICT", requiresResolution: true, remote, remoteBranch, targetBranch, sourceRef: remoteRef, message: "合并产生冲突，请先解决冲突" });
+      return c.json({ ok: true, remote, remoteBranch, targetBranch, sourceRef: remoteRef, message: raw.includes("Already up to date") ? "已经是最新" : `已将 ${remoteRef} 合并到本地 ${targetBranch}` });
+    } catch (e) {
+      const stderr = commandErrorText(e);
+      if (getGitOperationState(path) === "MERGE_HEAD") return c.json({ ok: false, code: "MERGE_CONFLICT", requiresResolution: true, remote, message: "合并产生冲突，请先解决冲突" });
+      const errLine = stderr.split("\n").find(l => l.includes("error:") || l.includes("fatal:"));
+      return c.json({ ok: false, message: errLine ? errLine.replace(/^(error:|fatal:)\s*/, "").trim() : `合并失败：${stderr || "无法合并远程更新"}` });
+    }
+  });
+
+  // ======== API: 删除本地远程仓库关联 ========
+  app.post("/api/remote-remove", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const path = repoPath(body.path);
+    const remote = String(body.remote || "").trim();
+    if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
+    try {
+      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      const operationState = getGitOperationState(path);
+      if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
+      const currentUrl = gitExecFile(path, ["remote", "get-url", remote], { timeout: 10000 });
+      if ((remote === "origin" || remote === "upstream") && body.confirmed !== true) {
+        return c.json({ ok: false, code: "REMOTE_REMOVE_CONFIRM", requiresConfirmation: true, remote, currentUrl: sanitizeRemoteUrl(currentUrl), message: `移除 ${remote} 会影响默认的推送或上游更新流程，请确认` });
+      }
+      gitExecFile(path, ["remote", "remove", remote], { timeout: 10000 });
+      return c.json({ ok: true, remote, message: `已移除远程 ${remote}` });
+    } catch (e) {
+      return c.json({ ok: false, message: `移除远程失败：${commandErrorText(e) || "远程不存在"}` });
     }
   });
 
@@ -1908,27 +2121,36 @@ export default function (app, ctx) {
     const body = await c.req.json().catch(() => ({}));
     const path = repoPath(body.path);
     const remote = String(body.remote || "origin").trim() || "origin";
-    const requestedBranch = String(body.branch || "").trim();
+    const requestedRemoteBranch = String(body.remoteBranch || "").trim();
     if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
 
     try {
-      const branch = requestedBranch || gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
-      if (!validateBranchName(path, branch)) return c.json({ ok: false, message: "当前分支名无效" });
+      const targetBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      if (!targetBranch || !validateBranchName(path, targetBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
       const remoteUrl = gitExecFile(path, ["remote", "get-url", remote], { timeout: 10000 });
       gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
-      const remoteRef = `${remote}/${branch}`;
-      let remoteHash = "";
-      try { remoteHash = gitExecFile(path, ["rev-parse", remoteRef], { timeout: 10000 }); } catch {}
-      if (!remoteHash) {
-        return c.json({ ok: true, branch, remote, remoteUrl, hasUpstream: false, ahead: 0, behind: 0, diverged: false, message: "远程分支尚未建立" });
+      const branches = listRemoteBranches(path, remote);
+      const remoteBranch = chooseRemoteBranch(path, remote, targetBranch, branches, requestedRemoteBranch);
+      if (!remoteBranch) {
+        return c.json({ ok: true, branch: targetBranch, targetBranch, remote, remoteBranch: requestedRemoteBranch, remoteUrl: sanitizeRemoteUrl(remoteUrl), hasUpstream: false, ahead: 0, behind: 0, diverged: false, comparisonStatus: "REMOTE_BRANCH_MISSING", branches, message: "远程分支尚未建立" });
       }
-      const counts = gitExecFile(path, ["rev-list", "--left-right", "--count", `${remoteRef}...${branch}`], { timeout: 10000 }).split(/\s+/).map(Number);
-      const behind = Number.isFinite(counts[0]) ? counts[0] : 0;
-      const ahead = Number.isFinite(counts[1]) ? counts[1] : 0;
-      const commits = parseCommitList(gitExecFile(path, ["log", "--format=%H|%s", "-n", "20", `${branch}..${remoteRef}`], { timeout: 10000 }))
-        .map((item) => ({ hash: item.hash.slice(0, 12), subject: item.subject }));
-      const files = parseNameStatus(gitExecFile(path, ["diff", "--name-status", `${branch}..${remoteRef}`], { timeout: 10000 }));
-      return c.json({ ok: true, branch, remote, remoteUrl, remoteHash, hasUpstream: true, ahead, behind, diverged: ahead > 0 && behind > 0, commits, files });
+      const snapshot = getRemoteBranchSnapshot(path, remote, remoteBranch, targetBranch);
+      return c.json({
+        ok: true,
+        branch: targetBranch,
+        targetBranch,
+        remote,
+        remoteBranch,
+        remoteUrl: sanitizeRemoteUrl(remoteUrl),
+        remoteHash: snapshot.remoteHash,
+        hasUpstream: snapshot.hasRemoteBranch,
+        ahead: snapshot.localAhead,
+        behind: snapshot.remoteAhead,
+        diverged: snapshot.localAhead > 0 && snapshot.remoteAhead > 0,
+        comparisonStatus: snapshot.comparisonStatus,
+        commits: snapshot.commits,
+        files: snapshot.files,
+      });
     } catch (e) {
       return c.json({ ok: false, message: commandErrorText(e) || "获取远程状态失败" });
     }
@@ -1939,19 +2161,24 @@ export default function (app, ctx) {
     const body = await c.req.json().catch(() => ({}));
     const path = repoPath(body.path);
     const remote = String(body.remote || "origin").trim() || "origin";
+    const requestedRemoteBranch = String(body.remoteBranch || "").trim();
     try {
-      const actualBranch = String(body.branch || "").trim() || gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
-      if (!validateBranchName(path, actualBranch)) return c.json({ ok: false, message: "当前分支名无效" });
+      const targetBranch = String(body.branch || "").trim() || gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      if (!validateBranchName(path, targetBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
+      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
+      const branches = listRemoteBranches(path, remote);
+      const remoteBranch = chooseRemoteBranch(path, remote, targetBranch, branches, requestedRemoteBranch);
+      if (!remoteBranch) return c.json({ ok: false, code: "REMOTE_BRANCH_MISSING", remote, targetBranch, branches, message: `远程 ${remote} 没有可用的目标分支` });
       const config = await readConfig(ctx);
       const pullMode = ["merge", "rebase", "ff-only"].includes(body.mode) ? body.mode : (["merge", "rebase", "ff-only"].includes(config.pullMode) ? config.pullMode : "merge");
       const pullArgs = ["pull"];
       if (pullMode === "rebase") pullArgs.push("--rebase");
       else if (pullMode === "ff-only") pullArgs.push("--ff-only");
       else pullArgs.push("--no-rebase");
-      pullArgs.push(remote, actualBranch);
+      pullArgs.push(remote, remoteBranch);
       const raw = gitExecFile(path, pullArgs, { timeout: 120000 });
       const alreadyUpToDate = raw.includes("Already up to date") || raw.includes("Already-up-to-date");
-      return c.json({ ok: true, mode: pullMode, message: alreadyUpToDate ? "已经是最新" : "拉取成功" });
+      return c.json({ ok: true, mode: pullMode, remote, remoteBranch, targetBranch, message: alreadyUpToDate ? "已经是最新" : `已从 ${remote}/${remoteBranch} 拉取到 ${targetBranch}` });
     } catch (e) {
       const stderr = commandErrorText(e);
       const errLine = stderr.split("\n").find(l => l.includes("error:") || l.includes("fatal:"));

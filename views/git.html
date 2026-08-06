@@ -207,6 +207,77 @@ select:disabled{opacity:.5;cursor:not-allowed}
 }
 #ghConnectRepoRow .hana-select{width:100%;min-width:0;flex:1}
 #ghConnectRepoSelect{min-width:0;width:100%}
+/* 远程仓库管理：身份、状态、分支和操作分层，避免所有控件挤在一行 */
+.remote-section-header{display:flex;align-items:center;gap:8px;margin:1px 0 8px}
+.remote-section-title-wrap{flex:1;min-width:0}
+.remote-section-title{font-size:13px;font-weight:650;color:var(--hana-fg,#1a1d24);line-height:18px}
+.remote-section-subtitle{font-size:10px;color:var(--hana-fg-muted,#6b7280);line-height:14px}
+.remote-refresh-btn{height:26px;padding:0 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);font-size:11px;cursor:pointer;white-space:nowrap;transition:border-color .15s,background .15s,color .15s}
+.remote-refresh-btn:hover{border-color:var(--hana-accent,#5e6ad2);color:var(--hana-accent,#5e6ad2);background:var(--hana-bg-muted,#f6f7f7)}
+.remote-overview{display:flex;align-items:stretch;gap:6px;margin-bottom:7px;padding:8px 9px;border:1px solid var(--hana-border,#e2e5ea);border-radius:8px;background:var(--hana-bg-muted,#f6f7f7)}
+.remote-overview-item{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.remote-overview-label{font-size:9px;color:var(--hana-fg-muted,#6b7280);line-height:12px}
+.remote-overview code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg,#1a1d24);font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.remote-overview-count{align-self:center;flex-shrink:0;padding-left:7px;border-left:1px solid var(--hana-border,#d0d5dd);font-size:10px;color:var(--hana-fg-muted,#6b7280);white-space:nowrap}
+.remote-section-note{margin:0 1px 8px;color:var(--hana-fg-muted,#6b7280);font-size:10px;line-height:15px}
+.remote-section-note code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--hana-accent,#5e6ad2)}
+.remote-list{display:flex;flex-direction:column;gap:8px;margin-bottom:8px;min-width:0}
+.remote-empty{padding:18px 10px;border:1px dashed var(--hana-border-strong,#d0d5dd);border-radius:8px;text-align:center;color:var(--hana-fg-muted,#6b7280);font-size:11px;background:var(--hana-bg-muted,#f6f7f7)}
+.remote-card{min-width:0;padding:10px;border:1px solid var(--hana-border,#e2e5ea);border-radius:9px;background:var(--hana-surface,#fff);transition:border-color .15s,box-shadow .15s}
+.remote-card:hover{border-color:var(--hana-border-strong,#d0d5dd);box-shadow:0 3px 12px rgba(0,0,0,.06)}
+.remote-card.remote-card-attention{border-color:color-mix(in srgb,var(--hana-accent,#5e6ad2) 42%,var(--hana-border,#e2e5ea))}
+.remote-card.remote-card-error{border-color:color-mix(in srgb,#e74c3c 42%,var(--hana-border,#e2e5ea))}
+.remote-card-head{display:flex;align-items:center;gap:7px;min-width:0}
+.remote-card-dot{width:8px;height:8px;flex:0 0 8px;border-radius:50%;background:var(--hana-fg-subtle,#9ca3af);box-shadow:0 0 0 3px color-mix(in srgb,var(--hana-fg-subtle,#9ca3af) 14%,transparent)}
+.remote-card-dot.remote-dot-ok{background:#27ae60;box-shadow:0 0 0 3px rgba(39,174,96,.12)}
+.remote-card-dot.remote-dot-info{background:var(--hana-accent,#5e6ad2);box-shadow:0 0 0 3px color-mix(in srgb,var(--hana-accent,#5e6ad2) 14%,transparent)}
+.remote-card-dot.remote-dot-warn{background:#d97706;box-shadow:0 0 0 3px rgba(217,119,6,.12)}
+.remote-card-dot.remote-dot-error{background:#e74c3c;box-shadow:0 0 0 3px rgba(231,76,60,.12)}
+.remote-card-name{min-width:0;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;color:var(--hana-fg,#1a1d24)}
+.remote-role-badge{max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 6px;border-radius:999px;font-size:9px;line-height:13px;color:var(--hana-fg-muted,#6b7280);background:var(--hana-bg-muted,#f6f7f7);border:1px solid var(--hana-border,#e2e5ea)}
+.remote-role-badge.remote-role-push{color:#218838;background:rgba(39,174,96,.09);border-color:rgba(39,174,96,.20)}
+.remote-role-badge.remote-role-upstream{color:var(--hana-accent,#5e6ad2);background:color-mix(in srgb,var(--hana-accent,#5e6ad2) 9%,transparent);border-color:color-mix(in srgb,var(--hana-accent,#5e6ad2) 22%,var(--hana-border,#e2e5ea))}
+.remote-more-btn{margin-left:auto;width:25px;height:25px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:16px;line-height:20px;cursor:pointer;flex-shrink:0}
+.remote-more-btn:hover{border-color:var(--hana-border,#d0d5dd);background:var(--hana-bg-muted,#f6f7f7);color:var(--hana-fg,#1a1d24)}
+.remote-card-url{display:flex;align-items:center;gap:5px;margin:6px 0 8px 15px;min-width:0;color:var(--hana-fg-muted,#6b7280);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
+.remote-card-url-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.remote-copy-btn{border:0;background:transparent;color:var(--hana-fg-subtle,#9ca3af);font-size:10px;cursor:pointer;padding:1px 2px;flex-shrink:0}
+.remote-copy-btn:hover{color:var(--hana-accent,#5e6ad2)}
+.remote-status-row{display:flex;align-items:center;gap:6px;margin-left:15px;min-width:0}
+.remote-status-badge{display:inline-flex;align-items:center;max-width:100%;padding:3px 7px;border-radius:999px;font-size:10px;line-height:14px;color:var(--hana-fg-muted,#6b7280);background:var(--hana-bg-muted,#f6f7f7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.remote-status-badge.remote-status-ok{color:#218838;background:rgba(39,174,96,.10)}
+.remote-status-badge.remote-status-info{color:var(--hana-accent,#5e6ad2);background:color-mix(in srgb,var(--hana-accent,#5e6ad2) 10%,transparent)}
+.remote-status-badge.remote-status-warn{color:#a86100;background:rgba(217,119,6,.12)}
+.remote-status-badge.remote-status-error{color:#c0392b;background:rgba(231,76,60,.10)}
+.remote-card-relation{margin:5px 0 8px 15px;color:var(--hana-fg-muted,#6b7280);font-size:10px;line-height:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.remote-card-relation code{color:var(--hana-fg,#1a1d24);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.remote-branch-row{display:flex;align-items:center;gap:6px;margin-left:15px;min-width:0}
+.remote-branch-label{flex-shrink:0;color:var(--hana-fg-muted,#6b7280);font-size:10px}
+.remote-branch-row select{min-width:0;flex:1;height:27px;padding:3px 24px 3px 7px;font-size:10px}
+.remote-branch-row .hana-select{min-width:0;flex:1;width:100%;box-sizing:border-box;font-size:10px}
+.remote-branch-value{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg,#1a1d24);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
+.remote-card-actions{display:flex;align-items:center;gap:6px;margin:9px 0 0 15px;min-width:0}
+.remote-action-btn{height:28px;padding:0 9px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:11px;cursor:pointer;white-space:nowrap;transition:border-color .15s,background .15s,color .15s}
+.remote-action-btn:hover{border-color:var(--hana-accent,#5e6ad2);color:var(--hana-accent,#5e6ad2);background:var(--hana-bg-muted,#f6f7f7)}
+.remote-action-btn.remote-action-primary{border-color:var(--hana-accent,#5e6ad2);background:var(--hana-accent,#5e6ad2);color:#fff}
+.remote-action-btn.remote-action-primary:hover{filter:brightness(1.06);color:#fff}
+.remote-action-btn:disabled{opacity:.5;cursor:not-allowed}
+.remote-action-hint{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg-muted,#6b7280);font-size:9px}
+.remote-add-launch{display:flex;justify-content:flex-end;margin:2px 0 0}
+.remote-add-toggle{height:28px;padding:0 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;background:transparent;color:var(--hana-accent,#5e6ad2);font-size:11px;cursor:pointer}
+.remote-add-toggle:hover{background:var(--hana-bg-muted,#f6f7f7);border-color:var(--hana-accent,#5e6ad2)}
+.remote-add-form{margin-top:8px;padding:10px;border:1px solid var(--hana-border,#e2e5ea);border-radius:9px;background:var(--hana-bg-muted,#f6f7f7)}
+.remote-add-form-title{font-size:11px;font-weight:650;color:var(--hana-fg,#1a1d24)}
+.remote-add-form-note{margin:2px 0 7px;color:var(--hana-fg-muted,#6b7280);font-size:9px;line-height:14px}
+.remote-form-row{display:flex;align-items:center;gap:5px;min-width:0;margin-top:5px}
+.remote-add-form input{width:100%;min-width:0;height:28px;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24);font:inherit;font-size:11px;outline:none}
+.remote-add-form input:focus{border-color:var(--hana-accent,#5e6ad2);box-shadow:0 0 0 3px color-mix(in srgb,var(--hana-accent,#5e6ad2) 12%,transparent)}
+.remote-form-secondary,.remote-form-primary{height:28px;padding:0 8px;border-radius:6px;font-size:10px;cursor:pointer;white-space:nowrap}
+.remote-form-secondary{border:1px solid var(--hana-border,#d0d5dd);background:transparent;color:var(--hana-fg-muted,#6b7280)}
+.remote-form-primary{border:1px solid var(--hana-accent,#5e6ad2);background:var(--hana-accent,#5e6ad2);color:#fff;font-weight:550}
+.remote-form-status,.remote-form-result{margin-top:4px;font-size:10px;color:var(--hana-fg-muted,#6b7280)}
+@media (max-width:360px){.remote-overview{gap:4px;padding:7px}.remote-overview-count{font-size:9px}.remote-role-badge{display:none}.remote-card-actions{margin-left:0}.remote-card-url,.remote-status-row,.remote-card-relation,.remote-branch-row{margin-left:0}.remote-card-name{max-width:58%}}
+
 #ghHelpBubble{z-index:10000!important;max-height:calc(100vh - 16px);overflow-y:auto;overflow-wrap:anywhere;word-break:break-word}
 
 /* 仓库名片显示：basename为主 + origin/路径为副 */
@@ -384,6 +455,13 @@ select:disabled{opacity:.5;cursor:not-allowed}
 #ghCtxMenu .item.danger:hover{background:#fee2e2;border-top-left-radius:6px;border-top-right-radius:6px}
 #ghCtxMenu .item.danger::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;background:#e74c3c;border-radius:2px}
 #ghCtxMenu .divider{height:1px;margin:4px 8px;background:var(--hana-border,#e2e5ea)}
+#remoteCtxMenu{display:none;position:fixed;z-index:2500;min-width:150px;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:8px;padding:4px 0;box-shadow:0 8px 24px rgba(0,0,0,.18);transform-origin:top left;transition:opacity .12s ease,transform .12s ease;overflow:hidden}
+#remoteCtxMenu.hana-menu-opening{opacity:0;transform:scale(.96)}
+#remoteCtxMenu .item{padding:8px 12px;font-size:11px;cursor:pointer;transition:background .12s,color .12s;position:relative;color:var(--hana-fg,#1a1d24);white-space:nowrap}
+#remoteCtxMenu .item:hover{background:var(--hana-bg-muted,#f6f7f7)}
+#remoteCtxMenu .item + .item{border-top:1px solid var(--hana-border,#eef0f2)}
+#remoteCtxMenu .item.danger{color:#e74c3c}
+#remoteCtxMenu .item.danger:hover{background:rgba(231,76,60,.08)}
 
 /* === 设置卡里控件统一宽度，跟走整体的控件右对齐 === */
 #settingsBody .hana-select,
@@ -635,10 +713,10 @@ select:disabled{opacity:.5;cursor:not-allowed}
     <input type="text" id="versionInput" placeholder="可选" value="0.0.1" autocomplete="off" style="width:80px;padding:6px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;font-family:monospace;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;flex-shrink:0">
     <button id="btnCommit" onclick="doCommit()" style="padding:6px 14px;border:0;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:var(--hana-accent,#4a8cff);color:#fff;white-space:nowrap;transition:opacity .15s">存档</button>
     <span id="pushActionSlot" class="commit-action-slot">
-      <button onclick="doPush(this)" style="padding:6px 10px 6px 7.5px;border:1px solid #27ae60;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:#27ae60;white-space:nowrap" title="把本地存档发送到云端 GitHub">📤 推送</button>
+      <button onclick="doPush(this)" style="padding:6px 10px 6px 7.5px;border:1px solid #27ae60;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:#27ae60;white-space:nowrap" title="把本地存档推送到 origin 远程仓库">📤 推送</button>
     </span>
     <span id="pullActionSlot" class="commit-action-slot">
-      <button onclick="doPull(this)" style="padding:6px 10px 6px 7.5px;border:1px solid var(--hana-accent,#4a8cff);border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:var(--hana-accent,#4a8cff);white-space:nowrap" title="从云端 GitHub 拉取最新存档">📥 拉取</button>
+      <button onclick="doPull(this)" style="padding:6px 10px 6px 7.5px;border:1px solid var(--hana-accent,#4a8cff);border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:var(--hana-accent,#4a8cff);white-space:nowrap" title="从 origin 远程仓库拉取最新存档">📥 拉取</button>
     </span>
   </div>
 </div>
@@ -764,7 +842,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
     </div>
     <div style="display:flex;gap:2px;margin-top:10px;margin-bottom:8px">
       <button class="gh-tab" data-tab="create" onclick="switchGhTab('create')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">创建</button>
-      <button class="gh-tab" data-tab="connect" onclick="switchGhTab('connect')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">关联</button>
+      <button class="gh-tab" data-tab="connect" onclick="switchGhTab('connect')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">远程</button>
       <button class="gh-tab" data-tab="clone" onclick="switchGhTab('clone')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">克隆</button>
       <button class="gh-tab" data-tab="list" onclick="switchGhTab('list')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">列表</button>
       <button class="gh-tab" data-tab="search" onclick="switchGhTab('search')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">搜索</button>
@@ -799,23 +877,44 @@ select:disabled{opacity:.5;cursor:not-allowed}
     <div id="ghCreateResult" style="margin-top:6px;font-size:11px"></div>
   </div>
 
-  <!-- 关联已有仓库 -->
+  <!-- 关联已有仓库 / 管理多个远程 -->
   <div class="gh-tab-content" id="ghTabConnect" style="display:none">
-    <div id="ghConnectRepoRow" style="display:flex;align-items:center;gap:4px;margin-bottom:6px;min-width:0">
-      <div id="ghConnectRepoSelectWrap" style="display:flex;flex:1;min-width:0">
-        <select id="ghConnectRepoSelect" onchange="onGhConnectRepoSelect()" style="width:100%;font-size:12px">
-          <option value="">点击此处加载我的 GitHub 仓库</option>
-        </select>
+    <div class="remote-section-header">
+      <div class="remote-section-title-wrap">
+        <div class="remote-section-title">远程仓库</div>
+        <div class="remote-section-subtitle">管理获取来源与推送目标</div>
       </div>
-      <button onclick="loadGhConnectRepos()" style="padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:11px;background:transparent;color:var(--hana-fg-muted,#6b7280);cursor:pointer;flex-shrink:0;white-space:nowrap">刷新</button>
+      <button class="remote-refresh-btn" type="button" onclick="loadLocalRemotes()" title="重新读取本地远程仓库">↻ <span>刷新</span></button>
     </div>
-    <input type="text" id="ghConnectUrl" placeholder="或输入远程 URL，如 https://github.com/user/repo.git" autocomplete="off" style="width:100%;margin-top:0;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box" onkeydown="ghConnectEnter(event)">
-    <div style="display:flex;gap:4px;margin-top:4px">
-      <input type="text" id="ghConnectRemote" value="origin" placeholder="远程名称" autocomplete="off" style="flex:1;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none">
-      <button onclick="ghConnectRepo()" style="padding:5px 10px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">关联当前仓库</button>
+    <div class="remote-overview" aria-live="polite">
+      <div class="remote-overview-item"><span class="remote-overview-label">当前分支</span><code id="ghRemoteCurrentBranch">读取中…</code></div>
+      <div class="remote-overview-item"><span class="remote-overview-label">默认推送</span><code id="ghRemotePushTarget">读取中…</code></div>
+      <div class="remote-overview-count" id="ghRemoteCount">读取中…</div>
     </div>
-    <div id="ghConnectRepoStatus" style="margin-top:3px;font-size:10px;color:var(--hana-fg-muted,#6b7280)"></div>
-    <div id="ghConnectResult" style="margin-top:6px;font-size:11px"></div>
+    <div class="remote-section-note">一个本地仓库可以连接多个远程。<code>origin</code> 和 <code>upstream</code> 只是常见命名，实际操作以每张远程卡片为准。</div>
+    <div id="ghRemoteList" class="remote-list" aria-live="polite">正在读取本地远程...</div>
+    <div class="remote-add-launch">
+      <button id="ghAddRemoteToggle" class="remote-add-toggle" type="button" aria-expanded="false" onclick="toggleRemoteAddForm()">＋ 添加远程</button>
+    </div>
+    <div id="ghAddRemoteForm" class="remote-add-form" style="display:none">
+      <div class="remote-add-form-title">添加或更新远程</div>
+      <div class="remote-add-form-note">已有同名远程时会先显示旧地址，并要求确认替换。</div>
+      <div id="ghConnectRepoRow" class="remote-form-row">
+        <div id="ghConnectRepoSelectWrap" style="display:flex;flex:1;min-width:0">
+          <select id="ghConnectRepoSelect" onchange="onGhConnectRepoSelect()" style="width:100%;font-size:12px">
+            <option value="">从我的 GitHub 仓库中选择</option>
+          </select>
+        </div>
+        <button class="remote-form-secondary" type="button" onclick="loadGhConnectRepos()">刷新列表</button>
+      </div>
+      <input type="text" id="ghConnectUrl" placeholder="或输入远程 URL，如 https://github.com/user/repo.git" autocomplete="off" onkeydown="ghConnectEnter(event)">
+      <div class="remote-form-row remote-form-submit-row">
+        <input type="text" id="ghConnectRemote" value="origin" placeholder="远程名称" autocomplete="off">
+        <button class="remote-form-primary" type="button" onclick="ghConnectRepo()">添加 / 更新</button>
+      </div>
+      <div id="ghConnectRepoStatus" class="remote-form-status"></div>
+      <div id="ghConnectResult" class="remote-form-result"></div>
+    </div>
   </div>
 
   <!-- 克隆 -->
@@ -881,6 +980,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
 <!-- 右键菜单 -->
 <div id="ctxMenu" oncontextmenu="return false"></div>
 <div id="ghCtxMenu" oncontextmenu="return false"></div>
+<div id="remoteCtxMenu" oncontextmenu="return false"></div>
 
 <!-- 新手引导弹窗（6 步） -->
 <div id="walkthroughModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:3000;background:rgba(0,0,0,.55);align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif">
@@ -1867,7 +1967,7 @@ function switchGhTab(tab) {
   if (btn) { btn.style.background = "var(--hana-accent,#4a8cff)"; btn.style.color = "#fff"; }
   // 切换标签后重算高度，避免上一个标签的 maxHeight 抢占造成内容溢出
   updateGhBodyHeight();
-  if (tab === "connect") loadGhConnectRepos();
+  if (tab === "connect") { loadGhConnectRepos(); loadLocalRemotes(); }
   if (tab === "list") loadGhList();
 }
 
@@ -1903,6 +2003,7 @@ function ghConnectEnter(e) {
 function selectGhRepoForConnect(url) {
   ensureGhOpen();
   switchGhTab("connect");
+  toggleRemoteAddForm(true);
   const input = document.getElementById("ghConnectUrl");
   const select = document.getElementById("ghConnectRepoSelect");
   if (input) input.value = url || "";
@@ -1956,6 +2057,339 @@ function refreshGhLicenseSelect() {
   if (select && select._hanaSelect) select._hanaSelect.sync();
 }
 
+function remoteButton(label, primary, action, remote, branch) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.dataset.action = action;
+  button.dataset.remote = remote;
+  button.className = "remote-action-btn" + (primary ? " remote-action-primary" : "");
+  if (branch) button.dataset.remoteBranch = branch;
+  return button;
+}
+
+function remoteStatusInfo(remoteInfo, detached) {
+  if (detached) return { label: "当前处于 detached HEAD", tone: "error", dot: "error", card: "error" };
+  if (!remoteInfo.hasRemoteBranch) return { label: "未找到可比较的远程分支", tone: "warn", dot: "warn", card: "" };
+  if (remoteInfo.comparisonStatus && remoteInfo.comparisonStatus !== "OK") return { label: "暂时无法比较", tone: "error", dot: "error", card: "error" };
+  if (remoteInfo.remoteAhead > 0 && remoteInfo.localAhead > 0) return { label: `已分叉 · 远程 ${remoteInfo.remoteAhead} / 本地 ${remoteInfo.localAhead}`, tone: "warn", dot: "warn", card: "attention" };
+  if (remoteInfo.remoteAhead > 0) return { label: `远程领先 ${remoteInfo.remoteAhead} 个提交`, tone: "info", dot: "info", card: "attention" };
+  if (remoteInfo.localAhead > 0) return { label: `本地领先 ${remoteInfo.localAhead} 个提交`, tone: "info", dot: "info", card: "" };
+  return { label: "已同步", tone: "ok", dot: "ok", card: "" };
+}
+
+var remoteBranchSelectSeq = 0;
+
+function remoteRoleInfo(remoteInfo) {
+  if (remoteInfo.name === "origin") return { label: "推送目标", cls: "remote-role-push" };
+  if (remoteInfo.name === "upstream") return { label: "更新来源", cls: "remote-role-upstream" };
+  return { label: "自定义远程", cls: "" };
+}
+
+function appendRemoteMoreMenu(button, remoteInfo) {
+  button.addEventListener("click", function(e) {
+    e.stopPropagation();
+    const menu = document.getElementById("remoteCtxMenu");
+    if (!menu) return;
+    closeAllCtxMenus();
+    const url = remoteInfo.displayUrl || remoteInfo.fetchUrl || remoteInfo.pushUrl || "";
+    menu.innerHTML = "";
+    const addItem = function(label, handler, danger) {
+      const item = document.createElement("div");
+      item.className = "item" + (danger ? " danger" : "");
+      item.textContent = label;
+      item.addEventListener("click", function(ev) { ev.stopPropagation(); menu.style.display = "none"; handler(); });
+      menu.appendChild(item);
+    };
+    addItem("复制远程地址", function() { copyGhUrl(url); });
+    addItem("在浏览器中打开", function() { openGhUrl(url); });
+    addItem("移除远程", function() { removeLocalRemote(remoteInfo.name); }, true);
+    openCtxMenuWithAnim(menu, e.clientX, e.clientY, 150, 120);
+  });
+}
+
+function bindLocalRemoteActions(container) {
+  container.querySelectorAll("button[data-action]").forEach(function(button) {
+    button.addEventListener("click", function(e) {
+      e.stopPropagation();
+      const remote = button.dataset.remote || "";
+      const branch = button.dataset.remoteBranch || "";
+      if (button.dataset.action === "fetch") fetchRemoteUpdates(remote, branch);
+      else if (button.dataset.action === "merge") mergeRemoteUpdates(remote, branch);
+    });
+  });
+}
+
+function toggleRemoteAddForm(forceOpen) {
+  const form = document.getElementById("ghAddRemoteForm");
+  const toggle = document.getElementById("ghAddRemoteToggle");
+  if (!form || !toggle) return;
+  const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : form.style.display === "none";
+  form.style.display = shouldOpen ? "block" : "none";
+  toggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+  toggle.textContent = shouldOpen ? "× 收起添加" : "＋ 添加远程";
+  updateGhBodyHeight();
+}
+
+function renderRemoteOverview(data) {
+  const branchEl = document.getElementById("ghRemoteCurrentBranch");
+  const pushEl = document.getElementById("ghRemotePushTarget");
+  const countEl = document.getElementById("ghRemoteCount");
+  if (branchEl) branchEl.textContent = data.detached ? "detached HEAD" : (data.branch || "未检出分支");
+  const origin = (data.remotes || []).find(function(r) { return r.name === "origin"; });
+  if (pushEl) pushEl.textContent = origin ? "origin" : "未设置";
+  if (countEl) countEl.textContent = `${(data.remotes || []).length} 个远程`;
+}
+
+function cleanupRemoteBranchSelects() {
+  const list = document.getElementById("ghRemoteList");
+  if (!list) return;
+  list.querySelectorAll("select[id^='ghRemoteBranchSelect']").forEach(function(select) {
+    const hs = select._hanaSelect;
+    if (hs) {
+      hs.close();
+      if (hs.trigger && hs.trigger.parentNode) hs.trigger.parentNode.removeChild(hs.trigger);
+      if (hs.panel && hs.panel.parentNode) hs.panel.parentNode.removeChild(hs.panel);
+      _hanaSelectInstances.delete(select.id);
+    }
+  });
+}
+
+function renderLocalRemotes(data) {
+  const el = document.getElementById("ghRemoteList");
+  if (!el) return;
+  cleanupRemoteBranchSelects();
+  renderRemoteOverview(data || {});
+  if (!data || !data.ok) {
+    el.textContent = "";
+    const error = document.createElement("div");
+    error.className = "remote-empty";
+    error.style.color = "#c0392b";
+    error.textContent = "读取失败：" + ((data && data.message) || "未知错误");
+    el.appendChild(error);
+    updateGhBodyHeight();
+    return;
+  }
+  if (!data.remotes || data.remotes.length === 0) {
+    el.textContent = "";
+    const empty = document.createElement("div");
+    empty.className = "remote-empty";
+    empty.textContent = "当前还没有远程仓库";
+    el.appendChild(empty);
+    updateGhBodyHeight();
+    return;
+  }
+  el.textContent = "";
+  data.remotes.forEach(function(remoteInfo) {
+    const branch = remoteInfo.remoteBranch || remoteInfo.defaultBranch || "";
+    const status = remoteStatusInfo(remoteInfo, data.detached);
+    const role = remoteRoleInfo(remoteInfo);
+    const card = document.createElement("div");
+    card.className = "remote-card" + (status.card ? " remote-card-" + status.card : "");
+    card.dataset.remote = remoteInfo.name;
+
+    const header = document.createElement("div");
+    header.className = "remote-card-head";
+    const dot = document.createElement("span");
+    dot.className = "remote-card-dot remote-dot-" + status.dot;
+    const name = document.createElement("span");
+    name.className = "remote-card-name";
+    name.textContent = remoteInfo.name;
+    name.title = remoteInfo.name;
+    const badge = document.createElement("span");
+    badge.className = "remote-role-badge " + role.cls;
+    badge.textContent = role.label;
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "remote-more-btn";
+    more.textContent = "⋯";
+    more.title = "更多操作";
+    more.setAttribute("aria-label", `${remoteInfo.name} 更多操作`);
+    appendRemoteMoreMenu(more, remoteInfo);
+    header.append(dot, name, badge, more);
+    card.appendChild(header);
+
+    const urlRow = document.createElement("div");
+    urlRow.className = "remote-card-url";
+    const urlText = document.createElement("span");
+    urlText.className = "remote-card-url-text";
+    urlText.textContent = remoteInfo.displayUrl || remoteInfo.fetchUrl || remoteInfo.pushUrl || "未设置地址";
+    urlText.title = urlText.textContent;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "remote-copy-btn";
+    copy.textContent = "⧉";
+    copy.title = "复制远程地址";
+    copy.addEventListener("click", function(e) { e.stopPropagation(); copyGhUrl(urlText.textContent === "未设置地址" ? "" : urlText.textContent); });
+    urlRow.append(urlText, copy);
+    card.appendChild(urlRow);
+
+    const statusRow = document.createElement("div");
+    statusRow.className = "remote-status-row";
+    const statusBadge = document.createElement("span");
+    statusBadge.className = "remote-status-badge remote-status-" + status.tone;
+    statusBadge.textContent = status.label;
+    statusRow.appendChild(statusBadge);
+    card.appendChild(statusRow);
+
+    const relation = document.createElement("div");
+    relation.className = "remote-card-relation";
+    if (data.detached) relation.textContent = "请先切换到本地分支，再比较或合并远程更新";
+    else {
+      const source = document.createElement("code");
+      source.textContent = branch ? `${remoteInfo.name}/${branch}` : "未找到远程分支";
+      const arrow = document.createTextNode("  →  ");
+      const target = document.createElement("code");
+      target.textContent = data.branch || "当前分支";
+      relation.append(source, arrow, target);
+    }
+    card.appendChild(relation);
+
+    const branches = Array.isArray(remoteInfo.branches) ? remoteInfo.branches : [];
+    if (branches.length > 1) {
+      const branchRow = document.createElement("div");
+      branchRow.className = "remote-branch-row";
+      const label = document.createElement("span");
+      label.className = "remote-branch-label";
+      label.textContent = "源分支";
+      const select = document.createElement("select");
+      select.id = "ghRemoteBranchSelect" + (++remoteBranchSelectSeq);
+      select.setAttribute("aria-label", `${remoteInfo.name} 远程源分支`);
+      branches.forEach(function(branchName) {
+        const option = document.createElement("option");
+        option.value = branchName;
+        option.textContent = `${remoteInfo.name}/${branchName}`;
+        option.selected = branchName === branch;
+        select.appendChild(option);
+      });
+      branchRow.append(label, select);
+      card.appendChild(branchRow);
+      if (typeof replaceSelectWithHanaSelect === "function") {
+        replaceSelectWithHanaSelect(select.id, { fullWidth: true, onChange: function(value) { fetchRemoteUpdates(remoteInfo.name, value); } });
+      }
+    } else {
+      const branchRow = document.createElement("div");
+      branchRow.className = "remote-branch-row";
+      const label = document.createElement("span");
+      label.className = "remote-branch-label";
+      label.textContent = "源分支";
+      const value = document.createElement("code");
+      value.className = "remote-branch-value";
+      value.textContent = branch ? `${remoteInfo.name}/${branch}` : "未找到";
+      branchRow.append(label, value);
+      card.appendChild(branchRow);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "remote-card-actions";
+    const fetchButton = remoteButton("获取更新", remoteInfo.name === "upstream", "fetch", remoteInfo.name, branch);
+    actions.appendChild(fetchButton);
+    if (remoteInfo.hasRemoteBranch && remoteInfo.remoteAhead > 0 && branch && !data.detached) {
+      actions.appendChild(remoteButton(`合并 ${remoteInfo.remoteAhead} 个提交`, true, "merge", remoteInfo.name, branch));
+    }
+    const hint = document.createElement("span");
+    hint.className = "remote-action-hint";
+    hint.textContent = status.tone === "warn" && remoteInfo.comparisonStatus === "REMOTE_BRANCH_MISSING" ? "请先获取或选择其他源分支" : (status.tone === "error" ? "请检查当前分支或远程状态" : "");
+    actions.appendChild(hint);
+    card.appendChild(actions);
+    el.appendChild(card);
+  });
+  bindLocalRemoteActions(el);
+  updateGhBodyHeight();
+}
+
+async function loadLocalRemotes(preferredRemote, preferredBranch) {
+  const p = currentPath || getSavedPath();
+  const el = document.getElementById("ghRemoteList");
+  if (!p) { if (el) el.innerHTML = '<div style="font-size:10px;color:#c0392b">请先选择本地仓库</div>'; return; }
+  if (el) el.innerHTML = '<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在读取本地远程...</div>';
+  try {
+    const query = "/api/remotes?path=" + encodeURIComponent(p)
+      + (preferredRemote ? "&remote=" + encodeURIComponent(preferredRemote) : "")
+      + (preferredBranch ? "&remoteBranch=" + encodeURIComponent(preferredBranch) : "");
+    const res = await fetch(apiUrl(query));
+    renderLocalRemotes(await res.json());
+  } catch (e) {
+    renderLocalRemotes({ ok: false, message: e.message });
+  }
+}
+
+async function fetchRemoteUpdates(remote, remoteBranch) {
+  const p = currentPath || getSavedPath();
+  if (!p) return;
+  const el = document.getElementById("ghRemoteList");
+  if (el) el.innerHTML = `<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在获取 ${escapeHtml(remote)} 更新...</div>`;
+  try {
+    const res = await fetch(apiUrl("/api/remote-fetch"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p, remote, remoteBranch: remoteBranch || "" }) });
+    const data = await res.json();
+    if (data.ok) {
+      toast(`✅ ${remote} 已更新`, "success");
+      loadLocalRemotes(remote, data.remoteBranch || remoteBranch || "");
+    } else {
+      loadLocalRemotes();
+      toast("❌ " + data.message, "err");
+    }
+  } catch (e) { loadLocalRemotes(); toast("获取更新失败：" + e.message, "err"); }
+}
+
+function removeLocalRemote(remote) {
+  const p = currentPath || getSavedPath();
+  if (!p) return;
+  showConfirm(
+    `确定移除本地远程 ${remote} 吗？这只会删除本地关联，不会删除 GitHub 仓库。`,
+    "移除远程关联",
+    function(ok) { if (ok) performRemoveLocalRemote(remote, false); },
+    false,
+    { title: "移除远程仓库", detailsHtml: "移除后不会删除远程平台上的仓库和代码。" }
+  );
+}
+
+async function performRemoveLocalRemote(remote, confirmed) {
+  const p = currentPath || getSavedPath();
+  try {
+    const res = await fetch(apiUrl("/api/remote-remove"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p, remote, confirmed: !!confirmed }) });
+    const data = await res.json();
+    if (data.code === "REMOTE_REMOVE_CONFIRM") {
+      showConfirm(
+        `远程 ${remote} 当前地址为：${data.currentUrl || "未知"}。移除后默认推送或上游更新流程可能失效，继续吗？`,
+        "确认移除远程",
+        function(ok) { if (ok) performRemoveLocalRemote(remote, true); },
+        false,
+        { title: "⚠️ 移除关键远程", detailsHtml: remote === "origin" ? "移除 origin 后，主界面的推送和从 origin 拉取将失效。" : "移除 upstream 后，将无法从原作者仓库获取更新。" }
+      );
+      return;
+    }
+    if (data.ok) toast("✅ " + data.message, "success");
+    else toast("❌ " + data.message, "err");
+    loadLocalRemotes();
+  } catch (e) { toast("移除失败：" + e.message, "err"); }
+}
+
+function mergeRemoteUpdates(remote, remoteBranch) {
+  const p = currentPath || getSavedPath();
+  if (!p) return;
+  showConfirm(
+    `确定将 ${remote}/${remoteBranch || "默认分支"} 合并到当前本地分支吗？`,
+    "合并远程更新",
+    function(ok) { if (ok) performRemoteMerge(remote, remoteBranch); },
+    false,
+    { title: "合并远程更新", detailsHtml: "这会修改当前本地分支；如果代码有冲突，需要随后手动解决。" }
+  );
+}
+
+async function performRemoteMerge(remote, remoteBranch) {
+  const p = currentPath || getSavedPath();
+  const el = document.getElementById("ghRemoteList");
+  if (el) el.innerHTML = `<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在合并 ${escapeHtml(remote)} 更新...</div>`;
+  try {
+    const res = await fetch(apiUrl("/api/remote-merge"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p, remote, remoteBranch: remoteBranch || "" }) });
+    const data = await res.json();
+    if (data.ok) { toast(`✅ 已合并 ${remote}/${data.remoteBranch || remoteBranch || "远程更新"}`, "success"); refresh(); switchGhTab("connect"); loadLocalRemotes(remote, data.remoteBranch || remoteBranch || ""); }
+    else if (data.code === "MERGE_CONFLICT") { toast("⚠️ 合并产生冲突，请在变更文件中解决", "err"); refresh(); switchGhTab("connect"); loadLocalRemotes(remote, remoteBranch || ""); }
+    else { toast("❌ " + data.message, "err"); loadLocalRemotes(remote, remoteBranch || ""); }
+  } catch (e) { toast("合并失败：" + e.message, "err"); loadLocalRemotes(remote, remoteBranch || ""); }
+}
+
 async function ghConnectRepo(confirmed) {
   const url = document.getElementById("ghConnectUrl").value.trim();
   const remote = document.getElementById("ghConnectRemote").value.trim() || "origin";
@@ -1992,6 +2426,8 @@ async function ghConnectRepo(confirmed) {
       }
       _repoInfoCache.delete(p);
       refresh();
+      loadLocalRemotes();
+      toggleRemoteAddForm(false);
       toast("✅ 已连接 GitHub 仓库", "success");
     }
   } catch (e) { el.textContent = "❌ " + e.message; updateGhBodyHeight(); }
@@ -2136,7 +2572,12 @@ let ghCtxRepo = null;
 let ghRepoData = {};
 
 function escapeAttr(s) {
-  return s.replace(/"/g, '&quot;').replace(/'/g, "&#39;");
+  return String(s == null ? "" : s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function showGhCtxMenu(e, repoName) {
@@ -2654,8 +3095,10 @@ function openCtxMenuWithAnim(menu, x, y, fallbackW, fallbackH) {
 function closeAllCtxMenus() {
   var m = document.getElementById("ctxMenu");
   var gm = document.getElementById("ghCtxMenu");
+  var rm = document.getElementById("remoteCtxMenu");
   if (m) m.style.display = "none";
   if (gm) gm.style.display = "none";
+  if (rm) rm.style.display = "none";
 }
 // Esc 关闭菜单 + 下拉
 document.addEventListener("keydown", function(e) {
@@ -2826,6 +3269,8 @@ function replaceSelectWithHanaSelect(selectId, opts) {
     refresh: refresh,
     close: closePanel,
     replaceOptions: replaceOptions,
+    trigger: trigger,
+    panel: panel,
     sync: function() { state.currentValue = sel.value; refresh(); }
   };
   _hanaSelectInstances.set(selectId, sel._hanaSelect);
@@ -2979,6 +3424,8 @@ document.addEventListener("click", function(e) {
   if (m && m.style.display !== "none" && !m.contains(e.target)) m.style.display = "none";
   var gm = document.getElementById("ghCtxMenu");
   if (gm && gm.style.display !== "none" && !gm.contains(e.target)) gm.style.display = "none";
+  var rm = document.getElementById("remoteCtxMenu");
+  if (rm && rm.style.display !== "none" && !rm.contains(e.target)) rm.style.display = "none";
 });
 
 function setupCtxMenuEvents() {
@@ -3900,7 +4347,7 @@ async function doPush(btn, forceContext) {
   btn.disabled = true; btn.style.opacity = ".5"; btn.textContent = forceContext ? "覆盖中..." : "检查中...";
   const safeTimer = setTimeout(() => { btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig; }, 180000);
   try {
-    const body = { path: p };
+    const body = { path: p, remote: "origin" };
     if (forceContext) {
       body.force = true;
       body.expectedRemoteHash = forceContext.remoteHash;
@@ -3957,7 +4404,7 @@ async function doPull(btn) {
   try {
     const res = await fetch(apiUrl("/api/pull"), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: p, mode: getSavedPullMode() }),
+      body: JSON.stringify({ path: p, remote: "origin", remoteBranch: "", mode: getSavedPullMode() }),
     });
     const data = await res.json();
     btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig;
