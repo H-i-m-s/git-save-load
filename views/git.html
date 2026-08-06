@@ -2106,6 +2106,7 @@ function appendRemoteMoreMenu(button, remoteInfo) {
     };
     addItem("复制远程地址", function() { copyGhUrl(url); });
     addItem("在浏览器中打开", function() { openGhUrl(url); });
+    addItem("修改远程地址", function() { editLocalRemoteUrl(remoteInfo); });
     addItem("重命名远程", function() { renameLocalRemote(remoteInfo); });
     addItem(remoteInfo.isDefaultPush ? "取消默认推送目标" : "设为默认推送目标", function() { setRemoteRole(remoteInfo.name, remoteInfo.isDefaultPush ? "other" : "push-target"); });
     addItem(remoteInfo.isDefaultFetch ? "取消默认获取来源" : "设为默认获取来源", function() { setRemoteRole(remoteInfo.name, remoteInfo.isDefaultFetch ? "other" : "update-source"); });
@@ -2139,6 +2140,42 @@ async function setRemoteRole(remote, role) {
     toast("✅ " + data.message, "success");
     loadLocalRemotes(remote, "");
   } catch (e) { toast("设置远程角色失败：" + e.message, "err"); }
+}
+
+function editLocalRemoteUrl(remoteInfo) {
+  const remote = remoteInfo && remoteInfo.name ? remoteInfo.name : "";
+  if (!remote) return;
+  const currentUrl = remoteInfo.displayUrl || remoteInfo.fetchUrl || "";
+  customPrompt(`修改远程地址：${remote}`, "", function(value) {
+    const newUrl = String(value || "").trim();
+    if (!newUrl || newUrl === currentUrl) return;
+    performEditLocalRemoteUrl(remote, newUrl, false);
+  });
+}
+
+async function performEditLocalRemoteUrl(remote, newUrl, confirmed) {
+  const p = currentPath || getSavedPath();
+  if (!p) return;
+  try {
+    const res = await fetch(apiUrl("/api/remote-url"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: p, remote, newUrl, confirmed: !!confirmed }),
+    });
+    const data = await res.json();
+    if (data.code === "REMOTE_URL_CONFIRM") {
+      showConfirm(
+        `确定修改远程 ${remote} 的地址吗？`,
+        "确认修改远程地址",
+        function(ok) { if (ok) performEditLocalRemoteUrl(remote, newUrl, true); },
+        false,
+        { title: "修改远程地址", detailsHtml: `<div style='margin-bottom:6px'><b>旧地址：</b>${escapeHtml(data.oldUrl || "未知")}</div><div style='margin-bottom:6px'><b>新地址：</b>${escapeHtml(data.newUrl || newUrl)}</div><div><b>推送地址：</b>${escapeHtml(data.newPushUrl || data.newUrl || newUrl)}</div><div style='margin-top:8px;color:var(--hana-fg-muted,#6b7280)'>远程名称、默认角色和远程分支不会改变；新地址会先验证可访问性。</div>` }
+      );
+      return;
+    }
+    if (!data.ok) { toast("❌ " + (data.message || "修改远程地址失败"), "err"); return; }
+    toast(`✅ ${remote} 地址已更新并验证`, "success");
+    loadLocalRemotes(remote, "");
+  } catch (e) { toast("修改远程地址失败：" + e.message, "err"); }
 }
 
 function renameLocalRemote(remoteInfo) {

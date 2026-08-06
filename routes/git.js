@@ -221,6 +221,32 @@ function isValidRemoteUrl(url) {
   return /^(?:https?|ssh):\/\/[^\s]+$/.test(url) || /^git@[^\s:]+:[^\s]+$/.test(url);
 }
 
+function remoteUrlList(cwd, remote, push = false) {
+  try {
+    const args = ["remote", "get-url"];
+    if (push) args.push("--push");
+    args.push("--all", remote);
+    return gitExecFile(cwd, args, { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function configuredRemoteUrls(cwd, remote, push = false) {
+  try {
+    const key = `remote.${remote}.${push ? "pushurl" : "url"}`;
+    return gitExecFile(cwd, ["config", "--get-all", key], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function restoreConfiguredRemoteUrls(cwd, remote, urls, push = false) {
+  const key = `remote.${remote}.${push ? "pushurl" : "url"}`;
+  try { gitExecFile(cwd, ["config", "--unset-all", key], { timeout: 10000 }); } catch {}
+  for (const url of urls) gitExecFile(cwd, ["config", "--add", key, url], { timeout: 10000 });
+}
+
 function sanitizeRemoteUrl(value) {
   const url = String(value || "").trim();
   if (!url) return "";
@@ -1985,6 +2011,46 @@ export default function (app, ctx) {
       });
     } catch (e) {
       return c.json({ ok: false, message: `关联失败：${commandErrorText(e) || "无法访问远程仓库"}` });
+    }
+  });
+
+  // ======== API: 修改本地远程地址，并验证新连接 ========
+  app.post("/api/remote-url", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const path = repoPath(body.path);
+    const remote = String(body.remote || "").trim();
+    const newUrl = String(body.newUrl || "").trim();
+    const newPushUrl = String(body.newPushUrl || "").trim();
+    if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
+    if (!isValidRemoteUrl(newUrl)) return c.json({ ok: false, message: "新的远程地址格式不正确" });
+    if (newPushUrl && !isValidRemoteUrl(newPushUrl)) return c.json({ ok: false, message: "新的推送地址格式不正确" });
+    try {
+      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (!names.includes(remote)) return c.json({ ok: false, message: `远程 ${remote} 不存在` });
+      const fetchUrls = configuredRemoteUrls(path, remote, false);
+      const pushUrls = configuredRemoteUrls(path, remote, true);
+      const effectiveFetchUrls = fetchUrls.length ? fetchUrls : remoteUrlList(path, remote, false);
+      const effectivePushUrls = pushUrls.length ? pushUrls : remoteUrlList(path, remote, true);
+      const oldUrl = effectiveFetchUrls[0] || "";
+      const oldPushUrl = effectivePushUrls[0] || oldUrl;
+      if (body.confirmed !== true) {
+        return c.json({ ok: false, code: "REMOTE_URL_CONFIRM", requiresConfirmation: true, remote, oldUrl: sanitizeRemoteUrl(oldUrl), oldPushUrl: sanitizeRemoteUrl(oldPushUrl), newUrl: sanitizeRemoteUrl(newUrl), newPushUrl: sanitizeRemoteUrl(newPushUrl || newUrl), message: `将更新远程 ${remote} 的地址并验证连接` });
+      }
+      gitExecFile(path, ["remote", "set-url", remote, newUrl], { timeout: 10000 });
+      if (newPushUrl) gitExecFile(path, ["remote", "set-url", "--push", remote, newPushUrl], { timeout: 10000 });
+      else if (pushUrls.length > 0) gitExecFile(path, ["remote", "set-url", "--push", remote, newUrl], { timeout: 10000 });
+      try {
+        gitExecFile(path, ["ls-remote", "--heads", remote], { timeout: 120000 });
+      } catch (verifyError) {
+        restoreConfiguredRemoteUrls(path, remote, fetchUrls.length ? fetchUrls : [oldUrl], false);
+        if (pushUrls.length) restoreConfiguredRemoteUrls(path, remote, pushUrls, true);
+        else if (newPushUrl) restoreConfiguredRemoteUrls(path, remote, [oldPushUrl], true);
+        return c.json({ ok: false, code: "REMOTE_URL_VERIFY_FAILED", rolledBack: true, remote, message: `新远程地址验证失败，已恢复旧地址：${commandErrorText(verifyError) || "无法访问远程仓库"}` });
+      }
+      return c.json({ ok: true, remote, oldUrl: sanitizeRemoteUrl(oldUrl), newUrl: sanitizeRemoteUrl(newUrl), pushUrl: sanitizeRemoteUrl(newPushUrl || newUrl), message: `已更新远程 ${remote} 的地址并验证成功` });
+    } catch (e) {
+      return c.json({ ok: false, message: `修改远程地址失败：${commandErrorText(e) || "无法修改远程配置"}` });
     }
   });
 
