@@ -899,7 +899,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
       </div>
     </div>
     <input type="text" id="ghRepoDesc" placeholder="描述（可选）" autocomplete="off" style="width:100%;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
-    <button onclick="ghCreateRepo()" style="margin-top:6px;width:100%;padding:6px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">在 GitHub 创建</button>
+    <button id="ghCreateRepoBtn" onclick="ghCreateRepo()" style="margin-top:6px;width:100%;padding:6px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">在 GitHub 创建</button>
     <div id="ghCreateResult" style="margin-top:6px;font-size:11px"></div>
   </div>
 
@@ -3142,7 +3142,17 @@ async function ghCreateRepo() {
   const license = document.getElementById("ghLicense")?.value || "";
   const p = currentPath || getSavedPath();
   const el = document.getElementById("ghCreateResult");
-  el.textContent = "创建中...";
+  if (!el) return;
+  const btn = document.getElementById("ghCreateRepoBtn");
+  const originalLabel = btn ? btn.textContent : "在 GitHub 创建";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "正在创建 GitHub 仓库…";
+    btn.style.opacity = "0.7";
+    btn.style.cursor = "wait";
+  }
+  el.textContent = "正在创建 GitHub 仓库…（网络操作可能需要一点时间）";
+  updateGhBodyHeight();
   try {
     const res = await fetch(apiUrl("/api/gh/create"), {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -3163,7 +3173,18 @@ async function ghCreateRepo() {
       loadGhList(true);
       loadGhConnectRepos(true);
     }
-  } catch (e) { el.textContent = "❌ " + e.message; updateGhBodyHeight(); }
+  } catch (e) {
+    el.textContent = "❌ " + e.message;
+    updateGhBodyHeight();
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      btn.style.opacity = "";
+      btn.style.cursor = "pointer";
+    }
+    updateGhBodyHeight();
+  }
 }
 
 async function ghCloneRepo() {
