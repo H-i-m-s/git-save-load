@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const htmlPath = join(__dirname, "..", "views", "git.html");
@@ -213,12 +214,36 @@ function commandErrorText(error) {
     .trim();
 }
 
+function hashRemoteEditValue(value) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function remoteEditRevision(names, remote, fetchUrls, pushUrls, settings) {
+  const roles = {};
+  Object.keys(settings?.roles || {}).sort().forEach((name) => { roles[name] = settings.roles[name]; });
+  return hashRemoteEditValue({
+    names: [...names].sort(),
+    remote,
+    fetchUrls: [...fetchUrls],
+    pushUrls: [...pushUrls],
+    settings: {
+      pushRemote: settings?.pushRemote || "",
+      fetchRemote: settings?.fetchRemote || "",
+      roles,
+    },
+  });
+}
+
+function remoteEditToken(revision, oldRemote, newRemote, newUrl, newPushUrl, clearPushUrl) {
+  return hashRemoteEditValue({ revision, oldRemote, newRemote, newUrl, newPushUrl, clearPushUrl: Boolean(clearPushUrl) });
+}
+
 function isValidRemoteName(name) {
   return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name);
 }
 
 function isValidRemoteUrl(url) {
-  return /^(?:https?|ssh):\/\/[^\s]+$/.test(url) || /^git@[^\s:]+:[^\s]+$/.test(url);
+  return /^(?:https?|ssh|file):\/\/[^\s]+$/.test(url) || /^git@[^\s:]+:[^\s]+$/.test(url);
 }
 
 function remoteUrlList(cwd, remote, push = false) {
@@ -317,6 +342,7 @@ function listRemoteDetails(cwd) {
       name,
       fetchUrl: sanitizeRemoteUrl(fetchUrl),
       pushUrl: sanitizeRemoteUrl(pushUrl || fetchUrl),
+      hasPushUrl: configuredRemoteUrls(cwd, name, true).length > 0,
       displayUrl: sanitizeRemoteUrl(fetchUrl || pushUrl),
       branches,
       defaultBranch,
@@ -541,6 +567,11 @@ async function readConfig(ctx) {
   }
 }
 
+async function writeConfig(ctx, config) {
+  mkdirSync(join(configPath(ctx), ".."), { recursive: true });
+  await writeFile(configPath(ctx), JSON.stringify(config || {}, null, 2), "utf8");
+}
+
 function remoteSettingsKey(path) {
   return resolve(path).replace(/[\\/]+$/, "").toLowerCase();
 }
@@ -580,8 +611,22 @@ async function writeRemoteSettings(ctx, path, settings) {
     fetchRemote: settings.fetchRemote || "",
     roles: { ...(settings.roles || {}) },
   };
-  mkdirSync(join(configPath(ctx), ".."), { recursive: true });
-  await writeFile(configPath(ctx), JSON.stringify({ ...current, remoteSettings }, null, 2), "utf8");
+  await writeConfig(ctx, { ...current, remoteSettings });
+}
+
+async function readRemoteEditState(ctx, path, remote) {
+  gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+  const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (!names.includes(remote)) throw new Error(`远程 ${remote} 不存在`);
+  const fetchUrls = configuredRemoteUrls(path, remote, false);
+  const pushUrls = configuredRemoteUrls(path, remote, true);
+  const fetchEffectiveUrls = fetchUrls.length ? fetchUrls : remoteUrlList(path, remote, false);
+  const pushEffectiveUrls = pushUrls.length ? pushUrls : remoteUrlList(path, remote, true);
+  const oldFetchUrl = fetchEffectiveUrls[0] || "";
+  const oldPushUrl = pushEffectiveUrls[0] || oldFetchUrl;
+  const settings = await readRemoteSettings(ctx, path, names);
+  const revision = remoteEditRevision(names, remote, fetchUrls, pushUrls, settings);
+  return { names, fetchUrls, pushUrls, fetchEffectiveUrls, pushEffectiveUrls, oldFetchUrl, oldPushUrl, settings, revision };
 }
 
 function applyRemoteSettings(remoteInfo, settings) {
@@ -2014,43 +2059,149 @@ export default function (app, ctx) {
     }
   });
 
-  // ======== API: 修改本地远程地址，并验证新连接 ========
-  app.post("/api/remote-url", async (c) => {
+  // ======== API: 原子修改本地远程名称和地址 ========
+  app.post("/api/remote-edit", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const path = repoPath(body.path);
-    const remote = String(body.remote || "").trim();
+    const oldRemote = String(body.oldRemote || "").trim();
+    const newRemote = String(body.newRemote || oldRemote).trim();
     const newUrl = String(body.newUrl || "").trim();
     const newPushUrl = String(body.newPushUrl || "").trim();
-    if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
-    if (!isValidRemoteUrl(newUrl)) return c.json({ ok: false, message: "新的远程地址格式不正确" });
+    const clearPushUrl = body.clearPushUrl === true;
+    if (!isValidRemoteName(oldRemote) || !isValidRemoteName(newRemote)) return c.json({ ok: false, message: "远程名称格式不正确" });
+    if (newUrl && !isValidRemoteUrl(newUrl)) return c.json({ ok: false, message: "新的获取地址格式不正确" });
     if (newPushUrl && !isValidRemoteUrl(newPushUrl)) return c.json({ ok: false, message: "新的推送地址格式不正确" });
+    if (newPushUrl && clearPushUrl) return c.json({ ok: false, message: "不能同时填写新的推送地址并清除独立推送地址" });
+    if (oldRemote !== newRemote && oldRemote.toLowerCase() === newRemote.toLowerCase()) return c.json({ ok: false, message: "新旧远程名称不能只改变大小写" });
+
+    let renamed = false;
+    let gitChanged = false;
+    let originalConfig = null;
+    let oldFetchUrls = [];
+    let oldPushUrls = [];
+    let oldFetchEffective = "";
+    let oldPushEffective = "";
+    let settings = null;
+    let revision = "";
     try {
-      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
-      const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-      if (!names.includes(remote)) return c.json({ ok: false, message: `远程 ${remote} 不存在` });
-      const fetchUrls = configuredRemoteUrls(path, remote, false);
-      const pushUrls = configuredRemoteUrls(path, remote, true);
-      const effectiveFetchUrls = fetchUrls.length ? fetchUrls : remoteUrlList(path, remote, false);
-      const effectivePushUrls = pushUrls.length ? pushUrls : remoteUrlList(path, remote, true);
-      const oldUrl = effectiveFetchUrls[0] || "";
-      const oldPushUrl = effectivePushUrls[0] || oldUrl;
+      const operationState = getGitOperationState(path);
+      if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
+      const state = await readRemoteEditState(ctx, path, oldRemote);
+      const names = state.names;
+      if (oldRemote !== newRemote && names.includes(newRemote)) return c.json({ ok: false, code: "REMOTE_NAME_EXISTS", message: `远程 ${newRemote} 已经存在，请换一个名称` });
+      oldFetchUrls = state.fetchUrls;
+      oldPushUrls = state.pushUrls;
+      oldFetchEffective = state.oldFetchUrl;
+      oldPushEffective = state.oldPushUrl;
+      settings = state.settings;
+      revision = state.revision;
+      originalConfig = await readConfig(ctx);
+      const fetchChanged = Boolean(newUrl);
+      const pushChanged = Boolean(newPushUrl) || clearPushUrl;
+      const effectiveNewUrl = newUrl || oldFetchEffective;
+      const effectiveNewPushUrl = newPushUrl || (clearPushUrl ? "" : oldPushEffective);
+      if (!effectiveNewUrl || !isValidRemoteUrl(effectiveNewUrl)) return c.json({ ok: false, message: "当前获取地址无法读取，请输入新的获取地址" });
+      if (clearPushUrl && !oldPushUrls.length) return c.json({ ok: false, message: "当前远程没有独立推送地址可清除" });
+      const confirmationToken = remoteEditToken(revision, oldRemote, newRemote, newUrl, newPushUrl, clearPushUrl);
+
       if (body.confirmed !== true) {
-        return c.json({ ok: false, code: "REMOTE_URL_CONFIRM", requiresConfirmation: true, remote, oldUrl: sanitizeRemoteUrl(oldUrl), oldPushUrl: sanitizeRemoteUrl(oldPushUrl), newUrl: sanitizeRemoteUrl(newUrl), newPushUrl: sanitizeRemoteUrl(newPushUrl || newUrl), message: `将更新远程 ${remote} 的地址并验证连接` });
+        return c.json({
+          ok: false,
+          code: "REMOTE_EDIT_CONFIRM",
+          requiresConfirmation: true,
+          oldRemote,
+          newRemote,
+          oldUrl: sanitizeRemoteUrl(oldFetchEffective),
+          oldPushUrl: sanitizeRemoteUrl(oldPushEffective),
+          fetchChanged,
+          pushChanged,
+          clearPushUrl,
+          newUrl: sanitizeRemoteUrl(effectiveNewUrl),
+          newPushUrl: sanitizeRemoteUrl(effectiveNewPushUrl),
+          revision,
+          confirmationToken,
+          pushRemote: settings.pushRemote,
+          fetchRemote: settings.fetchRemote,
+          role: settings.roles[oldRemote] || "other",
+          message: "将一次性更新本地远程名称和地址，并验证新的获取/推送地址",
+        });
       }
-      gitExecFile(path, ["remote", "set-url", remote, newUrl], { timeout: 10000 });
-      if (newPushUrl) gitExecFile(path, ["remote", "set-url", "--push", remote, newPushUrl], { timeout: 10000 });
-      else if (pushUrls.length > 0) gitExecFile(path, ["remote", "set-url", "--push", remote, newUrl], { timeout: 10000 });
-      try {
-        gitExecFile(path, ["ls-remote", "--heads", remote], { timeout: 120000 });
-      } catch (verifyError) {
-        restoreConfiguredRemoteUrls(path, remote, fetchUrls.length ? fetchUrls : [oldUrl], false);
-        if (pushUrls.length) restoreConfiguredRemoteUrls(path, remote, pushUrls, true);
-        else if (newPushUrl) restoreConfiguredRemoteUrls(path, remote, [oldPushUrl], true);
-        return c.json({ ok: false, code: "REMOTE_URL_VERIFY_FAILED", rolledBack: true, remote, message: `新远程地址验证失败，已恢复旧地址：${commandErrorText(verifyError) || "无法访问远程仓库"}` });
+      if (body.expectedRevision !== revision || body.confirmationToken !== confirmationToken) {
+        return c.json({ ok: false, code: "REMOTE_CHANGED", requiresReconfirmation: true, message: "远程配置在确认期间发生了变化，请刷新后重新确认" });
       }
-      return c.json({ ok: true, remote, oldUrl: sanitizeRemoteUrl(oldUrl), newUrl: sanitizeRemoteUrl(newUrl), pushUrl: sanitizeRemoteUrl(newPushUrl || newUrl), message: `已更新远程 ${remote} 的地址并验证成功` });
+
+      if (oldRemote !== newRemote) {
+        gitExecFile(path, ["remote", "rename", oldRemote, newRemote], { timeout: 10000 });
+        renamed = true;
+        gitChanged = true;
+      }
+      const activeRemote = newRemote;
+      if (fetchChanged) {
+        gitChanged = true;
+        gitExecFile(path, ["remote", "set-url", activeRemote, effectiveNewUrl], { timeout: 10000 });
+      }
+      if (newPushUrl) {
+        restoreConfiguredRemoteUrls(path, activeRemote, [newPushUrl], true);
+        gitChanged = true;
+      } else if (clearPushUrl) {
+        restoreConfiguredRemoteUrls(path, activeRemote, [], true);
+        gitChanged = true;
+      }
+
+      if (fetchChanged) {
+        try {
+          gitExecFile(path, ["ls-remote", "--heads", activeRemote], { timeout: 120000 });
+        } catch (verifyError) {
+          throw Object.assign(new Error(`新的获取地址验证失败：${commandErrorText(verifyError) || "无法访问远程仓库"}`), { code: "REMOTE_FETCH_URL_VERIFY_FAILED" });
+        }
+      }
+      if (newPushUrl) {
+        try {
+          gitExecFile(path, ["ls-remote", "--heads", newPushUrl], { timeout: 120000 });
+        } catch (verifyError) {
+          throw Object.assign(new Error(`新的推送地址验证失败：${commandErrorText(verifyError) || "无法访问远程仓库"}`), { code: "REMOTE_PUSH_URL_VERIFY_FAILED" });
+        }
+      }
+
+      const nextSettings = {
+        pushRemote: settings.pushRemote === oldRemote ? newRemote : settings.pushRemote,
+        fetchRemote: settings.fetchRemote === oldRemote ? newRemote : settings.fetchRemote,
+        roles: { ...settings.roles },
+      };
+      if (oldRemote !== newRemote && Object.prototype.hasOwnProperty.call(nextSettings.roles, oldRemote)) {
+        nextSettings.roles[newRemote] = nextSettings.roles[oldRemote];
+        delete nextSettings.roles[oldRemote];
+      }
+      await writeRemoteSettings(ctx, path, nextSettings);
+      return c.json({
+        ok: true,
+        oldRemote,
+        newRemote,
+        oldUrl: sanitizeRemoteUrl(oldFetchEffective),
+        oldPushUrl: sanitizeRemoteUrl(oldPushEffective),
+        newUrl: sanitizeRemoteUrl(effectiveNewUrl),
+        pushUrl: sanitizeRemoteUrl(newPushUrl || (clearPushUrl ? effectiveNewUrl : oldPushEffective)),
+        pushRemote: nextSettings.pushRemote,
+        fetchRemote: nextSettings.fetchRemote,
+        role: nextSettings.roles[newRemote] || "other",
+        message: oldRemote === newRemote
+          ? ((fetchChanged || pushChanged) ? `已更新远程 ${newRemote} 的地址` : `已保留远程 ${newRemote} 的配置`)
+          : ((fetchChanged || pushChanged) ? `已将远程 ${oldRemote} 修改为 ${newRemote}` : `已将远程 ${oldRemote} 重命名为 ${newRemote}`),
+      });
     } catch (e) {
-      return c.json({ ok: false, message: `修改远程地址失败：${commandErrorText(e) || "无法修改远程配置"}` });
+      let rollbackError = "";
+      try {
+        if (gitChanged) {
+          if (renamed) gitExecFile(path, ["remote", "rename", newRemote, oldRemote], { timeout: 10000 });
+          restoreConfiguredRemoteUrls(path, oldRemote, oldFetchUrls.length ? oldFetchUrls : (oldFetchEffective ? [oldFetchEffective] : []), false);
+          restoreConfiguredRemoteUrls(path, oldRemote, oldPushUrls, true);
+        }
+        if (originalConfig) await writeConfig(ctx, originalConfig);
+      } catch (rollbackErrorValue) {
+        rollbackError = commandErrorText(rollbackErrorValue) || rollbackErrorValue.message || "回滚失败";
+      }
+      const prefix = e.code === "REMOTE_FETCH_URL_VERIFY_FAILED" ? "新的获取地址验证失败" : (e.code === "REMOTE_PUSH_URL_VERIFY_FAILED" ? "新的推送地址验证失败" : "修改远程失败");
+      return c.json({ ok: false, code: e.code || "REMOTE_EDIT_FAILED", rolledBack: !rollbackError, message: `${prefix}，${rollbackError ? `回滚也失败：${rollbackError}` : "已恢复原远程配置"}：${commandErrorText(e) || e.message || "未知错误"}` });
     }
   });
 
@@ -2079,48 +2230,6 @@ export default function (app, ctx) {
       return c.json({ ok: true, path, branch, detached: false, pushRemote: settings.pushRemote, fetchRemote: settings.fetchRemote, remotes });
     } catch (e) {
       return c.json({ ok: false, message: commandErrorText(e) || "读取远程仓库失败" });
-    }
-  });
-
-  // ======== API: 重命名本地远程，并迁移插件默认远程设置 ========
-  app.post("/api/remote-rename", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const path = repoPath(body.path);
-    const oldRemote = String(body.oldRemote || "").trim();
-    const newRemote = String(body.newRemote || "").trim();
-    if (!isValidRemoteName(oldRemote) || !isValidRemoteName(newRemote)) return c.json({ ok: false, message: "远程名称格式不正确" });
-    if (oldRemote === newRemote) return c.json({ ok: false, message: "新旧远程名称不能相同" });
-    try {
-      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
-      const operationState = getGitOperationState(path);
-      if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
-      const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-      if (!names.includes(oldRemote)) return c.json({ ok: false, message: `远程 ${oldRemote} 不存在` });
-      if (names.includes(newRemote)) return c.json({ ok: false, code: "REMOTE_NAME_EXISTS", message: `远程 ${newRemote} 已经存在，请换一个名称` });
-      const currentUrl = gitExecFile(path, ["remote", "get-url", oldRemote], { timeout: 10000 });
-      const settings = await readRemoteSettings(ctx, path, names);
-      if (body.confirmed !== true) {
-        return c.json({ ok: false, code: "REMOTE_RENAME_CONFIRM", requiresConfirmation: true, oldRemote, newRemote, currentUrl: sanitizeRemoteUrl(currentUrl), pushRemote: settings.pushRemote, fetchRemote: settings.fetchRemote, message: `将本地远程 ${oldRemote} 重命名为 ${newRemote}` });
-      }
-      gitExecFile(path, ["remote", "rename", oldRemote, newRemote], { timeout: 10000 });
-      const nextSettings = {
-        pushRemote: settings.pushRemote === oldRemote ? newRemote : settings.pushRemote,
-        fetchRemote: settings.fetchRemote === oldRemote ? newRemote : settings.fetchRemote,
-        roles: { ...settings.roles },
-      };
-      if (Object.prototype.hasOwnProperty.call(nextSettings.roles, oldRemote)) {
-        nextSettings.roles[newRemote] = nextSettings.roles[oldRemote];
-        delete nextSettings.roles[oldRemote];
-      }
-      try {
-        await writeRemoteSettings(ctx, path, nextSettings);
-      } catch (configError) {
-        try { gitExecFile(path, ["remote", "rename", newRemote, oldRemote], { timeout: 10000 }); } catch {}
-        throw new Error(`远程已回滚，插件默认远程设置保存失败：${configError.message}`);
-      }
-      return c.json({ ok: true, oldRemote, newRemote, remoteUrl: sanitizeRemoteUrl(currentUrl), pushRemote: nextSettings.pushRemote, fetchRemote: nextSettings.fetchRemote, role: nextSettings.roles[newRemote] || "other", message: `已将 ${oldRemote} 重命名为 ${newRemote}` });
-    } catch (e) {
-      return c.json({ ok: false, message: `重命名远程失败：${commandErrorText(e) || "无法修改本地远程配置"}` });
     }
   });
 
@@ -2497,6 +2606,77 @@ export default function (app, ctx) {
         cn = errLine ? "推送失败：" + errLine.replace(/^(error:|fatal:)\s*/, "").trim() : "推送失败";
       }
       return c.json({ ok: false, message: cn });
+    }
+  });
+
+  // ======== API: 用当前本地分支安全覆盖指定远程分支 ========
+  app.post("/api/remote-overwrite", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const path = repoPath(body.path);
+    const remote = String(body.remote || "").trim();
+    const requestedLocalBranch = String(body.branch || "").trim();
+    const requestedRemoteBranch = String(body.remoteBranch || "").trim();
+    const expectedRemoteHash = String(body.expectedRemoteHash || "").trim();
+    const expectedLocalHash = String(body.expectedLocalHash || "").trim();
+    const confirmed = body.confirmed === true;
+    if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
+    if (requestedLocalBranch && !validateBranchName(path, requestedLocalBranch)) return c.json({ ok: false, message: "本地分支名无效" });
+    if (requestedRemoteBranch && !validateBranchName(path, requestedRemoteBranch)) return c.json({ ok: false, message: "远程分支名无效" });
+
+    try {
+      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (!names.includes(remote)) return c.json({ ok: false, message: `远程 ${remote} 不存在` });
+
+      const localBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
+      if (!localBranch || !validateBranchName(path, localBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
+      if (requestedLocalBranch && requestedLocalBranch !== localBranch) {
+        return c.json({ ok: false, code: "LOCAL_CHANGED", message: "当前本地分支已变化，请刷新后重新确认" });
+      }
+      const remoteBranch = requestedRemoteBranch || localBranch;
+      if (!validateBranchName(path, remoteBranch)) return c.json({ ok: false, message: "远程分支名无效" });
+
+      // 只更新远程跟踪引用，不修改工作区；覆盖前的远程 hash 由此得到。
+      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
+      const remoteRef = `refs/remotes/${remote}/${remoteBranch}`;
+      let remoteHash = "";
+      try { remoteHash = gitExecFile(path, ["rev-parse", "--verify", `${remoteRef}^{commit}`], { timeout: 10000 }); } catch {}
+      let localHash = "";
+      try { localHash = gitExecFile(path, ["rev-parse", "--verify", `${localBranch}^{commit}`], { timeout: 10000 }); } catch {}
+      if (!localHash) return c.json({ ok: false, message: "当前本地分支还没有可推送的提交" });
+      const statusShort = gitExecFile(path, ["-c", "core.quotepath=false", "status", "--short"], { timeout: 10000 });
+      const dirty = Boolean(statusShort.trim());
+
+      if (!confirmed) {
+        return c.json({
+          ok: false,
+          code: "REMOTE_OVERWRITE_CONFIRM",
+          requiresConfirmation: true,
+          remote,
+          localBranch,
+          remoteBranch,
+          localHash,
+          remoteHash,
+          dirty,
+          message: remoteHash ? "远程分支已有提交，确认后将由当前本地分支覆盖" : "远程分支尚未建立，确认后将推送当前本地分支",
+        });
+      }
+
+      if (expectedLocalHash !== localHash || (requestedLocalBranch && requestedLocalBranch !== localBranch)) {
+        return c.json({ ok: false, code: "LOCAL_CHANGED", message: "确认后本地分支或提交发生了变化，请重新检查后再覆盖" });
+      }
+      if (expectedRemoteHash !== remoteHash) {
+        return c.json({ ok: false, code: "REMOTE_CHANGED", message: "确认后远程分支又发生了变化，请重新检查后再覆盖" });
+      }
+
+      const pushArgs = ["push", `--force-with-lease=refs/heads/${remoteBranch}:${remoteHash}`, remote, `${localBranch}:${remoteBranch}`];
+      const raw = gitExecFile(path, pushArgs, { timeout: 120000 });
+      const upToDate = raw.includes("up-to-date") || raw.includes("Everything up-to-date");
+      return c.json({ ok: true, remote, localBranch, remoteBranch, mode: "force-with-lease", dirty, message: upToDate ? "远程已经与本地一致" : `已用本地 ${localBranch} 覆盖 ${remote}/${remoteBranch}` });
+    } catch (e) {
+      const stderr = commandErrorText(e);
+      const errLine = stderr.split("\n").find(l => l.includes("error:") || l.includes("fatal:"));
+      return c.json({ ok: false, message: errLine ? errLine.replace(/^(error:|fatal:)\s*/, "").trim() : `覆盖远程失败：${stderr || "未知错误"}` });
     }
   });
 

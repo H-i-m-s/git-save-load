@@ -257,13 +257,15 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .remote-branch-row select{min-width:0;flex:1;height:27px;padding:3px 24px 3px 7px;font-size:10px}
 .remote-branch-row .hana-select{min-width:0;flex:1;width:100%;box-sizing:border-box;font-size:10px}
 .remote-branch-value{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg,#1a1d24);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
-.remote-card-actions{display:flex;align-items:center;gap:6px;margin:9px 0 0 15px;min-width:0}
+.remote-card-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:9px 0 0 15px;min-width:0}
 .remote-action-btn{height:28px;padding:0 9px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:11px;cursor:pointer;white-space:nowrap;transition:border-color .15s,background .15s,color .15s}
 .remote-action-btn:hover{border-color:var(--hana-accent,#5e6ad2);color:var(--hana-accent,#5e6ad2);background:var(--hana-bg-muted,#f6f7f7)}
 .remote-action-btn.remote-action-primary{border-color:var(--hana-accent,#5e6ad2);background:var(--hana-accent,#5e6ad2);color:#fff}
 .remote-action-btn.remote-action-primary:hover{filter:brightness(1.06);color:#fff}
+.remote-action-btn.remote-action-danger{border-color:rgba(231,76,60,.45);color:#c0392b;background:rgba(231,76,60,.04)}
+.remote-action-btn.remote-action-danger:hover{border-color:#e74c3c;color:#c0392b;background:rgba(231,76,60,.10)}
 .remote-action-btn:disabled{opacity:.5;cursor:not-allowed}
-.remote-action-hint{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg-muted,#6b7280);font-size:9px}
+.remote-action-hint{min-width:0;flex:1 1 80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg-muted,#6b7280);font-size:9px}
 .remote-add-launch{display:flex;justify-content:flex-end;margin:2px 0 0}
 .remote-add-toggle{height:28px;padding:0 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;background:transparent;color:var(--hana-accent,#5e6ad2);font-size:11px;cursor:pointer}
 .remote-add-toggle:hover{background:var(--hana-bg-muted,#f6f7f7);border-color:var(--hana-accent,#5e6ad2)}
@@ -1094,14 +1096,16 @@ select:disabled{opacity:.5;cursor:not-allowed}
   </div>
 </div>
 
-<!-- 修改远程地址弹窗 -->
+<!-- 修改远程弹窗：同时编辑本地远程名称和地址 -->
 <div id="remoteUrlEditModal" style="display:none;position:fixed;inset:0;z-index:2200;background:rgba(0,0,0,.34);align-items:center;justify-content:center;padding:16px;box-sizing:border-box" onclick="if(event.target===this)closeRemoteUrlEdit()">
   <div style="width:430px;max-width:100%;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:10px;padding:15px;box-shadow:0 10px 30px rgba(0,0,0,.2);color:var(--hana-fg,#1a1d24)">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-      <div id="remoteUrlEditTitle" style="font-size:13px;font-weight:650;flex:1">修改远程地址</div>
+      <div id="remoteUrlEditTitle" style="font-size:13px;font-weight:650;flex:1">修改远程</div>
       <button type="button" onclick="closeRemoteUrlEdit()" style="border:0;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:18px;cursor:pointer">×</button>
     </div>
-    <div id="remoteUrlEditHint" style="font-size:10px;color:var(--hana-fg-muted,#6b7280);line-height:15px;margin-bottom:9px">可以从你的 GitHub 仓库中选择，也可以手动输入新的 URL。</div>
+    <div id="remoteUrlEditHint" style="font-size:10px;color:var(--hana-fg-muted,#6b7280);line-height:15px;margin-bottom:9px">可以同时修改本地远程名称和地址；名称只影响当前电脑上的这个 Git clone。</div>
+    <div class="remote-url-edit-label">远程名称</div>
+    <input id="remoteNameEditInput" class="remote-url-edit-input" type="text" placeholder="例如 personal" autocomplete="off" onkeydown="if(event.key==='Enter')submitRemoteUrlEdit();if(event.key==='Escape')closeRemoteUrlEdit()">
     <div class="remote-url-edit-label">选择我的 GitHub 仓库</div>
     <div class="remote-url-edit-row">
       <div id="remoteUrlRepoSelectWrap" style="display:flex;flex:1;min-width:0">
@@ -1109,8 +1113,13 @@ select:disabled{opacity:.5;cursor:not-allowed}
       </div>
       <button type="button" class="remote-form-secondary" onclick="loadRemoteUrlRepos()">刷新</button>
     </div>
-    <div class="remote-url-edit-or"><span>或手动输入</span></div>
-    <input id="remoteUrlEditInput" class="remote-url-edit-input" type="text" placeholder="https://github.com/user/repository.git" autocomplete="off" onkeydown="if(event.key==='Enter')submitRemoteUrlEdit();if(event.key==='Escape')closeRemoteUrlEdit()">
+    <div class="remote-url-edit-or"><span>或手动输入地址</span></div>
+    <div class="remote-url-edit-label">获取地址（fetch）</div>
+    <input id="remoteUrlEditInput" class="remote-url-edit-input" type="text" placeholder="留空表示保持当前获取地址" autocomplete="off" onkeydown="if(event.key==='Enter')submitRemoteUrlEdit();if(event.key==='Escape')closeRemoteUrlEdit()">
+    <div class="remote-url-edit-label">推送地址（push，可选）</div>
+    <input id="remotePushUrlEditInput" class="remote-url-edit-input" type="text" placeholder="留空表示保持当前推送地址" autocomplete="off" onkeydown="if(event.key==='Enter')submitRemoteUrlEdit();if(event.key==='Escape')closeRemoteUrlEdit()">
+    <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:10px;color:var(--hana-fg-muted,#6b7280);cursor:pointer"><input id="remoteClearPushUrl" type="checkbox" style="margin:0" onchange="syncRemotePushUrlClearState()"> 清除独立推送地址，恢复跟随获取地址</label>
+    <div id="remoteUrlEditCurrent" class="remote-form-status"></div>
     <div id="remoteUrlEditResult" class="remote-form-result"></div>
     <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:12px">
       <button type="button" class="remote-form-secondary" onclick="closeRemoteUrlEdit()">取消</button>
@@ -2093,13 +2102,14 @@ function refreshGhLicenseSelect() {
   if (select && select._hanaSelect) select._hanaSelect.sync();
 }
 
-function remoteButton(label, primary, action, remote, branch) {
+function remoteButton(label, primary, action, remote, branch, danger) {
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = label;
   button.dataset.action = action;
   button.dataset.remote = remote;
-  button.className = "remote-action-btn" + (primary ? " remote-action-primary" : "");
+  button.className = "remote-action-btn" + (primary ? " remote-action-primary" : "") + (danger ? " remote-action-danger" : "");
+  if (action === "overwrite") button.title = "用当前本地已提交历史覆盖指定远程分支";
   if (branch) button.dataset.remoteBranch = branch;
   return button;
 }
@@ -2140,8 +2150,7 @@ function appendRemoteMoreMenu(button, remoteInfo) {
     };
     addItem("复制远程地址", function() { copyGhUrl(url); });
     addItem("在浏览器中打开", function() { openGhUrl(url); });
-    addItem("修改远程地址", function() { editLocalRemoteUrl(remoteInfo); });
-    addItem("重命名远程", function() { renameLocalRemote(remoteInfo); });
+    addItem("修改远程", function() { editLocalRemote(remoteInfo); });
     addItem(remoteInfo.isDefaultPush ? "取消默认推送目标" : "设为默认推送目标", function() { setRemoteRole(remoteInfo.name, remoteInfo.isDefaultPush ? "other" : "push-target"); });
     addItem(remoteInfo.isDefaultFetch ? "取消默认获取来源" : "设为默认获取来源", function() { setRemoteRole(remoteInfo.name, remoteInfo.isDefaultFetch ? "other" : "update-source"); });
     addItem("移除远程", function() { removeLocalRemote(remoteInfo.name); }, true);
@@ -2157,8 +2166,69 @@ function bindLocalRemoteActions(container) {
       const branch = button.dataset.remoteBranch || "";
       if (button.dataset.action === "fetch") fetchRemoteUpdates(remote, branch);
       else if (button.dataset.action === "merge") mergeRemoteUpdates(remote, branch);
+      else if (button.dataset.action === "overwrite") overwriteRemoteFromCard(button, remote, branch);
     });
   });
+}
+
+async function overwriteRemoteFromCard(button, remote, branch) {
+  const p = currentPath || getSavedPath();
+  if (!p || !remote || !branch) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "检查中...";
+  try {
+    const res = await fetch(apiUrl("/api/remote-overwrite"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: p, remote, remoteBranch: branch, confirmed: false }),
+    });
+    const data = await res.json();
+    button.disabled = false;
+    button.textContent = original;
+    if (!data.ok && data.code === "REMOTE_OVERWRITE_CONFIRM") {
+      showConfirm(
+        `确定用本地分支覆盖 ${remote}/${branch} 吗？`,
+        "⚠️ 覆盖远程分支",
+        function(ok) { if (ok) performRemoteOverwrite(button, data); },
+        false,
+        { title: "本地版本将覆盖远程", detailsHtml: `<div style='margin-bottom:6px'><b>本地分支：</b>${escapeHtml(data.localBranch || "当前分支")}</div><div style='margin-bottom:6px'><b>目标分支：</b>${escapeHtml(data.remote || remote)}/${escapeHtml(data.remoteBranch || branch)}</div><div style='margin-bottom:6px'><b>本地提交：</b><code>${escapeHtml((data.localHash || "").slice(0, 12))}</code></div><div style='margin-bottom:6px'><b>远程提交：</b><code>${escapeHtml((data.remoteHash || "尚未建立").slice(0, 12))}</code></div>${data.dirty ? `<div style='margin-bottom:6px;color:#b45309'><b>注意：</b>工作区有未提交修改；覆盖只推送已提交历史，不会上传这些未提交文件。</div>` : ""}<div style='margin-top:8px;color:#b91c1c;font-weight:600'>远程分支现有历史可能被本地版本替换。此操作不会修改本地工作区。</div>` }
+      );
+      return;
+    }
+    toast("❌ " + (data.message || "检查覆盖条件失败"), "err");
+  } catch (e) {
+    button.disabled = false;
+    button.textContent = original;
+    toast("覆盖远程失败：" + e.message, "err");
+  }
+}
+
+async function performRemoteOverwrite(button, context) {
+  const p = currentPath || getSavedPath();
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "覆盖中...";
+  try {
+    const res = await fetch(apiUrl("/api/remote-overwrite"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: p, remote: context.remote, branch: context.localBranch, remoteBranch: context.remoteBranch, expectedLocalHash: context.localHash, expectedRemoteHash: context.remoteHash, confirmed: true }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      button.textContent = "✅ 已覆盖";
+      toast("✅ " + data.message, "success");
+      setTimeout(function() { loadLocalRemotes(context.remote, context.remoteBranch); }, 500);
+      return;
+    }
+    button.disabled = false;
+    button.textContent = original;
+    toast("❌ " + (data.message || "覆盖远程失败"), "err");
+    if (data.code === "REMOTE_CHANGED" || data.code === "LOCAL_CHANGED") loadLocalRemotes(context.remote, context.remoteBranch);
+  } catch (e) {
+    button.disabled = false;
+    button.textContent = original;
+    toast("覆盖远程失败：" + e.message, "err");
+  }
 }
 
 async function setRemoteRole(remote, role) {
@@ -2178,29 +2248,46 @@ async function setRemoteRole(remote, role) {
 
 var _remoteUrlEditRemote = "";
 var _remoteUrlEditCurrentUrl = "";
+var _remoteUrlEditCurrentPushUrl = "";
+var _remoteUrlEditHasPushUrl = false;
+var _remoteUrlEditConfirmation = null;
 
-function editLocalRemoteUrl(remoteInfo) {
+function editLocalRemote(remoteInfo) {
   const remote = remoteInfo && remoteInfo.name ? remoteInfo.name : "";
   if (!remote) return;
   _remoteUrlEditRemote = remote;
   _remoteUrlEditCurrentUrl = remoteInfo.displayUrl || remoteInfo.fetchUrl || "";
+  _remoteUrlEditCurrentPushUrl = remoteInfo.pushUrl || _remoteUrlEditCurrentUrl;
+  _remoteUrlEditHasPushUrl = remoteInfo.hasPushUrl === true;
+  _remoteUrlEditConfirmation = null;
   const modal = document.getElementById("remoteUrlEditModal");
   const title = document.getElementById("remoteUrlEditTitle");
+  const nameInput = document.getElementById("remoteNameEditInput");
   const input = document.getElementById("remoteUrlEditInput");
+  const pushInput = document.getElementById("remotePushUrlEditInput");
+  const clearPush = document.getElementById("remoteClearPushUrl");
+  const current = document.getElementById("remoteUrlEditCurrent");
   const result = document.getElementById("remoteUrlEditResult");
   const select = document.getElementById("remoteUrlRepoSelect");
-  if (!modal || !input) return;
-  if (title) title.textContent = `修改远程地址：${remote}`;
+  if (!modal || !nameInput || !input || !pushInput) return;
+  if (title) title.textContent = `修改远程：${remote}`;
+  nameInput.value = remote;
   input.value = "";
+  pushInput.value = "";
+  input.placeholder = _remoteUrlEditCurrentUrl ? `当前：${_remoteUrlEditCurrentUrl}；留空表示保持不变` : "输入新的获取地址";
+  pushInput.placeholder = _remoteUrlEditCurrentPushUrl ? `当前：${_remoteUrlEditCurrentPushUrl}；留空表示保持不变` : "留空表示跟随获取地址";
+  if (clearPush) clearPush.checked = false;
+  syncRemotePushUrlClearState();
+  if (current) current.textContent = `当前获取：${_remoteUrlEditCurrentUrl || "未知"}；当前推送：${_remoteUrlEditHasPushUrl ? _remoteUrlEditCurrentPushUrl : "跟随获取"}`;
   if (result) result.textContent = "";
   if (select) { select.value = ""; if (select._hanaSelect) select._hanaSelect.sync(); }
   modal.style.display = "flex";
   loadRemoteUrlRepos();
-  setTimeout(function() { input.focus(); }, 50);
+  setTimeout(function() { nameInput.focus(); nameInput.select(); }, 50);
   updateGhBodyHeight();
 }
 
-function closeRemoteUrlEdit() {
+function closeRemoteUrlEdit(preserveConfirmation) {
   const modal = document.getElementById("remoteUrlEditModal");
   const select = document.getElementById("remoteUrlRepoSelect");
   if (select && select._hanaSelect) {
@@ -2211,6 +2298,9 @@ function closeRemoteUrlEdit() {
   if (modal) modal.style.display = "none";
   _remoteUrlEditRemote = "";
   _remoteUrlEditCurrentUrl = "";
+  _remoteUrlEditCurrentPushUrl = "";
+  _remoteUrlEditHasPushUrl = false;
+  if (!preserveConfirmation) _remoteUrlEditConfirmation = null;
   updateGhBodyHeight();
 }
 
@@ -2247,81 +2337,73 @@ function onRemoteUrlRepoSelect() {
   if (select && input && select.value) input.value = select.value;
 }
 
-async function submitRemoteUrlEdit() {
-  const remote = _remoteUrlEditRemote;
-  const input = document.getElementById("remoteUrlEditInput");
-  const result = document.getElementById("remoteUrlEditResult");
-  const newUrl = input ? input.value.trim() : "";
-  if (!remote || !newUrl) { if (result) result.textContent = "请选择仓库或输入新的远程 URL"; return; }
-  if (result) result.textContent = "检查远程地址中...";
-  await performEditLocalRemoteUrl(remote, newUrl, false);
+function syncRemotePushUrlClearState() {
+  const clearPush = document.getElementById("remoteClearPushUrl");
+  const pushInput = document.getElementById("remotePushUrlEditInput");
+  if (!clearPush || !pushInput) return;
+  pushInput.disabled = clearPush.checked;
+  if (clearPush.checked) pushInput.value = "";
 }
 
-async function performEditLocalRemoteUrl(remote, newUrl, confirmed) {
+async function submitRemoteUrlEdit() {
+  const remote = _remoteUrlEditRemote;
+  const nameInput = document.getElementById("remoteNameEditInput");
+  const input = document.getElementById("remoteUrlEditInput");
+  const pushInput = document.getElementById("remotePushUrlEditInput");
+  const clearPush = document.getElementById("remoteClearPushUrl");
+  const result = document.getElementById("remoteUrlEditResult");
+  const newRemote = nameInput ? nameInput.value.trim() : "";
+  const newUrl = input ? input.value.trim() : "";
+  const newPushUrl = pushInput ? pushInput.value.trim() : "";
+  const clearPushUrl = clearPush ? clearPush.checked : false;
+  if (!remote || !newRemote) {
+    if (result) result.textContent = "请输入远程名称";
+    return;
+  }
+  if (result) result.textContent = "检查远程配置中...";
+  await performEditLocalRemote(remote, newRemote, newUrl, newPushUrl, clearPushUrl, false);
+}
+
+async function performEditLocalRemote(oldRemote, newRemote, newUrl, newPushUrl, clearPushUrl, confirmed) {
   const p = currentPath || getSavedPath();
   if (!p) return;
   try {
-    const res = await fetch(apiUrl("/api/remote-url"), {
+    const res = await fetch(apiUrl("/api/remote-edit"), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: p, remote, newUrl, confirmed: !!confirmed }),
+      body: JSON.stringify({ path: p, oldRemote, newRemote, newUrl, newPushUrl, clearPushUrl: !!clearPushUrl, expectedRevision: _remoteUrlEditConfirmation && _remoteUrlEditConfirmation.revision, confirmationToken: _remoteUrlEditConfirmation && _remoteUrlEditConfirmation.confirmationToken, confirmed: !!confirmed }),
     });
     const data = await res.json();
-    if (data.code === "REMOTE_URL_CONFIRM") {
-      closeRemoteUrlEdit();
+    if (data.code === "REMOTE_EDIT_CONFIRM") {
+      _remoteUrlEditConfirmation = { revision: data.revision, confirmationToken: data.confirmationToken };
+      closeRemoteUrlEdit(true);
+      const nameChanged = oldRemote !== newRemote;
+      const pushSummary = clearPushUrl ? "清除独立推送地址" : (newPushUrl ? escapeHtml(data.newPushUrl || newPushUrl) : (data.pushChanged ? escapeHtml(data.oldPushUrl || "保持当前推送地址") : "保持不变"));
       showConfirm(
-        `确定修改远程 ${remote} 的地址吗？`,
-        "确认修改远程地址",
-        function(ok) { if (ok) performEditLocalRemoteUrl(remote, newUrl, true); },
+        `确定修改远程 ${oldRemote} 吗？`,
+        "确认修改远程",
+        function(ok) { if (ok) performEditLocalRemote(oldRemote, newRemote, newUrl, newPushUrl, clearPushUrl, true); },
         false,
-        { title: "修改远程地址", detailsHtml: `<div style='margin-bottom:6px'><b>旧地址：</b>${escapeHtml(data.oldUrl || "未知")}</div><div style='margin-bottom:6px'><b>新地址：</b>${escapeHtml(data.newUrl || newUrl)}</div><div><b>推送地址：</b>${escapeHtml(data.newPushUrl || data.newUrl || newUrl)}</div><div style='margin-top:8px;color:var(--hana-fg-muted,#6b7280)'>远程名称、默认角色和远程分支不会改变；新地址会先验证可访问性。</div>` }
+        { title: "修改远程", detailsHtml: `<div style='margin-bottom:6px'><b>远程名称：</b>${escapeHtml(oldRemote)} ${nameChanged ? `→ <b>${escapeHtml(newRemote)}</b>` : "（保持不变）"}</div><div style='margin-bottom:6px'><b>获取地址：</b>${newUrl ? escapeHtml(data.newUrl || newUrl) : "（保持不变）"}</div><div style='margin-bottom:6px'><b>推送地址：</b>${pushSummary}</div><div style='margin-top:8px;color:var(--hana-fg-muted,#6b7280)'>新的获取/推送地址会分别验证可访问性；失败时名称、地址和默认角色设置都会恢复。</div>` }
       );
+      return;
+    }
+    if (data.code === "REMOTE_CHANGED") {
+      _remoteUrlEditConfirmation = null;
+      toast("远程配置已变化，请刷新后重新修改", "err");
+      loadLocalRemotes();
       return;
     }
     if (!data.ok) {
-      const result = document.getElementById("remoteUrlEditResult");
-      if (result) result.textContent = data.message || "修改远程地址失败";
-      toast("❌ " + (data.message || "修改远程地址失败"), "err");
+      const current = document.getElementById("remoteUrlEditResult");
+      if (current) current.textContent = data.message || "修改远程失败";
+      toast("❌ " + (data.message || "修改远程失败"), "err");
       return;
     }
+    _remoteUrlEditConfirmation = null;
     closeRemoteUrlEdit();
-    toast(`✅ ${remote} 地址已更新并验证`, "success");
-    loadLocalRemotes(remote, "");
-  } catch (e) { toast("修改远程地址失败：" + e.message, "err"); }
-}
-
-function renameLocalRemote(remoteInfo) {
-  const oldRemote = remoteInfo && remoteInfo.name ? remoteInfo.name : "";
-  if (!oldRemote) return;
-  customPrompt(`重命名远程：${oldRemote}`, oldRemote, function(value) {
-    const newRemote = String(value || "").trim();
-    if (!newRemote || newRemote === oldRemote) return;
-    performRenameLocalRemote(oldRemote, newRemote, false);
-  });
-}
-
-async function performRenameLocalRemote(oldRemote, newRemote, confirmed) {
-  const p = currentPath || getSavedPath();
-  if (!p) return;
-  try {
-    const res = await fetch(apiUrl("/api/remote-rename"), {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: p, oldRemote, newRemote, confirmed: !!confirmed }),
-    });
-    const data = await res.json();
-    if (data.code === "REMOTE_RENAME_CONFIRM") {
-      showConfirm(
-        `确定将本地远程 ${oldRemote} 重命名为 ${newRemote} 吗？`,
-        "确认重命名远程",
-        function(ok) { if (ok) performRenameLocalRemote(oldRemote, newRemote, true); },
-        false,
-        { title: "重命名远程", detailsHtml: `<div style='margin-bottom:6px'><b>远程地址：</b>${escapeHtml(data.currentUrl || "未知")}</div><div style='margin-bottom:6px'><b>默认推送：</b>${escapeHtml(data.pushRemote || "未设置")}</div><div><b>默认获取：</b>${escapeHtml(data.fetchRemote || "未设置")}</div><div style='margin-top:8px;color:var(--hana-fg-muted,#6b7280)'>本地远程跟踪分支和插件默认远程设置会一起迁移。</div>` }
-      );
-      return;
-    }
-    if (!data.ok) { toast("❌ " + (data.message || "重命名远程失败"), "err"); return; }
-    toast(`✅ 已将 ${oldRemote} 重命名为 ${newRemote}`, "success");
-    loadLocalRemotes(newRemote, "");
-  } catch (e) { toast("重命名远程失败：" + e.message, "err"); }
+    toast("✅ " + (data.message || "远程已更新"), "success");
+    loadLocalRemotes(data.newRemote || newRemote, "");
+  } catch (e) { toast("修改远程失败：" + e.message, "err"); }
 }
 
 function toggleRemoteAddForm(forceOpen) {
@@ -2387,6 +2469,7 @@ function renderLocalRemotes(data) {
   el.textContent = "";
   data.remotes.forEach(function(remoteInfo) {
     const branch = remoteInfo.remoteBranch || remoteInfo.defaultBranch || "";
+    const overwriteBranch = branch || data.branch || "";
     const status = remoteStatusInfo(remoteInfo, data.detached);
     const role = remoteRoleInfo(remoteInfo);
     const card = document.createElement("div");
@@ -2491,6 +2574,9 @@ function renderLocalRemotes(data) {
     actions.appendChild(fetchButton);
     if (remoteInfo.hasRemoteBranch && remoteInfo.remoteAhead > 0 && branch && !data.detached) {
       actions.appendChild(remoteButton(`合并 ${remoteInfo.remoteAhead} 个提交`, true, "merge", remoteInfo.name, branch));
+    }
+    if (overwriteBranch && !data.detached) {
+      actions.appendChild(remoteButton("覆盖远程", false, "overwrite", remoteInfo.name, overwriteBranch, true));
     }
     const hint = document.createElement("span");
     hint.className = "remote-action-hint";
