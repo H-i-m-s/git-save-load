@@ -205,7 +205,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
 #ghConnectRepoStatus,#ghConnectResult,#ghCreateResult,#ghCloneResult,#ghSearchStatus,#ghSearchResult{
   min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;line-height:1.5;
 }
-#ghConnectRepoRow .hana-select{width:100%;min-width:0;flex:1}
+#ghConnectRepoRow .hana-select,.remote-add-modal-card .hana-select{width:100%;min-width:0;flex:1}
 #ghConnectRepoSelect{min-width:0;width:100%}
 /* 远程仓库管理：身份、状态、分支和操作分层，避免所有控件挤在一行 */
 .remote-section-header{display:flex;align-items:center;gap:8px;margin:1px 0 8px}
@@ -276,6 +276,14 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .remote-add-form input{width:100%;min-width:0;height:28px;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24);font:inherit;font-size:11px;outline:none}
 .remote-add-form input:focus{border-color:var(--hana-accent,#5e6ad2);box-shadow:0 0 0 3px color-mix(in srgb,var(--hana-accent,#5e6ad2) 12%,transparent)}
 .remote-url-edit-label{margin-top:6px;margin-bottom:4px;color:var(--hana-fg-muted,#6b7280);font-size:10px}
+.remote-add-modal-card input{width:100%;height:30px;padding:6px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);font:inherit;font-size:11px;outline:none;box-sizing:border-box}
+.remote-add-modal-card input:focus{border-color:var(--hana-accent,#5e6ad2);box-shadow:0 0 0 3px color-mix(in srgb,var(--hana-accent,#5e6ad2) 12%,transparent)}
+.remote-modal-field{margin-top:12px}
+.remote-modal-field:first-of-type{margin-top:0}
+.remote-modal-field>label{display:block;margin-bottom:5px;color:var(--hana-fg-muted,#6b7280);font-size:10px}
+.remote-modal-or{display:flex;align-items:center;gap:7px;color:var(--hana-fg-subtle,#9ca3af);font-size:9px}
+.remote-modal-or::before,.remote-modal-or::after{content:"";height:1px;flex:1;background:var(--hana-border,#e2e5ea)}
+.remote-modal-field .remote-form-row{margin-top:0}
 .remote-url-edit-row{display:flex;align-items:center;gap:5px;min-width:0}
 .remote-url-edit-row .hana-select{min-width:0;flex:1;width:100%;box-sizing:border-box;font-size:11px}
 .remote-url-edit-or{display:flex;align-items:center;gap:7px;margin:10px 0 7px;color:var(--hana-fg-subtle,#9ca3af);font-size:9px}
@@ -905,26 +913,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
     <div class="remote-section-note">一个本地仓库可以连接多个远程。<code>origin</code> 和 <code>upstream</code> 只是常见命名，实际操作以每张远程卡片为准。</div>
     <div id="ghRemoteList" class="remote-list" aria-live="polite">正在读取本地远程...</div>
     <div class="remote-add-launch">
-      <button id="ghAddRemoteToggle" class="remote-add-toggle" type="button" aria-expanded="false" onclick="toggleRemoteAddForm()">＋ 添加远程</button>
-    </div>
-    <div id="ghAddRemoteForm" class="remote-add-form" style="display:none">
-      <div class="remote-add-form-title">添加或更新远程</div>
-      <div class="remote-add-form-note">已有同名远程时会先显示旧地址，并要求确认替换。</div>
-      <div id="ghConnectRepoRow" class="remote-form-row">
-        <div id="ghConnectRepoSelectWrap" style="display:flex;flex:1;min-width:0">
-          <select id="ghConnectRepoSelect" onchange="onGhConnectRepoSelect()" style="width:100%;font-size:12px">
-            <option value="">从我的 GitHub 仓库中选择</option>
-          </select>
-        </div>
-        <button class="remote-form-secondary" type="button" onclick="loadGhConnectRepos()">刷新列表</button>
-      </div>
-      <input type="text" id="ghConnectUrl" placeholder="或输入远程 URL，如 https://github.com/user/repo.git" autocomplete="off" onkeydown="ghConnectEnter(event)">
-      <div class="remote-form-row remote-form-submit-row">
-        <input type="text" id="ghConnectRemote" value="origin" placeholder="远程名称" autocomplete="off">
-        <button class="remote-form-primary" type="button" onclick="ghConnectRepo()">添加 / 更新</button>
-      </div>
-      <div id="ghConnectRepoStatus" class="remote-form-status"></div>
-      <div id="ghConnectResult" class="remote-form-result"></div>
+      <button id="ghAddRemoteToggle" class="remote-add-toggle" type="button" aria-expanded="false" onclick="openRemoteAddModal()">＋ 添加远程</button>
     </div>
   </div>
 
@@ -1124,6 +1113,35 @@ select:disabled{opacity:.5;cursor:not-allowed}
     <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:12px">
       <button type="button" class="remote-form-secondary" onclick="closeRemoteUrlEdit()">取消</button>
       <button type="button" class="remote-form-primary" onclick="submitRemoteUrlEdit()">验证并更新</button>
+    </div>
+  </div>
+</div>
+
+<!-- 添加或更新远程弹窗 -->
+<div id="remoteAddModal" style="display:none;position:fixed;inset:0;z-index:2500;background:rgba(0,0,0,.34);align-items:center;justify-content:center;padding:16px;box-sizing:border-box" onclick="if(event.target===this)closeRemoteAddModal()">
+  <div class="remote-add-modal-card" style="width:430px;max-width:100%;background:var(--hana-surface,#fff);border:1px solid var(--hana-border,#d0d5dd);border-radius:10px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.2);color:var(--hana-fg,#1a1d24)">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+      <div style="font-size:13px;font-weight:650;flex:1">添加或更新远程</div>
+      <button type="button" onclick="closeRemoteAddModal()" style="border:0;background:transparent;color:var(--hana-fg-muted,#6b7280);font-size:18px;cursor:pointer">×</button>
+    </div>
+    <div style="font-size:10px;color:var(--hana-fg-muted,#6b7280);line-height:15px;margin-bottom:12px">已有同名远程时会先显示旧地址，并要求确认替换。</div>
+    <div class="remote-modal-field">
+      <label>选择我的 GitHub 仓库</label>
+      <div class="remote-form-row">
+        <div id="ghConnectRepoSelectWrap" style="display:flex;flex:1;min-width:0">
+          <select id="ghConnectRepoSelect" onchange="onGhConnectRepoSelect()" style="width:100%;font-size:12px"><option value="">从我的 GitHub 仓库中选择</option></select>
+        </div>
+        <button class="remote-form-secondary" type="button" onclick="loadGhConnectRepos()">刷新列表</button>
+      </div>
+    </div>
+    <div class="remote-modal-field remote-modal-or"><span>或手动输入 URL</span></div>
+    <div class="remote-modal-field"><label for="ghConnectUrl">远程 URL</label><input type="text" id="ghConnectUrl" placeholder="https://github.com/user/repo.git" autocomplete="off" onkeydown="ghConnectEnter(event)"></div>
+    <div class="remote-modal-field"><label for="ghConnectRemote">远程名称</label><input type="text" id="ghConnectRemote" value="origin" placeholder="例如 origin" autocomplete="off"></div>
+    <div id="ghConnectRepoStatus" class="remote-form-status"></div>
+    <div id="ghConnectResult" class="remote-form-result"></div>
+    <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:15px">
+      <button type="button" class="remote-form-secondary" onclick="closeRemoteAddModal()">取消</button>
+      <button class="remote-form-primary" type="button" onclick="ghConnectRepo()">添加 / 更新</button>
     </div>
   </div>
 </div>
@@ -1915,6 +1933,16 @@ function requestHostResize() {
 }
 
 // ======== GitHub 面板 ========
+var GH_TAB_STORAGE_KEY = "git-save-load-gh-tab";
+
+function getSavedGhTab() {
+  try { return localStorage.getItem(GH_TAB_STORAGE_KEY) || "create"; } catch { return "create"; }
+}
+
+function saveGhTab(tab) {
+  try { localStorage.setItem(GH_TAB_STORAGE_KEY, tab); } catch {}
+}
+
 function toggleGhPanel() {
   var body = document.getElementById("ghBody");
   var toggle = document.getElementById("ghToggle");
@@ -1926,7 +1954,7 @@ function toggleGhPanel() {
   } else {
     body.style.maxHeight = "0px";
     if (toggle) toggle.textContent = "▾";
-    switchGhTab("create");
+    switchGhTab(getSavedGhTab());
     requestAnimationFrame(updateGhBodyHeight);
   }
   requestHostResize();
@@ -2000,6 +2028,9 @@ function showGhHelp(e) {
 }
 
 function switchGhTab(tab) {
+  const validTabs = ["create", "connect", "clone", "list", "search"];
+  if (!validTabs.includes(tab)) tab = "create";
+  saveGhTab(tab);
   ensureGhOpen();
   document.querySelectorAll(".gh-tab-content").forEach(el => el.style.display = "none");
   document.querySelectorAll(".gh-tab").forEach(btn => {
@@ -2048,7 +2079,7 @@ function ghConnectEnter(e) {
 function selectGhRepoForConnect(url) {
   ensureGhOpen();
   switchGhTab("connect");
-  toggleRemoteAddForm(true);
+  openRemoteAddModal();
   const input = document.getElementById("ghConnectUrl");
   const select = document.getElementById("ghConnectRepoSelect");
   if (input) input.value = url || "";
@@ -2406,15 +2437,38 @@ async function performEditLocalRemote(oldRemote, newRemote, newUrl, newPushUrl, 
   } catch (e) { toast("修改远程失败：" + e.message, "err"); }
 }
 
-function toggleRemoteAddForm(forceOpen) {
-  const form = document.getElementById("ghAddRemoteForm");
-  const toggle = document.getElementById("ghAddRemoteToggle");
-  if (!form || !toggle) return;
-  const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : form.style.display === "none";
-  form.style.display = shouldOpen ? "block" : "none";
-  toggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
-  toggle.textContent = shouldOpen ? "× 收起添加" : "＋ 添加远程";
+function openRemoteAddModal() {
+  ensureGhOpen();
+  switchGhTab("connect");
+  const modal = document.getElementById("remoteAddModal");
+  const url = document.getElementById("ghConnectUrl");
+  const remote = document.getElementById("ghConnectRemote");
+  const result = document.getElementById("ghConnectResult");
+  const status = document.getElementById("ghConnectRepoStatus");
+  if (url) url.value = "";
+  if (remote && !remote.value.trim()) remote.value = "origin";
+  if (result) result.textContent = "";
+  if (status) status.textContent = "";
+  if (modal) modal.style.display = "flex";
+  loadGhConnectRepos();
+  setTimeout(function() { if (url) url.focus(); }, 50);
+}
+
+function closeRemoteAddModal() {
+  const modal = document.getElementById("remoteAddModal");
+  const select = document.getElementById("ghConnectRepoSelect");
+  if (select && select._hanaSelect) {
+    select._hanaSelect.close();
+    select.value = "";
+    select._hanaSelect.sync();
+  }
+  if (modal) modal.style.display = "none";
   updateGhBodyHeight();
+}
+
+function toggleRemoteAddForm(forceOpen) {
+  if (forceOpen === false) closeRemoteAddModal();
+  else openRemoteAddModal();
 }
 
 function renderRemoteOverview(data) {
@@ -2716,6 +2770,7 @@ async function ghConnectRepo(confirmed) {
     const data = await res.json();
     if (data.code === "REMOTE_REPLACE_CONFIRM") {
       el.textContent = "";
+      closeRemoteAddModal();
       showConfirm(
         `当前本地仓库的 ${data.remote} 已经关联到一个远程仓库，是否替换？`,
         "替换远程关联",
@@ -2737,7 +2792,7 @@ async function ghConnectRepo(confirmed) {
       _repoInfoCache.delete(p);
       refresh();
       loadLocalRemotes();
-      toggleRemoteAddForm(false);
+      closeRemoteAddModal();
       toast("✅ 已连接 GitHub 仓库", "success");
     }
   } catch (e) { el.textContent = "❌ " + e.message; updateGhBodyHeight(); }
