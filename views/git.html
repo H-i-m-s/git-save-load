@@ -902,7 +902,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
         <div class="remote-section-title">远程仓库</div>
         <div class="remote-section-subtitle">管理获取来源与推送目标</div>
       </div>
-      <button class="remote-refresh-btn" type="button" onclick="loadLocalRemotes()" title="重新读取本地远程仓库">↻ <span>刷新</span></button>
+      <button class="remote-refresh-btn" type="button" onclick="loadLocalRemotes(undefined, undefined, undefined, true)" title="重新读取本地远程仓库">↻ <span>刷新</span></button>
     </div>
     <div class="remote-overview" aria-live="polite">
       <div class="remote-overview-item"><span class="remote-overview-label">当前分支</span><code id="ghRemoteCurrentBranch">读取中…</code></div>
@@ -1100,7 +1100,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
       <div id="remoteUrlRepoSelectWrap" style="display:flex;flex:1;min-width:0">
         <select id="remoteUrlRepoSelect" style="width:100%;font-size:11px"><option value="">点击加载我的 GitHub 仓库</option></select>
       </div>
-      <button type="button" class="remote-form-secondary" onclick="loadRemoteUrlRepos()">刷新</button>
+      <button type="button" class="remote-form-secondary" onclick="loadRemoteUrlRepos(true)">刷新</button>
     </div>
     <div class="remote-url-edit-or"><span>或手动输入地址</span></div>
     <div class="remote-url-edit-label">获取地址（fetch）</div>
@@ -1131,7 +1131,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
         <div id="ghConnectRepoSelectWrap" style="display:flex;flex:1;min-width:0">
           <select id="ghConnectRepoSelect" onchange="onGhConnectRepoSelect()" style="width:100%;font-size:12px"><option value="">从我的 GitHub 仓库中选择</option></select>
         </div>
-        <button class="remote-form-secondary" type="button" onclick="loadGhConnectRepos()">刷新列表</button>
+        <button class="remote-form-secondary" type="button" onclick="loadGhConnectRepos(true)">刷新列表</button>
       </div>
     </div>
     <div class="remote-modal-field remote-modal-or"><span>或手动输入 URL</span></div>
@@ -1343,8 +1343,15 @@ Cards.refreshAll = function() {
   }
 };
 
-// ======== 缓存机制（避免重复请求，10秒有效） ========
+// ======== 缓存机制与后台预加载 ========
 var CACHE_TTL = 10000;
+var REMOTE_CACHE_TTL = 15000;
+var GH_REPO_CACHE_TTL = 300000;
+var remoteDataCache = new Map();
+var ghRepoCache = { data: null, fetchedAt: 0, promise: null, generation: 0 };
+var _backgroundWarmupTimer = null;
+var _lastBackgroundRefreshAt = 0;
+
 function cacheSet(key, data) {
   try { localStorage.setItem("gsl-cache-" + key, JSON.stringify({ t: Date.now(), d: data })); } catch {}
 }
@@ -1355,11 +1362,93 @@ function cacheGet(key) {
   } catch {}
   return null;
 }
+function repoCacheKey(path) {
+  return String(path || "").trim().replace(/[\\/]+$/, "").toLowerCase();
+}
+function remoteCacheKey(path, preferredRemote, preferredBranch) {
+  return repoCacheKey(path) + "|" + String(preferredRemote || "") + "|" + String(preferredBranch || "");
+}
+function invalidateRemoteCache(path) {
+  var key = repoCacheKey(path);
+  if (!key) { remoteDataCache.clear(); return; }
+  Array.from(remoteDataCache.keys()).forEach(function(cacheKey) {
+    if (cacheKey.indexOf(key + "|") === 0) remoteDataCache.delete(cacheKey);
+  });
+}
+function invalidateGhRepoCache() {
+  ghRepoCache.data = null;
+  ghRepoCache.fetchedAt = 0;
+  ghRepoCache.generation += 1;
+}
+function invalidateRepoCaches(path) {
+  var p = String(path || currentPath || getSavedPath()).trim();
+  invalidateRemoteCache(p);
+  try {
+    var prefix = p ? "status-" + p : "";
+    var keys = Object.keys(localStorage).filter(function(k) { return k.startsWith("gsl-cache-"); });
+    keys.forEach(function(k) {
+      if (!prefix || k === "gsl-cache-" + prefix) localStorage.removeItem(k);
+    });
+  } catch {}
+}
 function cacheClear() {
   try {
     var keys = Object.keys(localStorage).filter(function(k) { return k.startsWith("gsl-cache-"); });
     keys.forEach(function(k) { localStorage.removeItem(k); });
   } catch {}
+  remoteDataCache.clear();
+}
+
+function requestGhRepos(force) {
+  var now = Date.now();
+  if (!force && ghRepoCache.data && now - ghRepoCache.fetchedAt < GH_REPO_CACHE_TTL) {
+    return Promise.resolve(ghRepoCache.data);
+  }
+  if (!force && ghRepoCache.promise) return ghRepoCache.promise;
+  var generation = ++ghRepoCache.generation;
+  var promise = fetch(apiUrl("/api/gh/list"))
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (generation === ghRepoCache.generation && data && data.ok && Array.isArray(data.repos)) {
+        ghRepoCache.data = data;
+        ghRepoCache.fetchedAt = Date.now();
+      }
+      return data;
+    })
+    .finally(function() {
+      if (generation === ghRepoCache.generation) ghRepoCache.promise = null;
+    });
+  ghRepoCache.promise = promise;
+  return promise;
+}
+
+function scheduleBackgroundWarmup(path, delay) {
+  var p = String(path || currentPath || getSavedPath()).trim();
+  if (!p) return;
+  if (_backgroundWarmupTimer) clearTimeout(_backgroundWarmupTimer);
+  _backgroundWarmupTimer = setTimeout(function() {
+    _backgroundWarmupTimer = null;
+    var target = currentPath || getSavedPath();
+    if (!target || repoCacheKey(target) !== repoCacheKey(p)) return;
+    loadLocalRemotes(undefined, undefined, target, false);
+    loadStash();
+    loadNextVersion();
+    requestGhRepos(false).catch(function() {});
+  }, typeof delay === "number" ? delay : 0);
+}
+
+function setupBackgroundRefresh() {
+  if (setupBackgroundRefresh._bound) return;
+  setupBackgroundRefresh._bound = true;
+  var refreshIfStale = function() {
+    if (document.visibilityState && document.visibilityState !== "visible") return;
+    var now = Date.now();
+    if (now - _lastBackgroundRefreshAt < 30000) return;
+    _lastBackgroundRefreshAt = now;
+    scheduleBackgroundWarmup(currentPath || getSavedPath(), 0);
+  };
+  document.addEventListener("visibilitychange", refreshIfStale);
+  window.addEventListener("focus", refreshIfStale);
 }
 
 // ======== 卡片拖拽排序 ========
@@ -2043,8 +2132,8 @@ function switchGhTab(tab) {
   if (btn) { btn.style.background = "var(--hana-accent,#4a8cff)"; btn.style.color = "#fff"; }
   // 切换标签后重算高度，避免上一个标签的 maxHeight 抢占造成内容溢出
   updateGhBodyHeight();
-  if (tab === "connect") { loadGhConnectRepos(); loadLocalRemotes(); }
-  if (tab === "list") loadGhList();
+  if (tab === "connect") { loadGhConnectRepos(false); loadLocalRemotes(); }
+  if (tab === "list") loadGhList(false);
 }
 
 // 重新贴合 ghBody 高度。逻辑：只有在打开状态才设，避免收起时无关赋值
@@ -2091,18 +2180,20 @@ function selectGhRepoForConnect(url) {
   if (result) result.textContent = "已把仓库地址带入关联表单，请确认后点击“关联当前仓库”。";
 }
 
-async function loadGhConnectRepos() {
+async function loadGhConnectRepos(force) {
   const select = document.getElementById("ghConnectRepoSelect");
   const status = document.getElementById("ghConnectRepoStatus");
   if (!select || select.dataset.loading === "1") return;
   select.dataset.loading = "1";
-  if (status) status.textContent = "正在读取 GitHub 仓库...";
+  if (status) status.textContent = force ? "正在刷新 GitHub 仓库..." : "正在读取 GitHub 仓库...";
   updateGhBodyHeight();
-  select.innerHTML = '<option value="">加载我的 GitHub 仓库...</option>';
-  if (select._hanaSelect) select._hanaSelect.replaceOptions(select.options);
+  const cached = !force && ghRepoCache.data;
+  if (!cached) {
+    select.innerHTML = '<option value="">加载我的 GitHub 仓库...</option>';
+    if (select._hanaSelect) select._hanaSelect.replaceOptions(select.options);
+  }
   try {
-    const res = await fetch(apiUrl("/api/gh/list"));
-    const data = await res.json();
+    const data = await requestGhRepos(!!force);
     if (!data.ok || !Array.isArray(data.repos)) throw new Error(data.message || "加载失败");
     select.innerHTML = '<option value="">请选择一个仓库</option>' + data.repos.map(function(repo) {
       const label = (repo.owner?.login ? repo.owner.login + "/" : "") + repo.name + (repo.isPrivate ? " 🔒" : "");
@@ -2248,13 +2339,14 @@ async function performRemoteOverwrite(button, context) {
     if (data.ok) {
       button.textContent = "✅ 已覆盖";
       toast("✅ " + data.message, "success");
-      setTimeout(function() { loadLocalRemotes(context.remote, context.remoteBranch); }, 500);
+      invalidateRemoteCache(p);
+      setTimeout(function() { loadLocalRemotes(context.remote, context.remoteBranch, undefined, true); }, 500);
       return;
     }
     button.disabled = false;
     button.textContent = original;
     toast("❌ " + (data.message || "覆盖远程失败"), "err");
-    if (data.code === "REMOTE_CHANGED" || data.code === "LOCAL_CHANGED") loadLocalRemotes(context.remote, context.remoteBranch);
+    if (data.code === "REMOTE_CHANGED" || data.code === "LOCAL_CHANGED") { invalidateRemoteCache(p); loadLocalRemotes(context.remote, context.remoteBranch, undefined, true); }
   } catch (e) {
     button.disabled = false;
     button.textContent = original;
@@ -2273,7 +2365,8 @@ async function setRemoteRole(remote, role) {
     const data = await res.json();
     if (!data.ok) { toast("❌ " + (data.message || "设置远程角色失败"), "err"); return; }
     toast("✅ " + data.message, "success");
-    loadLocalRemotes(remote, "");
+    invalidateRemoteCache(p);
+    loadLocalRemotes(remote, "", undefined, true);
   } catch (e) { toast("设置远程角色失败：" + e.message, "err"); }
 }
 
@@ -2335,15 +2428,14 @@ function closeRemoteUrlEdit(preserveConfirmation) {
   updateGhBodyHeight();
 }
 
-async function loadRemoteUrlRepos() {
+async function loadRemoteUrlRepos(force) {
   const select = document.getElementById("remoteUrlRepoSelect");
   if (!select || select.dataset.loading === "1") return;
   select.dataset.loading = "1";
   select.innerHTML = '<option value="">正在加载 GitHub 仓库...</option>';
   if (select._hanaSelect) select._hanaSelect.replaceOptions(select.options);
   try {
-    const res = await fetch(apiUrl("/api/gh/list"));
-    const data = await res.json();
+    const data = await requestGhRepos(!!force);
     if (!data.ok || !Array.isArray(data.repos)) throw new Error(data.message || "加载失败");
     select.innerHTML = '<option value="">请选择一个仓库</option>' + data.repos.map(function(repo) {
       const owner = repo.owner && repo.owner.login ? repo.owner.login + "/" : "";
@@ -2433,7 +2525,8 @@ async function performEditLocalRemote(oldRemote, newRemote, newUrl, newPushUrl, 
     _remoteUrlEditConfirmation = null;
     closeRemoteUrlEdit();
     toast("✅ " + (data.message || "远程已更新"), "success");
-    loadLocalRemotes(data.newRemote || newRemote, "");
+    invalidateRemoteCache(p);
+    loadLocalRemotes(data.newRemote || newRemote, "", undefined, true);
   } catch (e) { toast("修改远程失败：" + e.message, "err"); }
 }
 
@@ -2450,7 +2543,7 @@ function openRemoteAddModal() {
   if (result) result.textContent = "";
   if (status) status.textContent = "";
   if (modal) modal.style.display = "flex";
-  loadGhConnectRepos();
+  loadGhConnectRepos(false);
   setTimeout(function() { if (url) url.focus(); }, 50);
 }
 
@@ -2646,35 +2739,50 @@ function renderLocalRemotes(data) {
 function onCurrentRepoChanged(path) {
   const normalized = String(path || "").trim();
   _remotePanelPath = normalized;
+  invalidateRemoteCache(normalized);
   _remoteLoadGeneration++;
   const el = document.getElementById("ghRemoteList");
   if (el) el.innerHTML = normalized
     ? '<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在切换远程仓库...</div>'
     : '<div style="font-size:10px;color:#c0392b">请先选择本地仓库</div>';
-  if (normalized) loadLocalRemotes(undefined, undefined, normalized);
+  if (normalized) loadLocalRemotes(undefined, undefined, normalized, false);
   else renderRemoteOverview({ remotes: [], branch: "", pushRemote: "", fetchRemote: "" });
 }
 
-async function loadLocalRemotes(preferredRemote, preferredBranch, requestedPath) {
+async function loadLocalRemotes(preferredRemote, preferredBranch, requestedPath, force) {
   const p = String(requestedPath || currentPath || getSavedPath()).trim();
   const generation = ++_remoteLoadGeneration;
   _remotePanelPath = p;
   const el = document.getElementById("ghRemoteList");
   if (!p) { if (el) el.innerHTML = '<div style="font-size:10px;color:#c0392b">请先选择本地仓库</div>'; return; }
-  if (el && p === currentPath) el.innerHTML = '<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在读取本地远程...</div>';
+  const cacheKey = remoteCacheKey(p, preferredRemote, preferredBranch);
+  const cached = remoteDataCache.get(cacheKey);
+  if (!force && cached && cached.promise) return cached.promise;
+  if (!force && cached && cached.data) {
+    renderLocalRemotes(cached.data);
+    refreshDefaultRemoteLabels(cached.data);
+    if (Date.now() - cached.fetchedAt < REMOTE_CACHE_TTL) return cached.data;
+  } else if (el && p === currentPath) {
+    el.innerHTML = '<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在读取本地远程...</div>';
+  }
   try {
     const query = "/api/remotes?path=" + encodeURIComponent(p)
       + (preferredRemote ? "&remote=" + encodeURIComponent(preferredRemote) : "")
       + (preferredBranch ? "&remoteBranch=" + encodeURIComponent(preferredBranch) : "");
-    const res = await fetch(apiUrl(query));
-    const data = await res.json();
-    if (generation !== _remoteLoadGeneration || p !== currentPath || p !== _remotePanelPath) return;
+    const request = fetch(apiUrl(query)).then(function(res) { return res.json(); });
+    remoteDataCache.set(cacheKey, { promise: request, fetchedAt: cached && cached.fetchedAt || 0, data: cached && cached.data || null });
+    const data = await request;
+    if (generation !== _remoteLoadGeneration || p !== currentPath || p !== _remotePanelPath) return data;
+    remoteDataCache.set(cacheKey, { data: data, fetchedAt: Date.now(), promise: null });
     renderLocalRemotes(data);
-    refreshDefaultRemoteLabels();
+    refreshDefaultRemoteLabels(data);
+    return data;
   } catch (e) {
-    if (generation !== _remoteLoadGeneration || p !== currentPath || p !== _remotePanelPath) return;
+    remoteDataCache.delete(cacheKey);
+    if (generation !== _remoteLoadGeneration || p !== currentPath || p !== _remotePanelPath) return null;
     renderLocalRemotes({ ok: false, message: e.message });
     refreshDefaultRemoteLabels();
+    return null;
   }
 }
 
@@ -2687,13 +2795,15 @@ async function fetchRemoteUpdates(remote, remoteBranch) {
     const res = await fetch(apiUrl("/api/remote-fetch"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p, remote, remoteBranch: remoteBranch || "" }) });
     const data = await res.json();
     if (data.ok) {
+      invalidateRemoteCache(p);
       toast(`✅ ${remote} 已更新`, "success");
-      loadLocalRemotes(remote, data.remoteBranch || remoteBranch || "");
+      loadLocalRemotes(remote, data.remoteBranch || remoteBranch || "", undefined, true);
     } else {
-      loadLocalRemotes();
+      invalidateRemoteCache(p);
+      loadLocalRemotes(undefined, undefined, undefined, true);
       toast("❌ " + data.message, "err");
     }
-  } catch (e) { loadLocalRemotes(); toast("获取更新失败：" + e.message, "err"); }
+  } catch (e) { invalidateRemoteCache(p); loadLocalRemotes(undefined, undefined, undefined, true); toast("获取更新失败：" + e.message, "err"); }
 }
 
 function removeLocalRemote(remote) {
@@ -2710,6 +2820,7 @@ function removeLocalRemote(remote) {
 
 async function performRemoveLocalRemote(remote, confirmed) {
   const p = currentPath || getSavedPath();
+  invalidateRemoteCache(p);
   try {
     const res = await fetch(apiUrl("/api/remote-remove"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p, remote, confirmed: !!confirmed }) });
     const data = await res.json();
@@ -2725,8 +2836,9 @@ async function performRemoveLocalRemote(remote, confirmed) {
     }
     if (data.ok) toast("✅ " + data.message, "success");
     else toast("❌ " + data.message, "err");
-    loadLocalRemotes();
-  } catch (e) { toast("移除失败：" + e.message, "err"); }
+    invalidateRemoteCache(p);
+    loadLocalRemotes(undefined, undefined, undefined, true);
+  } catch (e) { invalidateRemoteCache(p); toast("移除失败：" + e.message, "err"); }
 }
 
 function mergeRemoteUpdates(remote, remoteBranch) {
@@ -2743,15 +2855,16 @@ function mergeRemoteUpdates(remote, remoteBranch) {
 
 async function performRemoteMerge(remote, remoteBranch) {
   const p = currentPath || getSavedPath();
+  invalidateRemoteCache(p);
   const el = document.getElementById("ghRemoteList");
   if (el) el.innerHTML = `<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在合并 ${escapeHtml(remote)} 更新...</div>`;
   try {
     const res = await fetch(apiUrl("/api/remote-merge"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p, remote, remoteBranch: remoteBranch || "" }) });
     const data = await res.json();
-    if (data.ok) { toast(`✅ 已合并 ${remote}/${data.remoteBranch || remoteBranch || "远程更新"}`, "success"); refresh(); switchGhTab("connect"); loadLocalRemotes(remote, data.remoteBranch || remoteBranch || ""); }
-    else if (data.code === "MERGE_CONFLICT") { toast("⚠️ 合并产生冲突，请在变更文件中解决", "err"); refresh(); switchGhTab("connect"); loadLocalRemotes(remote, remoteBranch || ""); }
-    else { toast("❌ " + data.message, "err"); loadLocalRemotes(remote, remoteBranch || ""); }
-  } catch (e) { toast("合并失败：" + e.message, "err"); loadLocalRemotes(remote, remoteBranch || ""); }
+    if (data.ok) { toast(`✅ 已合并 ${remote}/${data.remoteBranch || remoteBranch || "远程更新"}`, "success"); invalidateRemoteCache(p); refresh(); switchGhTab("connect"); loadLocalRemotes(remote, data.remoteBranch || remoteBranch || "", undefined, true); }
+    else if (data.code === "MERGE_CONFLICT") { toast("⚠️ 合并产生冲突，请在变更文件中解决", "err"); invalidateRemoteCache(p); refresh(); switchGhTab("connect"); loadLocalRemotes(remote, remoteBranch || "", undefined, true); }
+    else { toast("❌ " + data.message, "err"); invalidateRemoteCache(p); loadLocalRemotes(remote, remoteBranch || "", undefined, true); }
+  } catch (e) { toast("合并失败：" + e.message, "err"); invalidateRemoteCache(p); loadLocalRemotes(remote, remoteBranch || "", undefined, true); }
 }
 
 async function ghConnectRepo(confirmed) {
@@ -2790,8 +2903,9 @@ async function ghConnectRepo(confirmed) {
         if (repoSelect._hanaSelect) repoSelect._hanaSelect.sync();
       }
       _repoInfoCache.delete(p);
+      invalidateRemoteCache(p);
       refresh();
-      loadLocalRemotes();
+      loadLocalRemotes(undefined, undefined, undefined, true);
       closeRemoteAddModal();
       toast("✅ 已连接 GitHub 仓库", "success");
     }
@@ -2824,8 +2938,9 @@ async function ghCreateRepo() {
         const licenseSelect = document.getElementById("ghLicense")._hanaSelect;
         if (licenseSelect) licenseSelect.sync();
       }
-      loadGhList();
-      loadGhConnectRepos();
+      invalidateGhRepoCache();
+      loadGhList(true);
+      loadGhConnectRepos(true);
     }
   } catch (e) { el.textContent = "❌ " + e.message; updateGhBodyHeight(); }
 }
@@ -2891,43 +3006,36 @@ function bindGhRepoActions(container) {
   });
 }
 
-async function loadGhList() {
+function renderGhRepoList(data, el) {
+  if (!data || !data.ok || !Array.isArray(data.repos)) {
+    el.innerHTML = '<div style="padding:8px;color:#c0392b;font-size:11px">加载失败：' + escapeHtml((data && data.message) || "未知错误") + '</div><button onclick="loadGhList(true)" style="margin-top:4px;padding:3px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-accent,#5e6ad2);font-size:10px;cursor:pointer">重新加载</button>';
+    return;
+  }
+  document.getElementById("ghNotInstalled").style.display = "none";
+  ghRepoData = {};
+  data.repos.forEach(function(r) { ghRepoData[((r.owner && r.owner.login) || "") + "/" + r.name] = r; });
+  if (data.repos.length === 0) { el.innerHTML = '<div style="padding:8px;text-align:center;font-size:12px;color:var(--hana-fg-muted,#6b7280)">暂无仓库</div>'; return; }
+  el.innerHTML = data.repos.map(function(r) {
+    var repoName = ((r.owner && r.owner.login) || "") + "/" + r.name;
+    return '<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--hana-border,#eef0f2);font-size:12px" oncontextmenu="showGhCtxMenu(event,\'' + escapeAttr(repoName) + '\')">'
+      + '<span style="flex:1;min-width:0;overflow:hidden"><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600">' + escapeHtml(r.name) + '</span><span style="color:var(--hana-fg-muted,#6b7280);margin-left:4px">' + escapeHtml(r.owner?.login || '') + '</span>' + (r.isPrivate ? '<span style="font-size:10px;color:#e67e22">🔒</span>' : '') + '</span><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg-muted,#6b7280);font-size:10px">' + escapeHtml(r.description || "无描述") + (formatGhUpdatedAt(r.updatedAt) ? " · 更新于 " + escapeHtml(formatGhUpdatedAt(r.updatedAt)) : "") + '</span></span>'
+      + '<button class="gh-open-btn" data-url="' + escapeAttr(r.url || '') + '" style="padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:transparent;cursor:pointer;color:var(--hana-accent,#4a8cff);white-space:nowrap">打开</button>'
+      + '<button class="gh-copy-btn" data-url="' + escapeAttr(r.url || '') + '" style="padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:transparent;cursor:pointer;color:var(--hana-fg-muted,#6b7280);white-space:nowrap">复制地址</button></div>';
+  }).join('');
+  bindGhRepoActions(el);
+  var ghBody = document.getElementById("ghBody");
+  if (ghBody && ghBody.style.maxHeight !== "0px" && ghBody.style.maxHeight !== "") updateGhBodyHeight();
+}
+
+async function loadGhList(force) {
   const el = document.getElementById("ghRepoList");
   if (!el) return;
+  if (!force && ghRepoCache.data) { renderGhRepoList(ghRepoCache.data, el); return; }
   el.innerHTML = "加载中...";
   try {
-    const res = await fetch(apiUrl("/api/gh/list"));
-    const data = await res.json();
-    if (!data.ok || !data.repos) {
-      if (data.message && data.message.match(/gh.*(not found|not recognized|not installed|install)/i)) {
-        document.getElementById("ghNotInstalled").style.display = "";
-      }
-      el.innerHTML = '<div style="padding:8px;color:#c0392b;font-size:11px">加载失败：' + escapeHtml(data.message || "未知错误") + '</div><button onclick="loadGhList()" style="margin-top:4px;padding:3px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-accent,#4a8cff);font-size:10px;cursor:pointer">重新加载</button>'; return;
-    }
-    // 检测成功，隐藏未安装提示
-    document.getElementById("ghNotInstalled").style.display = "none";
-    // 缓存仓库完整数据（编辑弹窗预填用）
-    ghRepoData = {};
-    data.repos.forEach(function(r) { ghRepoData[((r.owner && r.owner.login) || "") + "/" + r.name] = r; });
-    if (data.repos.length === 0) { el.innerHTML = '<div style="padding:8px;text-align:center;font-size:12px;color:var(--hana-fg-muted,#6b7280)">暂无仓库</div>'; return; }
-    el.innerHTML = data.repos.map(r =>
-      `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--hana-border,#eef0f2);font-size:12px" oncontextmenu="showGhCtxMenu(event,'${escapeAttr(r.owner?.login || '')}/${escapeAttr(r.name)}')">
-        <span style="flex:1;min-width:0;overflow:hidden">
-          <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600">${escapeHtml(r.name)}</span><span style="color:var(--hana-fg-muted,#6b7280);margin-left:4px">${escapeHtml(r.owner?.login || '')}</span>${r.isPrivate ? '<span style="font-size:10px;color:#e67e22">🔒</span>' : ''}</span>
-          <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hana-fg-muted,#6b7280);font-size:10px">${escapeHtml(r.description || "无描述")}${formatGhUpdatedAt(r.updatedAt) ? " · 更新于 " + escapeHtml(formatGhUpdatedAt(r.updatedAt)) : ""}</span>
-        </span>
-        <button class="gh-open-btn" data-url="${escapeAttr(r.url || '')}" style="padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:transparent;cursor:pointer;color:var(--hana-accent,#4a8cff);white-space:nowrap">打开</button>
-        <button class="gh-copy-btn" data-url="${escapeAttr(r.url || '')}" style="padding:2px 6px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:transparent;cursor:pointer;color:var(--hana-fg-muted,#6b7280);white-space:nowrap">复制地址</button>
-      </div>`
-    ).join('');
-    bindGhRepoActions(el);
-    // 重新计算卡片高度
-    var ghBody = document.getElementById("ghBody");
-    if (ghBody && ghBody.style.maxHeight !== "0px" && ghBody.style.maxHeight !== "") {
-      updateGhBodyHeight();
-    }
+    renderGhRepoList(await requestGhRepos(!!force), el);
   } catch (e) {
-    el.innerHTML = '<div style="padding:8px;color:#c0392b;font-size:11px">加载失败：' + escapeHtml(e && e.message ? e.message : "未知错误") + '</div><button onclick="loadGhList()" style="margin-top:4px;padding:3px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:transparent;color:var(--hana-accent,#4a8cff);font-size:10px;cursor:pointer">重新加载</button>';
+    renderGhRepoList({ ok: false, message: e && e.message ? e.message : "未知错误" }, el);
   }
 }
 
@@ -3014,7 +3122,8 @@ async function submitGhEdit() {
       } else {
         toast("✅ " + (data.message || "仓库信息已更新"), "success");
       }
-      loadGhList();
+      invalidateGhRepoCache();
+      loadGhList(true);
     } else {
       el.style.color = "#c0392b";
       el.textContent = "❌ " + (data.message || "保存失败");
@@ -3054,7 +3163,7 @@ async function ghDeleteRepo() {
           body: JSON.stringify({ name: target, confirmed: true }),
         });
         const data = await res.json();
-        if (data.ok) { toast(`已删除 ${target}`, "success"); loadGhList(); }
+        if (data.ok) { toast(`已删除 ${target}`, "success"); invalidateGhRepoCache(); loadGhList(true); }
         else toast("❌ " + data.message, "err");
       } catch (e) { toast("❌ " + e.message, "err"); }
     },
@@ -4052,6 +4161,7 @@ function doRefreshAll() {
   compareCleanup();
   var btn = document.getElementById("btnRefresh");
   if (btn) btn.classList.add("spinning");
+  invalidateRepoCaches(currentPath || getSavedPath());
   cacheClear();
   window._refreshPending = 0;
   window._refreshDone = 0;
@@ -4069,16 +4179,15 @@ function doRefreshAll() {
   }, 3000);
 }
 
-async function refresh() {
+async function refresh(force) {
   compareCleanup();
   const btn = document.getElementById("btnRefresh");
-  btn.classList.add("spinning");
-  cacheClear();
-
+  if (btn) btn.classList.add("spinning");
+  const savedPath = getSavedPath();
+  if (force) invalidateRepoCaches(savedPath);
   try {
-    const savedPath = getSavedPath();
-    var cacheKey = "status-" + savedPath;
-    var status = cacheGet(cacheKey);
+    const cacheKey = "status-" + savedPath;
+    let status = force ? null : cacheGet(cacheKey);
     if (!status) {
       const p = savedPath ? "path=" + encodeURIComponent(savedPath) : "";
       const statusUrl = p ? apiUrl("/api/status?" + p) : apiUrl("/api/status");
@@ -4088,18 +4197,17 @@ async function refresh() {
     }
     renderStatus(status);
 
-    // 历史 + 版本号
+    // 首屏核心内容：状态先显示，提交记录立即并行加载，不等待后台卡片。
     if (status.ok) {
-      loadNextVersion();
-      resetLogPager(currentPath);
-      await loadLogPage(currentPath, false);
+      const path = currentPath;
+      resetLogPager(path);
+      loadLogPage(path, false);
+      scheduleBackgroundWarmup(path, 0);
     }
-    loadStash();
-    refreshDefaultRemoteLabels();
   } catch (e) {
     toast("刷新失败：" + e.message, "err");
   } finally {
-    btn.classList.remove("spinning");
+    if (btn) btn.classList.remove("spinning");
   }
 }
 
@@ -4561,6 +4669,7 @@ function renderLog(data, append) {
 
 // 提交
 async function doCommit() {
+  invalidateRepoCaches(currentPath || getSavedPath());
   cacheClear();
   Bus.emit("commit");
   const msg = document.getElementById("commitMsg").value.trim();
@@ -4711,12 +4820,11 @@ function setupCommitActionLayout() {
   syncCommitActionLayout();
 }
 
-async function refreshDefaultRemoteLabels() {
+async function refreshDefaultRemoteLabels(remoteData) {
   const p = currentPath || getSavedPath();
   if (!p) return;
   try {
-    const res = await fetch(apiUrl("/api/remotes?path=" + encodeURIComponent(p)));
-    const data = await res.json();
+    const data = remoteData || await loadLocalRemotes(undefined, undefined, p, false);
     if (!data || !data.ok) return;
     const pushBtn = document.getElementById("btnPush");
     const pullBtn = document.getElementById("btnPull");
@@ -4726,6 +4834,7 @@ async function refreshDefaultRemoteLabels() {
 }
 
 async function doPush(btn, forceContext) {
+  invalidateRepoCaches(currentPath || getSavedPath());
   cacheClear();
   Bus.emit("push");
   const p = currentPath || getSavedPath();
@@ -4782,6 +4891,7 @@ function getSavedPullMode() {
 }
 
 async function doPull(btn) {
+  invalidateRepoCaches(currentPath || getSavedPath());
   cacheClear();
   Bus.emit("pull");
   const p = currentPath || getSavedPath();
@@ -6002,6 +6112,7 @@ async function submitIdentitySetup() {
     if (p) { fetch(apiUrl("/api/stash/list?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){loadStash(); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success",{duration:1200,dismissEvent:"pointerdown"})}}catch{}}); }
   }});
   refresh();
+  setupBackgroundRefresh();
 
   loadSettingsUI();
   loadNextVersion();
