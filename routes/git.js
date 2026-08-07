@@ -275,17 +275,28 @@ function restoreConfiguredRemoteUrls(cwd, remote, urls, push = false) {
 function sanitizeRemoteUrl(value) {
   const url = String(value || "").trim();
   if (!url) return "";
+  // SCP-like SSH 地址中的 git 是协议固定用户，不是凭据；保留它有助于识别和回填 GitHub SSH 地址。
+  const scp = url.match(/^([^@\s]+)@([^:\s]+):(.+)$/);
+  if (scp) {
+    const user = scp[1];
+    const host = scp[2];
+    const path = scp[3];
+    return user.toLowerCase() === "git" ? `git@${host}:${path}` : `***@${host}:${path}`;
+  }
   try {
     if (/^(?:https?|ssh):\/\//i.test(url)) {
       const parsed = new URL(url);
       if (parsed.username || parsed.password) {
-        parsed.username = "***";
-        parsed.password = "";
+        if (parsed.username.toLowerCase() === "git" && !parsed.password) parsed.username = "git";
+        else {
+          parsed.username = "***";
+          parsed.password = "";
+        }
       }
       return parsed.toString().replace(/\/$/, "");
     }
   } catch {}
-  return url.replace(/^([^@\s]+)@([^:\s]+):/, "***@$2:");
+  return url;
 }
 
 function listRemoteBranches(cwd, remote) {
@@ -1886,7 +1897,9 @@ export default function (app, ctx) {
       args.push("--limit", "30", "--json", "name,owner,description,url,isPrivate,updatedAt,licenseInfo");
       const raw = ghExec(args);
       const repos = JSON.parse(raw);
-      return c.json({ ok: true, repos });
+      let viewerLogin = "";
+      try { viewerLogin = ghExec(["api", "user", "--jq", ".login"]); } catch {}
+      return c.json({ ok: true, repos, viewerLogin });
     } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "获取仓库列表失败" }); }
   });
 
@@ -2627,6 +2640,19 @@ export default function (app, ctx) {
       gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
       const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
       if (!names.includes(remote)) return c.json({ ok: false, message: `远程 ${remote} 不存在` });
+      const settings = await readRemoteSettings(ctx, path, names);
+      const isFetchOnly = settings.fetchRemote === remote && settings.pushRemote !== remote;
+      if (isFetchOnly) {
+        return c.json({
+          ok: false,
+          code: "REMOTE_OVERWRITE_PROTECTED",
+          protectedRole: "update-source",
+          remote,
+          pushRemote: settings.pushRemote,
+          fetchRemote: settings.fetchRemote,
+          message: `远程 ${remote} 当前是默认获取来源，只允许获取或合并更新，不能覆盖远程分支；请改用 ${settings.pushRemote || "默认推送目标"}`,
+        });
+      }
 
       const localBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
       if (!localBranch || !validateBranchName(path, localBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
