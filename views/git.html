@@ -1337,8 +1337,8 @@ Cards.register = function(id, config) {
   };
   // 订阅事件
   card.events.forEach(function(ev) {
-    Bus.on(ev, function() {
-      card.refresh();
+    Bus.on(ev, function(data) {
+      card.refresh(ev, data);
     });
   });
   Cards[id] = card;
@@ -4206,7 +4206,6 @@ function setBranchNote(name) {
 }
 
 async function deleteBranch(name) {
-  Bus.emit("branch-delete");
   var p = currentPath || getSavedPath();
   if (!p) return;
   try {
@@ -4215,7 +4214,7 @@ async function deleteBranch(name) {
       body: JSON.stringify({ name: name, path: p }),
     });
     var data = await res.json();
-    if (data.ok) { toast("🗑 已删除 " + name, "info"); renderBranchCanvas(); }
+    if (data.ok) { Bus.emit("branch-delete"); toast("🗑 已删除 " + name, "info"); renderBranchCanvas(); }
     else toast("❌ " + data.message, "err");
   } catch (e) { toast("删除失败：" + e.message, "err"); }
 }
@@ -4235,7 +4234,6 @@ function branchColor(name) {
 }
 
 async function switchBranch(name) {
-  Bus.emit("branch-switch");
   document.getElementById("ctxMenu").style.display = "none";
   var p = currentPath || getSavedPath();
   if (!p) return;
@@ -4245,7 +4243,7 @@ async function switchBranch(name) {
       body: JSON.stringify({ name: name, path: p }),
     });
     var data = await res.json();
-    if (data.ok) { toast("✅ 已切换到 " + name, "success"); exitBranchTree(); refresh(); }
+    if (data.ok) { Bus.emit("branch-switch"); toast("✅ 已切换到 " + name, "success"); exitBranchTree(); refresh(); }
     else toast("❌ " + data.message, "err");
   } catch (e) { toast("切换失败：" + e.message, "err"); }
 }
@@ -4412,27 +4410,57 @@ function setupLogInfiniteScroll() {
   cl.addEventListener("scroll", maybeLoadMoreLog, { passive: true });
 }
 
+// 手动刷新会话：普通提交/推送/拉取等事件只更新卡片，不显示“刷新完成”。
+var _refreshRunId = 0;
+var _refreshRun = null;
+
+function beginRefreshRun() {
+  const run = {
+    id: ++_refreshRunId,
+    pending: Bus._handlers["refresh-all"] ? Bus._handlers["refresh-all"].length : 0,
+    done: 0,
+    active: true,
+  };
+  _refreshRun = run;
+  window._refreshActive = true;
+  window._refreshRunId = run.id;
+  window._refreshPending = run.pending;
+  window._refreshDone = 0;
+  return run;
+}
+
+function markRefreshPartDone(runId) {
+  const run = _refreshRun;
+  if (!run || !run.active || !runId || run.id !== runId) return;
+  run.done += 1;
+  window._refreshDone = run.done;
+  if (run.done >= run.pending) finishRefreshRun(run.id);
+}
+
+function finishRefreshRun(runId) {
+  const run = _refreshRun;
+  if (!run || !run.active || run.id !== runId) return;
+  run.active = false;
+  window._refreshActive = false;
+  window._refreshDone = run.done;
+  const btn = document.getElementById("btnRefresh");
+  if (btn) btn.classList.remove("spinning");
+  toast("刷新完成", "success", { duration: 1200, dismissEvent: "pointerdown" });
+}
+
 // 刷新所有状态
 function doRefreshAll() {
   compareCleanup();
-  var btn = document.getElementById("btnRefresh");
+  const btn = document.getElementById("btnRefresh");
   if (btn) btn.classList.add("spinning");
   invalidateRepoCaches(currentPath || getSavedPath());
   cacheClear();
-  window._refreshPending = 0;
-  window._refreshDone = 0;
-  // 统计订阅了 refresh-all 的卡片数
-  if (Bus._handlers['refresh-all']) window._refreshPending = Bus._handlers['refresh-all'].length;
-  Bus.emit("refresh-all");
+  const run = beginRefreshRun();
+  if (run.pending === 0) finishRefreshRun(run.id);
+  else Bus.emit("refresh-all", run.id);
   loadNextVersion();
-  // 超时兜底
-  setTimeout(function() {
-    if (window._refreshDone < window._refreshPending) {
-      window._refreshDone = window._refreshPending;
-      if (btn) btn.classList.remove("spinning");
-      toast("刷新完成", "success");
-    }
-  }, 3000);
+  // 超时兜底：只结束当前这一次手动刷新，不影响后续普通操作。
+  setTimeout(function() { finishRefreshRun(run.id); }, 3000);
 }
 
 async function refresh(force) {
@@ -4925,9 +4953,6 @@ function renderLog(data, append) {
 
 // 提交
 async function doCommit() {
-  invalidateRepoCaches(currentPath || getSavedPath());
-  cacheClear();
-  Bus.emit("commit");
   const msg = document.getElementById("commitMsg").value.trim();
   if (!msg) { toast("请输入提交消息", "err"); return; }
 
@@ -4936,7 +4961,8 @@ async function doCommit() {
     toast("版本号格式错误，正确格式如 0.1.0", "err");
     return;
   }
-
+  const p = currentPath || getSavedPath();
+  if (!p) { toast("请先设置仓库路径", "err"); return; }
   const btn = document.getElementById("btnCommit");
   btn.disabled = true;
   btn.textContent = "提交中...";
@@ -4953,6 +4979,9 @@ async function doCommit() {
       if (data.nothingToCommit) {
         toast("没有需要提交的变更", "info");
       } else {
+        invalidateRepoCaches(p);
+        cacheClear();
+        Bus.emit("commit");
         const tagInfo = data.tag ? ` v${version}` : "";
         toast(`✅ ${data.commit}${tagInfo}`, "success");
         document.getElementById("commitMsg").value = "";
@@ -5090,10 +5119,8 @@ async function refreshDefaultRemoteLabels(remoteData) {
 }
 
 async function doPush(btn, forceContext) {
-  invalidateRepoCaches(currentPath || getSavedPath());
-  cacheClear();
-  Bus.emit("push");
   const p = currentPath || getSavedPath();
+  if (!p) { toast("请先设置仓库路径", "err"); return; }
   const orig = btn.textContent;
   btn.disabled = true; btn.style.opacity = ".5"; btn.textContent = forceContext ? "覆盖中..." : "检查中...";
   const safeTimer = setTimeout(() => { btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig; }, 180000);
@@ -5112,6 +5139,9 @@ async function doPush(btn, forceContext) {
     const data = await res.json();
     clearTimeout(safeTimer);
     if (data.ok) {
+      invalidateRepoCaches(p);
+      cacheClear();
+      Bus.emit("push");
       btn.textContent = forceContext ? "✅ 已覆盖" : "✅ 已推送";
       btn.style.opacity = ""; btn.disabled = false;
       setTimeout(() => { btn.textContent = orig; }, 2500);
@@ -5147,10 +5177,8 @@ function getSavedPullMode() {
 }
 
 async function doPull(btn) {
-  invalidateRepoCaches(currentPath || getSavedPath());
-  cacheClear();
-  Bus.emit("pull");
   const p = currentPath || getSavedPath();
+  if (!p) { toast("请先设置仓库路径", "err"); return; }
   const orig = btn.textContent;
   btn.disabled = true; btn.style.opacity = ".5"; btn.textContent = "拉取中...";
   try {
@@ -5160,9 +5188,13 @@ async function doPull(btn) {
     });
     const data = await res.json();
     btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig;
-    if (data.ok) toast("✅ " + data.message, "success");
-    else toast("❌ " + data.message, "err");
-    if (data.ok) refresh();
+    if (data.ok) {
+      invalidateRepoCaches(p);
+      cacheClear();
+      Bus.emit("pull");
+      toast("✅ " + data.message, "success");
+      refresh();
+    } else toast("❌ " + data.message, "err");
   } catch (e) { btn.disabled = false; btn.style.opacity = ""; btn.textContent = orig; toast("拉取失败", "err"); }
 }
 
@@ -5559,8 +5591,6 @@ function doReset(hash) {
 }
 
 async function doResetExecute(hash, mode) {
-  cacheClear();
-  Bus.emit("reset");
   try {
     const res = await fetch(apiUrl("/api/reset"), {
       method: "POST",
@@ -5569,6 +5599,9 @@ async function doResetExecute(hash, mode) {
     });
     const data = await res.json();
     if (data.ok) {
+      invalidateRepoCaches(currentPath || getSavedPath());
+      cacheClear();
+      Bus.emit("reset");
       let msg = `✅ 已回滚到 ${hash}（${data.mode}）`;
       if (data.cleanedTags && data.cleanedTags.length > 0) {
         msg += `\n已清理 ${data.cleanedTags.length} 个旧 tag`;
@@ -6343,29 +6376,27 @@ async function submitIdentitySetup() {
   setupCommitActionLayout();
   setupLogInfiniteScroll();
   // 注册卡片（事件驱动的自动刷新）
-  Cards.register("fileCard", { events: ["commit","push","pull","reset","branch-switch","refresh-all"], refresh: function(){
+  Cards.register("fileCard", { events: ["commit","push","pull","reset","branch-switch","refresh-all"], refresh: function(event, runId){
     var p = currentPath || getSavedPath();
-    if (p) { fetch(apiUrl("/api/status?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){renderStatus(d); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success",{duration:1200,dismissEvent:"pointerdown"})}}catch{}}); }
+    if (!p) { if (event === "refresh-all") markRefreshPartDone(runId); return; }
+    fetch(apiUrl("/api/status?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){
+      renderStatus(d);
+      if (event === "refresh-all") markRefreshPartDone(runId);
+    }).catch(function(){ if (event === "refresh-all") markRefreshPartDone(runId); });
   }});
-  Cards.register("logCard", { events: ["commit","reset","branch-switch","refresh-all"], refresh: function(){
+  Cards.register("logCard", { events: ["commit","reset","branch-switch","refresh-all"], refresh: function(event, runId){
     var p = currentPath || getSavedPath();
-    if (p) {
-      resetLogPager(p);
-      loadLogPage(p, false).then(function(){
-        try {
-          window._refreshDone++;
-          if (window._refreshDone >= window._refreshPending) {
-            var b = document.getElementById("btnRefresh");
-            if (b) b.classList.remove("spinning");
-            toast("刷新完成", "success", { duration: 1200, dismissEvent: "pointerdown" });
-          }
-        } catch {}
-      });
-    }
+    if (!p) { if (event === "refresh-all") markRefreshPartDone(runId); return; }
+    resetLogPager(p);
+    loadLogPage(p, false).then(function(){ if (event === "refresh-all") markRefreshPartDone(runId); }).catch(function(){ if (event === "refresh-all") markRefreshPartDone(runId); });
   }});
-  Cards.register("stashCard", { events: ["commit","stash-push","stash-pop","stash-drop","refresh-all"], refresh: function(){
+  Cards.register("stashCard", { events: ["commit","stash-push","stash-pop","stash-drop","refresh-all"], refresh: function(event, runId){
     var p = currentPath || getSavedPath();
-    if (p) { fetch(apiUrl("/api/stash/list?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){loadStash(); try{window._refreshDone++;if(window._refreshDone>=window._refreshPending){var b=document.getElementById("btnRefresh");if(b)b.classList.remove("spinning");toast("刷新完成","success",{duration:1200,dismissEvent:"pointerdown"})}}catch{}}); }
+    if (!p) { if (event === "refresh-all") markRefreshPartDone(runId); return; }
+    fetch(apiUrl("/api/stash/list?path="+encodeURIComponent(p))).then(function(r){return r.json()}).then(function(d){
+      loadStash();
+      if (event === "refresh-all") markRefreshPartDone(runId);
+    }).catch(function(){ if (event === "refresh-all") markRefreshPartDone(runId); });
   }});
   refresh();
   setupBackgroundRefresh();
