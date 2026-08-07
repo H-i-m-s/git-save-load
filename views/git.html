@@ -2751,13 +2751,14 @@ function onCurrentRepoChanged(path) {
 
 async function loadLocalRemotes(preferredRemote, preferredBranch, requestedPath, force) {
   const p = String(requestedPath || currentPath || getSavedPath()).trim();
-  const generation = ++_remoteLoadGeneration;
   _remotePanelPath = p;
   const el = document.getElementById("ghRemoteList");
   if (!p) { if (el) el.innerHTML = '<div style="font-size:10px;color:#c0392b">请先选择本地仓库</div>'; return; }
   const cacheKey = remoteCacheKey(p, preferredRemote, preferredBranch);
   const cached = remoteDataCache.get(cacheKey);
+  // 同一远程请求已经在进行时直接复用，不能递增 generation 把原请求的渲染判成过期。
   if (!force && cached && cached.promise) return cached.promise;
+  const generation = ++_remoteLoadGeneration;
   if (!force && cached && cached.data) {
     renderLocalRemotes(cached.data);
     refreshDefaultRemoteLabels(cached.data);
