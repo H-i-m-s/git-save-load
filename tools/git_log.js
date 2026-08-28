@@ -6,6 +6,8 @@ import { resolvePath, gitExec } from "./_helpers.js";
 export const name = "git_log";
 export const description = "查看 git 提交历史。返回最近 n 条提交的 hash、消息、作者、日期。";
 
+export const sessionPermission = { readOnly: true };
+
 export const parameters = {
   type: "object",
   properties: {
@@ -21,8 +23,8 @@ export const parameters = {
   required: [],
 };
 
-export async function execute(input = {}) {
-  const cwd = resolvePath(input);
+export async function execute(input = {}, ctx = {}) {
+  const cwd = await resolvePath(input, ctx);
   const count = Number.isFinite(input.count) ? Math.min(Math.max(1, input.count), 100) : 20;
 
   try {

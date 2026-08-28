@@ -6,6 +6,8 @@ import { resolvePath, gitExec } from "./_helpers.js";
 export const name = "git_status";
 export const description = "查看当前 git 工作区状态：分支、变更文件、暂存区。";
 
+export const sessionPermission = { readOnly: true };
+
 export const parameters = {
   type: "object",
   properties: {
@@ -17,8 +19,8 @@ export const parameters = {
   required: [],
 };
 
-export async function execute(input = {}) {
-  const cwd = resolvePath(input);
+export async function execute(input = {}, ctx = {}) {
+  const cwd = await resolvePath(input, ctx);
 
   try {
     const branch = gitExec(cwd, ["branch", "--show-current"], { timeout: 5000 });

@@ -1,16 +1,19 @@
 // git-tools / routes / git.js
 // 提供后端 API + 页面渲染。
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readConfig, writeConfig, readRepoPath, writeRepoPath } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const htmlPath = join(__dirname, "..", "views", "git.html");
+// Static WebView entry is kept under assets/ so the plugin follows the current
+// Hana asset boundary. The route remains the authenticated document entry.
+const htmlPath = join(__dirname, "..", "assets", "git.html");
 let cachedHtml = null;
 
 // 历史重写是仓库级别的危险操作。同一 HanaAgent 进程内，同一仓库只能同时执行一个 reword。
@@ -173,11 +176,7 @@ function resolveGhPath() {
   return _cachedGhPath;
 }
 
-function gitExec(cwd, cmd, opts = {}) {
-  const timeout = opts.timeout || 60000;
-  return execSync(cmd, { cwd, encoding: "utf8", timeout, windowsHide: true, env: gitEnv() }).trim();
-}
-
+// Git 调用统一使用参数数组，避免用户输入经过 shell 解释。
 // 对用户输入敏感的 Git 调用使用 execFileSync，避免经过 shell 解释。
 function gitExecFile(cwd, args, opts = {}) {
   const timeout = opts.timeout || 60000;
@@ -546,43 +545,6 @@ function repoPath(input) {
   return (input && String(input).trim()) || process.cwd();
 }
 
-let _configPath = "";
-function configPath(ctx) {
-  if (!_configPath && ctx.dataDir) _configPath = join(ctx.dataDir, "config.json");
-  return _configPath;
-}
-
-async function readRepoPath(ctx) {
-  try {
-    const data = await readFile(configPath(ctx), "utf8");
-    const j = JSON.parse(data);
-    return (j && j.repoPath) || "";
-  } catch { return ""; }
-}
-
-async function writeRepoPath(ctx, path) {
-  try {
-    let current = {};
-    try { current = JSON.parse(await readFile(configPath(ctx), "utf8")) || {}; } catch {}
-    mkdirSync(join(configPath(ctx), ".."), { recursive: true });
-    await writeFile(configPath(ctx), JSON.stringify({ ...current, repoPath: path }, null, 2), "utf8");
-  } catch {}
-}
-
-async function readConfig(ctx) {
-  try {
-    const data = await readFile(configPath(ctx), "utf8");
-    return JSON.parse(data) || {};
-  } catch {
-    return {};
-  }
-}
-
-async function writeConfig(ctx, config) {
-  mkdirSync(join(configPath(ctx), ".."), { recursive: true });
-  await writeFile(configPath(ctx), JSON.stringify(config || {}, null, 2), "utf8");
-}
-
 function remoteSettingsKey(path) {
   return resolve(path).replace(/[\\/]+$/, "").toLowerCase();
 }
@@ -651,7 +613,7 @@ function applyRemoteSettings(remoteInfo, settings) {
 
 export default function (app, ctx) {
   // ======== 页面 ========
-  app.get("/widget", async (c) => {
+  const renderSurface = async (c) => {
     const html = await loadHtml();
     // 读取 Hana 传递的主题参数
     const theme = c.req.query("hana-theme") || "";
@@ -661,19 +623,22 @@ export default function (app, ctx) {
       `<body data-hana-theme="${theme}"$1>`
     );
     return c.html(patched);
-  });
+  };
+
+  // Route declared by the WebView card contribution.
+  app.get("/git", renderSurface);
 
   // ======== API: 获取状态 ========
   app.get("/api/status", async (c) => {
     const path = repoPath(c.req.query("path"));
 
     try {
-      const branch = gitExec(path, "git branch --show-current");
-      const statusShort = gitExec(path, "git -c core.quotepath=false status --short");
+      const branch = gitExecFile(path, ["branch", "--show-current"]);
+      const statusShort = gitExecFile(path, ["-c", "core.quotepath=false", "status", "--short"]);
       // git log 在空仓库（无 commit）会失败，单独处理
       let recentCommits = [];
       try {
-        const logRaw = gitExec(path, "git log --format=\"%H %s\" --numstat -n 5");
+        const logRaw = gitExecFile(path, ["log", "--format=%H %s", "--numstat", "-n", "5"]);
         // 解析 log --numstat 输出
         const lines = logRaw.split("\n");
         let current = null;
@@ -704,7 +669,7 @@ export default function (app, ctx) {
       // 获取每个文件的增删统计
       const numstat = {};
       try {
-        const raw = gitExec(path, "git -c core.quotepath=false diff --numstat");
+        const raw = gitExecFile(path, ["-c", "core.quotepath=false", "diff", "--numstat"]);
         for (const line of raw.split("\n").filter(Boolean)) {
           const [added, deleted, ...nameParts] = line.split("\t");
           const name = nameParts.join("\t");
@@ -771,13 +736,13 @@ export default function (app, ctx) {
 
     let msgFile = null;
     try {
-      gitExec(path, "git add .");
+      gitExecFile(path, ["add", "."]);
 
       try {
         // 用系统临时目录存提交消息文件，用完 unlink，避免污染 .git/COMMIT_EDITMSG
         msgFile = join(tmpdir(), "git-sl-msg-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) + ".txt");
         writeFileSync(msgFile, message, "utf8");
-        gitExec(path, `git commit -F "${msgFile}"`);
+        gitExecFile(path, ["commit", "-F", msgFile]);
       } catch (e) {
         if (e.message.includes("nothing to commit") || e.message.includes("nothing added")) {
           return c.json({ ok: true, nothingToCommit: true, message: "没有需要提交的变更" });
@@ -785,7 +750,7 @@ export default function (app, ctx) {
         throw e;
       }
 
-      const last = gitExec(path, "git log --oneline -n 1");
+      const last = gitExecFile(path, ["log", "--oneline", "-n", "1"]);
 
       // 如果有版本号，打 tag
       let tag = "";
@@ -863,7 +828,7 @@ export default function (app, ctx) {
     }
     let currentHash = "";
     try {
-      currentHash = gitExec(path, "git rev-parse HEAD");
+      currentHash = gitExecFile(path, ["rev-parse", "HEAD"]);
     } catch (e) {
       return c.json({ ok: false, message: "读取 HEAD 失败：" + e.message });
     }
@@ -877,7 +842,7 @@ export default function (app, ctx) {
 
     // 检查工作区是否干净（--amend 不能有未提交修改，否则会混入）
     try {
-      const status = gitExec(path, "git -c core.quotepath=false status --porcelain");
+      const status = gitExecFile(path, ["-c", "core.quotepath=false", "status", "--porcelain"]);
       if (status) {
         return c.json({
           ok: false,
@@ -891,8 +856,8 @@ export default function (app, ctx) {
     try {
       msgFile = join(tmpdir(), "git-sl-amend-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) + ".txt");
       writeFileSync(msgFile, message, "utf8");
-      gitExec(path, `git commit --amend -F "${msgFile}"`);
-      const last = gitExec(path, "git log --oneline -n 1");
+      gitExecFile(path, ["commit", "--amend", "-F", msgFile]);
+      const last = gitExecFile(path, ["log", "--oneline", "-n", "1"]);
       return c.json({ ok: true, message: "已修改最近一次提交说明", commit: last });
     } catch (e) {
       return c.json({ ok: false, message: `修改失败：${e.message}` });
@@ -1491,7 +1456,7 @@ export default function (app, ctx) {
       // 获取 tag → hash 映射
       const tagMap = {};
       try {
-        const tagRaw = gitExec(path, 'git tag --sort=-version:refname --format="%(objectname:short)|%(refname:short)"');
+        const tagRaw = gitExecFile(path, ["tag", "--sort=-version:refname", "--format=%(objectname:short)|%(refname:short)"]);
         for (const line of tagRaw.split("\n").filter(Boolean)) {
           const [hash, tag] = line.split("|");
           if (hash && tag) tagMap[hash] = tag;
@@ -1501,7 +1466,7 @@ export default function (app, ctx) {
       // 用 --numstat 一次性获取每次提交的增删统计
       const format = "%h|%s|%an|%ai";
       // 多取一条，用于判断当前页后面是否还有更早的提交。
-      const raw = gitExec(path, `git log --format="${format}" --numstat -n ${count + 1} --skip ${offset}`);
+      const raw = gitExecFile(path, ["log", `--format=${format}`, "--numstat", "-n", String(count + 1), "--skip", String(offset)]);
       const commits = [];
       let cur = null;
       for (const line of raw.split("\n")) {
@@ -1556,7 +1521,7 @@ export default function (app, ctx) {
       // 清理回滚后失效的 tag（指向历史外 commit 的 tag）
       const cleanedTags = [];
       try {
-        const tagRaw = gitExec(path, 'git tag --format="%(objectname:short)|%(refname:short)"');
+        const tagRaw = gitExecFile(path, ["tag", "--format=%(objectname:short)|%(refname:short)"]);
         for (const line of tagRaw.split("\n").filter(Boolean)) {
           const [h, t] = line.split("|");
           if (!h || !t) continue;
@@ -1588,9 +1553,9 @@ export default function (app, ctx) {
     const file = String(c.req.query("file") || "").trim();
 
     try {
-      const fileArg = file ? ` -- "${file}"` : "";
-      const diff = gitExec(path, `git -c core.quotepath=false diff --stat${fileArg}`);
-      const diffDetail = gitExec(path, `git -c core.quotepath=false diff${fileArg}`);
+      const diffArgs = ["-c", "core.quotepath=false", "diff"];
+      const diff = gitExecFile(path, [...diffArgs, "--stat", ...(file ? ["--", file] : [])]);
+      const diffDetail = gitExecFile(path, [...diffArgs, ...(file ? ["--", file] : [])]);
       return c.json({ ok: true, file: file || null, summary: diff || "(no diff)", detail: diffDetail || "(no diff)" });
     } catch (e) {
       return c.json({ ok: false, message: e.message });
@@ -1604,11 +1569,12 @@ export default function (app, ctx) {
     const to = String(c.req.query("to") || "").trim();
     if (!from || !to) return c.json({ ok: false, message: "请指定两个 hash" });
     try {
-      const stat = gitExec(path, `git -c core.quotepath=false diff --stat ${from}..${to}`);
-      const detail = gitExec(path, `git -c core.quotepath=false diff ${from}..${to}`);
+      const range = `${from}..${to}`;
+      const stat = gitExecFile(path, ["-c", "core.quotepath=false", "diff", "--stat", range]);
+      const detail = gitExecFile(path, ["-c", "core.quotepath=false", "diff", range]);
       // 文件级统计
       const fileStats = [];
-      const numstat = gitExec(path, `git -c core.quotepath=false diff --numstat ${from}..${to}`);
+      const numstat = gitExecFile(path, ["-c", "core.quotepath=false", "diff", "--numstat", range]);
       for (const line of numstat.split("\n").filter(Boolean)) {
         const [added, deleted, ...nameParts] = line.split("\t");
         const name = nameParts.join("\t");
@@ -1629,7 +1595,7 @@ export default function (app, ctx) {
     if (!path) return c.json({ ok: false, message: "请指定目录路径" });
 
     try {
-      gitExec(path, "git init");
+      gitExecFile(path, ["init"]);
 
       // 有 .gitignore 模板就写入
       if (gitignore) {
@@ -1638,7 +1604,7 @@ export default function (app, ctx) {
         writeFileSync(join(path, ".gitignore"), gitignore, "utf8");
       }
 
-      const branch = gitExec(path, "git branch --show-current");
+      const branch = gitExecFile(path, ["branch", "--show-current"]);
       return c.json({ ok: true, path, branch: branch || "master" });
     } catch (e) {
       return c.json({ ok: false, message: `初始化失败：${e.message}` });
@@ -1650,7 +1616,7 @@ export default function (app, ctx) {
     const path = repoPath(c.req.query("path"));
 
     try {
-      const tags = gitExec(path, "git tag --sort=-version:refname").split("\n").filter(Boolean);
+      const tags = gitExecFile(path, ["tag", "--sort=-version:refname"]).split("\n").filter(Boolean);
       const latest = tags.length > 0 ? tags[0].replace(/^v/, "") : "0.0.0";
       const parts = latest.split(".").map(Number);
       const next = `${parts[0] || 0}.${parts[1] || 0}.${(parts[2] || 0) + 1}`;
@@ -1665,7 +1631,7 @@ export default function (app, ctx) {
     const path = repoPath(c.req.query("path"));
 
     try {
-      const statusRaw = gitExec(path, "git -c core.quotepath=false status --short");
+      const statusRaw = gitExecFile(path, ["-c", "core.quotepath=false", "status", "--short"]);
       const conflictFiles = statusRaw.split("\n")
         .filter(line => {
           const s = line.trim().slice(0, 2);
@@ -1776,7 +1742,7 @@ export default function (app, ctx) {
 
     // 判断是否为 git 仓库
     try {
-      gitExec(path, "git rev-parse --is-inside-work-tree");
+      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"]);
       out.isGit = true;
     } catch {
       return c.json(out); // 不是 git 仓库，basename 仍可用
@@ -1794,7 +1760,7 @@ export default function (app, ctx) {
       }
     } catch {}
     if (!out.defaultBranch) {
-      try { out.defaultBranch = gitExec(path, "git config init.defaultBranch") || "main"; } catch {}
+      try { out.defaultBranch = gitExecFile(path, ["config", "init.defaultBranch"]) || "main"; } catch {}
       if (!out.defaultBranch) out.defaultBranch = "main";
     }
 
@@ -2373,22 +2339,16 @@ export default function (app, ctx) {
   // ======== API: 读写配置 ========
   app.get("/api/config", async (c) => {
     try {
-      const data = await readFile(configPath(ctx), "utf8");
-      return c.json({ ok: true, config: JSON.parse(data) });
+      return c.json({ ok: true, config: await readConfig(ctx) });
     } catch { return c.json({ ok: true, config: {} }); }
   });
 
   app.post("/api/config", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     try {
-      let current = {};
-      try {
-        const data = await readFile(configPath(ctx), "utf8");
-        current = JSON.parse(data);
-      } catch {}
+      const current = await readConfig(ctx);
       const merged = { ...current, ...body };
-      mkdirSync(join(configPath(ctx), ".."), { recursive: true });
-      await writeFile(configPath(ctx), JSON.stringify(merged, null, 2), "utf8");
+      await writeConfig(ctx, merged);
       return c.json({ ok: true, config: merged });
     } catch (e) { return c.json({ ok: false, message: e.message }); }
   });
@@ -2397,8 +2357,8 @@ export default function (app, ctx) {
   app.get("/api/branches", async (c) => {
     const path = repoPath(c.req.query("path"));
     try {
-      const current = gitExec(path, "git branch --show-current");
-      const raw = gitExec(path, "git branch");
+      const current = gitExecFile(path, ["branch", "--show-current"]);
+      const raw = gitExecFile(path, ["branch"]);
       const branches = raw.split("\n").filter(Boolean).map(line => ({
         name: line.replace(/^\*?\s*/, "").trim(),
         current: line.trimStart().startsWith("*"),
@@ -2539,6 +2499,8 @@ export default function (app, ctx) {
 
   // ======== 在默认浏览器中打开 URL ========
   app.get("/api/open-external", async (c) => {
+    // Kept for compatibility with the existing UI. New UI code should prefer
+    // hana.external.open(), which is capability-gated by the host.
     const url = String(c.req.query("url") || "").trim();
     if (!/^https?:\/\/[^\s]+$/i.test(url)) return c.json({ ok: false, message: "只允许打开 http/https 链接" });
     try {
@@ -2710,7 +2672,7 @@ export default function (app, ctx) {
   app.get("/api/stash/list", async (c) => {
     const path = repoPath(c.req.query("path"));
     try {
-      const raw = gitExec(path, "git stash list");
+      const raw = gitExecFile(path, ["stash", "list"]);
       if (!raw) return c.json({ ok: true, stashes: [] });
       const stashes = raw.split("\n").filter(Boolean).map((line, i) => {
         const idx = line.match(/stash@\{(\d+)\}/);

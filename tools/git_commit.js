@@ -6,6 +6,15 @@ import { resolvePath, gitExec } from "./_helpers.js";
 export const name = "git_commit";
 export const description = "暂存所有变更并提交。提交前先用 git_status 确认变更内容。";
 
+export const sessionPermission = {
+  kind: "review",
+  describeSideEffect: () => ({
+    kind: "workspace_write",
+    summary: "Stage all changes and create a Git commit in the selected local repository.",
+    ruleId: "workspace-git-commit",
+  }),
+};
+
 export const parameters = {
   type: "object",
   properties: {
@@ -21,8 +30,8 @@ export const parameters = {
   required: ["message"],
 };
 
-export async function execute(input = {}) {
-  const cwd = resolvePath(input);
+export async function execute(input = {}, ctx = {}) {
+  const cwd = await resolvePath(input, ctx);
   const message = String(input.message).trim();
 
   if (!message) {

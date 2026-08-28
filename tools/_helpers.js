@@ -9,8 +9,12 @@ import { join } from "node:path";
  * 解析仓库路径。
  * 优先使用 input.path，否则使用当前工作目录。
  */
-export function resolvePath(input = {}) {
-  return (input.path && String(input.path).trim()) || process.cwd();
+export async function resolvePath(input = {}, ctx = {}) {
+  const explicit = input.path && String(input.path).trim();
+  if (explicit) return explicit;
+  let configured = "";
+  try { configured = await ctx.config?.get?.("repoPath"); } catch {}
+  return (configured && String(configured).trim()) || process.cwd();
 }
 
 // 定位 git 可执行文件并缓存。仅当 PATH 无法解析 git 时探测常见安装位置。

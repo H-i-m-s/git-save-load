@@ -6,6 +6,15 @@ import { resolvePath, gitExec } from "./_helpers.js";
 export const name = "git_reset";
 export const description = "回滚到指定提交。默认 --soft 保留工作区文件修改，--hard 会丢失所有未提交的变更（慎用）。";
 
+export const sessionPermission = {
+  kind: "review",
+  describeSideEffect: (input = {}) => ({
+    kind: input.mode === "hard" ? "destructive_workspace_write" : "workspace_write",
+    summary: `Reset the selected local repository to commit ${String(input.commit || "")}${input.mode === "hard" ? "; discard uncommitted changes" : ""}.`,
+    ruleId: "workspace-git-reset",
+  }),
+};
+
 export const parameters = {
   type: "object",
   properties: {
@@ -26,8 +35,8 @@ export const parameters = {
   required: ["commit"],
 };
 
-export async function execute(input = {}) {
-  const cwd = resolvePath(input);
+export async function execute(input = {}, ctx = {}) {
+  const cwd = await resolvePath(input, ctx);
   const commit = String(input.commit).trim();
   const mode = (input.mode && ["soft", "mixed", "hard"].includes(input.mode)) ? input.mode : "mixed";
 
