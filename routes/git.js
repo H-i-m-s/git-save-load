@@ -10,6 +10,8 @@ import { execSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readConfig, writeConfig, readRepoPath, writeRepoPath } from "./config.js";
 import { registerHistoryRoutes } from "./history.js";
+import { registerBranchRoutes } from "./branch.js";
+import { registerRemoteQueryRoutes } from "./remote-query.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Static WebView entry is kept under assets/ so the plugin follows the current
@@ -2133,67 +2135,19 @@ export default function (app, ctx) {
     }
   });
 
-  // ======== API: 读取本地远程仓库列表 ========
-  app.get("/api/remotes", async (c) => {
-    const path = repoPath(c.req.query("path"));
-    try {
-      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
-      const branch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
-      const preferredRemote = String(c.req.query("remote") || "").trim();
-      const preferredBranch = String(c.req.query("remoteBranch") || "").trim();
-      const remotes = listRemoteDetails(path);
-      const settings = await readRemoteSettings(ctx, path, remotes.map(remoteInfo => remoteInfo.name));
-      remotes.forEach(remoteInfo => applyRemoteSettings(remoteInfo, settings));
-      if (!branch || !validateBranchName(path, branch)) {
-        return c.json({ ok: true, path, branch: "", detached: true, pushRemote: settings.pushRemote, fetchRemote: settings.fetchRemote, remotes, message: "当前处于 detached HEAD 或尚未检出本地分支" });
-      }
-      for (const remoteInfo of remotes) {
-        const requested = remoteInfo.name === preferredRemote ? preferredBranch : "";
-        const remoteBranch = chooseRemoteBranch(path, remoteInfo.name, branch, remoteInfo.branches, requested);
-        remoteInfo.targetBranch = branch;
-        remoteInfo.remoteBranch = remoteBranch || "";
-        if (remoteBranch) Object.assign(remoteInfo, getRemoteBranchSnapshot(path, remoteInfo.name, remoteBranch, branch));
-        else Object.assign(remoteInfo, { hasRemoteBranch: false, comparisonStatus: "REMOTE_BRANCH_MISSING", remoteAhead: 0, localAhead: 0, commits: [], files: [] });
-      }
-      return c.json({ ok: true, path, branch, detached: false, pushRemote: settings.pushRemote, fetchRemote: settings.fetchRemote, remotes });
-    } catch (e) {
-      return c.json({ ok: false, message: commandErrorText(e) || "读取远程仓库失败" });
-    }
-  });
-
-  // ======== API: 设置默认推送或获取远程 ========
-  app.post("/api/remote-role", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const path = repoPath(body.path);
-    const remote = String(body.remote || "").trim();
-    const role = String(body.role || "").trim();
-    if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
-    if (!["push-target", "update-source", "other"].includes(role)) return c.json({ ok: false, message: "远程角色不正确" });
-    try {
-      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
-      const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-      if (!names.includes(remote)) return c.json({ ok: false, message: `远程 ${remote} 不存在` });
-      const settings = await readRemoteSettings(ctx, path, names);
-      const roles = { ...settings.roles };
-      if (role === "push-target") {
-        Object.keys(roles).forEach(name => { if (roles[name] === "push-target") roles[name] = "other"; });
-        roles[remote] = "push-target";
-        settings.pushRemote = remote;
-      } else if (role === "update-source") {
-        Object.keys(roles).forEach(name => { if (roles[name] === "update-source") roles[name] = "other"; });
-        roles[remote] = "update-source";
-        settings.fetchRemote = remote;
-      } else {
-        if (settings.pushRemote === remote) settings.pushRemote = names.find(name => name !== remote) || "";
-        if (settings.fetchRemote === remote) settings.fetchRemote = names.find(name => name !== remote) || "";
-        if (roles[remote]) roles[remote] = "other";
-      }
-      settings.roles = roles;
-      await writeRemoteSettings(ctx, path, settings);
-      return c.json({ ok: true, remote, role, pushRemote: settings.pushRemote, fetchRemote: settings.fetchRemote, message: role === "push-target" ? `已将 ${remote} 设为默认推送目标` : (role === "update-source" ? `已将 ${remote} 设为默认获取来源` : `已取消 ${remote} 的特殊角色`) });
-    } catch (e) {
-      return c.json({ ok: false, message: `设置远程角色失败：${commandErrorText(e) || "无法保存远程角色"}` });
-    }
+  registerRemoteQueryRoutes(app, {
+    ctx,
+    repoPath,
+    gitExecFile,
+    listRemoteDetails,
+    readRemoteSettings,
+    applyRemoteSettings,
+    chooseRemoteBranch,
+    getRemoteBranchSnapshot,
+    validateBranchName,
+    commandErrorText,
+    writeRemoteSettings,
+    isValidRemoteName,
   });
 
   // ======== API: 获取指定远程的最新提交 ========
@@ -2302,74 +2256,7 @@ export default function (app, ctx) {
     } catch (e) { return c.json({ ok: false, message: e.message }); }
   });
 
-  // ======== API: 分支管理 ========
-  app.get("/api/branches", async (c) => {
-    const path = repoPath(c.req.query("path"));
-    try {
-      const current = gitExecFile(path, ["branch", "--show-current"]);
-      const raw = gitExecFile(path, ["branch"]);
-      const branches = raw.split("\n").filter(Boolean).map(line => ({
-        name: line.replace(/^\*?\s*/, "").trim(),
-        current: line.trimStart().startsWith("*"),
-      }));
-      // 对每个分支获取最后一条提交消息
-      for (const b of branches) {
-        try {
-          const logMsg = gitExecFile(path, ["log", "-1", "--format=%s", b.name], { timeout: 10000 });
-          b.lastCommit = logMsg || "";
-          b.lastHash = gitExecFile(path, ["log", "-1", "--format=%h", b.name], { timeout: 10000 });
-        } catch { b.lastCommit = ""; b.lastHash = ""; }
-      }
-      return c.json({ ok: true, branches, current });
-    } catch (e) {
-      return c.json({ ok: false, message: e.message });
-    }
-  });
-
-  app.post("/api/branch/switch", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const path = repoPath(body.path);
-    const name = String(body.name || "").trim();
-    if (!name) return c.json({ ok: false, message: "请指定分支名" });
-    if (!validateBranchName(path, name)) return c.json({ ok: false, message: "分支名格式不正确" });
-    try {
-      gitExecFile(path, ["checkout", name]);
-      return c.json({ ok: true, branch: name });
-    } catch (e) {
-      return c.json({ ok: false, message: `切换失败：${e.message}` });
-    }
-  });
-
-  app.post("/api/branch/create", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const path = repoPath(body.path);
-    const name = String(body.name || "").trim();
-    if (!name) return c.json({ ok: false, message: "请指定新分支名" });
-    const startPoint = String(body.startPoint || "").trim();
-    if (!validateBranchName(path, name)) return c.json({ ok: false, message: "分支名格式不正确" });
-    try {
-      const args = ["branch", name];
-      if (startPoint) args.push(startPoint);
-      gitExecFile(path, args);
-      return c.json({ ok: true, branch: name });
-    } catch (e) {
-      return c.json({ ok: false, message: `创建失败：${e.message}` });
-    }
-  });
-
-  app.post("/api/branch/delete", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const path = repoPath(body.path);
-    const name = String(body.name || "").trim();
-    if (!name) return c.json({ ok: false, message: "请指定分支名" });
-    if (!validateBranchName(path, name)) return c.json({ ok: false, message: "分支名格式不正确" });
-    try {
-      gitExecFile(path, ["branch", "-D", name]);
-      return c.json({ ok: true, branch: name });
-    } catch (e) {
-      return c.json({ ok: false, message: `删除失败：${e.message}` });
-    }
-  });
+  registerBranchRoutes(app, { repoPath, gitExecFile, validateBranchName });
 
   // ======== API: 远程同步状态 ========
   app.post("/api/sync-status", async (c) => {
