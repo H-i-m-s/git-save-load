@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { execSync, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readConfig, writeConfig, readRepoPath, writeRepoPath } from "./config.js";
+import { registerHistoryRoutes } from "./history.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Static WebView entry is kept under assets/ so the plugin follows the current
@@ -1446,59 +1447,7 @@ export default function (app, ctx) {
     }
   });
 
-  // ======== API: 历史 ========
-  app.get("/api/log", async (c) => {
-    const path = repoPath(c.req.query("path"));
-    const count = Math.min(Math.max(1, parseInt(c.req.query("count") || "20", 10)), 100);
-    const offset = Math.max(0, parseInt(c.req.query("skip") || "0", 10));
-
-    try {
-      // 获取 tag → hash 映射
-      const tagMap = {};
-      try {
-        const tagRaw = gitExecFile(path, ["tag", "--sort=-version:refname", "--format=%(objectname:short)|%(refname:short)"]);
-        for (const line of tagRaw.split("\n").filter(Boolean)) {
-          const [hash, tag] = line.split("|");
-          if (hash && tag) tagMap[hash] = tag;
-        }
-      } catch {}
-
-      // 用 --numstat 一次性获取每次提交的增删统计
-      const format = "%h|%s|%an|%ai";
-      // 多取一条，用于判断当前页后面是否还有更早的提交。
-      const raw = gitExecFile(path, ["log", `--format=${format}`, "--numstat", "-n", String(count + 1), "--skip", String(offset)]);
-      const commits = [];
-      let cur = null;
-      for (const line of raw.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        if (trimmed.includes("|")) {
-          // 新提交头
-          if (cur) commits.push(cur);
-          const [hash, msg, author, date] = trimmed.split("|");
-          cur = { hash, message: msg || "", author: author || "", date: date || "", tag: tagMap[hash] || "", added: 0, deleted: 0 };
-        } else if (cur) {
-          // numstat 行
-          const parts = trimmed.split(/\s+/);
-          if (parts.length >= 2 && /^\d+$/.test(parts[0])) {
-            cur.added += parseInt(parts[0]) || 0;
-            cur.deleted += parseInt(parts[1]) || 0;
-          }
-        }
-      }
-      if (cur) commits.push(cur);
-      const pageCommits = commits.slice(0, count);
-
-      return c.json({
-        ok: true,
-        commits: pageCommits,
-        offset,
-        hasMore: commits.length > count,
-      });
-    } catch (e) {
-      return c.json({ ok: false, message: e.message });
-    }
-  });
+  registerHistoryRoutes(app, { repoPath, gitExecFile });
 
   // ======== API: 回滚 ========
   app.post("/api/reset", async (c) => {
