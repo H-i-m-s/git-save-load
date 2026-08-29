@@ -3,7 +3,7 @@
 // 各功能路由已按职责拆分到 routes/*.js，本文件不再定义业务端点。
 
 import { readFile } from "node:fs/promises";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { execSync, execFileSync } from "node:child_process";
@@ -68,13 +68,41 @@ async function loadHtml() {
 // WebView 立即拿到新内容，避免旧缓存导致的行为不一致。
 function assetVersionToken(relPath) {
   if (!relPath || relPath.includes("..")) return "0";
-  const clean = relPath.replace(/^assets\//, "");
   try {
-    const st = statSync(join(__dirname, "..", "assets", clean));
+    const st = statSync(join(__dirname, "..", "assets", relPath));
     return Math.floor(st.mtimeMs).toString(36) + "." + st.size.toString(36);
   } catch {
     return "0";
   }
+}
+
+// 兼容性静态资源路由：桌面本地模式的卡片 iframe 仅携带 surface session 凭证，
+// 宿主不为它派发资产 cookie，且 /assets/* 的授权策略要求 chat scope（surface
+// 凭证无 scope），导致 <link>/<script> 子资源必然 403。改为由插件自身路由
+// 提供同一批文件：plugin_route 策略允许匹配插件的 surface session 凭证，
+// 与卡片内 /api/* 请求同一权限模型。文件仍以 assets/ 为源，严格白名单无路径拼接。
+const GIT_ASSET_BASE = join(__dirname, "..", "assets");
+const GIT_ASSET_FILES = [
+  { route: "git.css", file: "git.css", type: "text/css; charset=utf-8" },
+  ...[
+    "env", "state", "card-drag", "repo-path", "settings", "gh-panel", "remotes",
+    "gh-connect", "gh-repos", "branch-canvas", "ctx-menu", "hana-select",
+    "branch-actions", "refresh", "status-card", "log-view", "commit-actions",
+    "commit-edit", "reset", "diff-view", "confirm-modal", "conflicts",
+    "repo-init", "walkthrough", "identity", "main",
+  ].map((name) => ({ route: `git/${name}.js`, file: `git/${name}.js`, type: "text/javascript; charset=utf-8" })),
+];
+
+function serveGitAsset(c, info) {
+  let text;
+  try {
+    text = readFileSync(join(GIT_ASSET_BASE, info.file), "utf8");
+  } catch {
+    return c.body("/* asset unavailable */", 404, { "Content-Type": "text/plain; charset=utf-8" });
+  }
+  c.header("Content-Type", info.type);
+  c.header("Cache-Control", "public, max-age=31536000, immutable");
+  return c.body(text);
 }
 
 // 缓存用户级代理环境变量，避免每次 git 调用都查询 Windows 注册表
@@ -433,16 +461,16 @@ export default function (app, ctx) {
     const allowedThemes = new Set(["auto", "light", "dark", "warm-paper", "new-warm-paper", "midnight", "midnight-contrast", "high-contrast", "grass-aroma", "contemplation", "absolutely", "delve", "deep-think", "coral"]);
     const theme = allowedThemes.has(requestedTheme) ? requestedTheme : "auto";
     // 主题只接受白名单值，避免把查询参数直接写入 HTML 属性。
-    // 桌面本地模式的卡片 iframe 仅携带 pluginSurfaceSession 查询凭证，宿主不会
-    // 为它下发资产 cookie，静态子资源必须原样回传 session 才能通过主鉴权后备
-    // （协议允许 header 或同名 query 回传，见 plugin-protocol 的注释）。
+    // 桌面本地模式的卡片 iframe 仅携带 pluginSurfaceSession 查询凭证；静态子资源
+    // 改由插件路由 git-asset/* 提供（见上方说明），这里把 assets/ 引用重写为
+    // 路由地址，并追加版本参数与会话回传（协议允许同名 query 回传）。
     const surfaceSession = String(c.req.query("pluginSurfaceSession") || "");
     const sessionSuffix = surfaceSession
       ? `&pluginSurfaceSession=${encodeURIComponent(surfaceSession)}`
       : "";
     const versioned = html.replace(
-      /(assets\/[A-Za-z0-9._/-]+\.(?:js|css))(?![\w.$-])/g,
-      (match, relPath) => `${match}?v=${assetVersionToken(relPath)}${sessionSuffix}`,
+      /assets\/([A-Za-z0-9._/-]+\.(?:js|css))(?![\w.$-])/g,
+      (match, relPath) => `git-asset/${relPath}?v=${assetVersionToken(relPath)}${sessionSuffix}`,
     );
     const patched = versioned.replace(
       /<body([^>]*)>/,
@@ -453,6 +481,11 @@ export default function (app, ctx) {
 
   // Route declared by the WebView card contribution.
   app.get("/git", renderSurface);
+
+  // 兼容性静态资源路由（严格白名单，逐个注册，无通配无拼接）。
+  for (const info of GIT_ASSET_FILES) {
+    app.get("/git-asset/" + info.route, (c) => serveGitAsset(c, info));
+  }
 
   // ======== 模块注册 ========
   registerLocalGitRoutes(app, { repoPath, gitExecFile });

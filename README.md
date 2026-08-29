@@ -621,7 +621,7 @@ git-save-load/
 
 插件采用前端单页面 Card + Node.js 路由的结构。当前页面入口为 `assets/git.html`（DOM 结构与模块加载顺序），样式拆分在 `assets/git.css`，前端逻辑拆分在 `assets/git/*.js`（26 个模块，按拆分前的顶层执行顺序加载）；后端路由按职责拆分到多个 `routes/*.js` 模块；界面内部通过事件总线刷新文件状态、提交记录和 Stash 卡片。Git 命令使用参数数组执行，尽量避免 shell 字符串拼接带来的注入和转义问题。
 
-> 页面返回时，后端会给每个 `assets/...` 引用追加基于文件 mtime+size 的 `?v=` 版本参数：宿主对静态资源采用一年期 immutable 缓存，版本参数保证文件更新后 WebView 立即拿到新内容。
+> 桌面本地模式下卡片 iframe 仅携带 surface session 凭证，无法加载宿主静态资产（`/assets/*` 要求 chat scope）。后端返回页面前会把 `assets/...` 引用重写为插件路由 `git-asset/...`（与卡片内 API 同一权限模型），并追加基于文件 mtime+size 的 `?v=` 版本参数与会话回传：文件更新后 WebView 立即拿到新内容。
 
 ---
 
@@ -638,7 +638,7 @@ cd git-save-load
 - `assets/git.css`：全部样式
 - `assets/git/*.js`：前端功能模块，加载顺序即拆分前顶层执行顺序，勿随意调整
 - `routes/*.js`：按职责拆分的 Git、GitHub CLI 和配置后端路由
-- `routes/git.js`：页面入口、资源版本注入、公共辅助函数和模块装配
+- `routes/git.js`：页面入口、前端资源服务路由（git-asset）、公共辅助函数和模块装配
 - `views/git.html`：历史遗留文件，当前运行入口不使用
 - `assets/git-api.js`：历史遗留请求封装，当前页面未引用
 - `tools/*.js`：Agent 可调用工具
