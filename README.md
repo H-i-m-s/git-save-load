@@ -600,7 +600,9 @@ git-save-load/
 │   ├── config.js          # 配置读写
 │   └── misc.js            # 兼容接口
 ├── assets/
-│   └── git.html           # 当前 Card 前端入口、样式和交互逻辑
+│   ├── git.html            # Card 入口（DOM 结构 + 模块加载顺序）
+│   ├── git.css             # 全部样式
+│   └── git/                # 前端 JS 模块（26 个）
 ├── views/
 │   └── git.html           # 历史遗留视图，当前入口不使用
 ├── tools/
@@ -617,7 +619,9 @@ git-save-load/
 └── README.md
 ```
 
-插件采用前端单页面 Card + Node.js 路由的结构。当前页面入口为 `assets/git.html`，后端路由按职责拆分到多个 `routes/*.js` 模块；界面内部通过事件总线刷新文件状态、提交记录和 Stash 卡片。Git 命令使用参数数组执行，尽量避免 shell 字符串拼接带来的注入和转义问题。
+插件采用前端单页面 Card + Node.js 路由的结构。当前页面入口为 `assets/git.html`（DOM 结构与模块加载顺序），样式拆分在 `assets/git.css`，前端逻辑拆分在 `assets/git/*.js`（26 个模块，按拆分前的顶层执行顺序加载）；后端路由按职责拆分到多个 `routes/*.js` 模块；界面内部通过事件总线刷新文件状态、提交记录和 Stash 卡片。Git 命令使用参数数组执行，尽量避免 shell 字符串拼接带来的注入和转义问题。
+
+> 页面返回时，后端会给每个 `assets/...` 引用追加基于文件 mtime+size 的 `?v=` 版本参数：宿主对静态资源采用一年期 immutable 缓存，版本参数保证文件更新后 WebView 立即拿到新内容。
 
 ---
 
@@ -630,9 +634,11 @@ cd git-save-load
 
 插件主体没有独立的前端构建步骤，主要修改文件为：
 
-- `assets/git.html`：当前 Card 界面、CSS 和前端交互
+- `assets/git.html`：Card 入口（DOM 结构与模块加载顺序）
+- `assets/git.css`：全部样式
+- `assets/git/*.js`：前端功能模块，加载顺序即拆分前顶层执行顺序，勿随意调整
 - `routes/*.js`：按职责拆分的 Git、GitHub CLI 和配置后端路由
-- `routes/git.js`：页面入口、公共辅助函数和模块装配
+- `routes/git.js`：页面入口、资源版本注入、公共辅助函数和模块装配
 - `views/git.html`：历史遗留文件，当前运行入口不使用
 - `assets/git-api.js`：历史遗留请求封装，当前页面未引用
 - `tools/*.js`：Agent 可调用工具

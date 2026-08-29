@@ -3,7 +3,7 @@
 // 各功能路由已按职责拆分到 routes/*.js，本文件不再定义业务端点。
 
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { execSync, execFileSync } from "node:child_process";
@@ -28,6 +28,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Hana asset boundary. The route remains the authenticated document entry.
 const htmlPath = join(__dirname, "..", "assets", "git.html");
 let cachedHtml = null;
+let cachedHtmlSig = "";
 
 function gitPathExists(cwd, name) {
   try {
@@ -52,9 +53,28 @@ function getGitOperationState(cwd) {
 }
 
 async function loadHtml() {
-  if (cachedHtml) return cachedHtml;
-  cachedHtml = await readFile(htmlPath, "utf8");
+  // 按文件签名（mtime+size）自动重读：开发时改完 git.html 无需重载插件即可生效。
+  const st = statSync(htmlPath);
+  const sig = `${Math.floor(st.mtimeMs)}-${st.size}`;
+  if (!cachedHtml || cachedHtmlSig !== sig) {
+    cachedHtml = await readFile(htmlPath, "utf8");
+    cachedHtmlSig = sig;
+  }
   return cachedHtml;
+}
+
+// 静态资源由宿主以 immutable 策略（max-age=31536000）缓存。返回页面前给 HTML 里
+// 引用的 assets 资源 URL 追加基于 mtime+size 的版本参数，文件变更后 URL 随之变化，
+// WebView 立即拿到新内容，避免旧缓存导致的行为不一致。
+function assetVersionToken(relPath) {
+  if (!relPath || relPath.includes("..")) return "0";
+  const clean = relPath.replace(/^assets\//, "");
+  try {
+    const st = statSync(join(__dirname, "..", "assets", clean));
+    return Math.floor(st.mtimeMs).toString(36) + "." + st.size.toString(36);
+  } catch {
+    return "0";
+  }
 }
 
 // 缓存用户级代理环境变量，避免每次 git 调用都查询 Windows 注册表
@@ -408,12 +428,17 @@ export default function (app, ctx) {
   // ======== 页面 ========
   const renderSurface = async (c) => {
     const html = await loadHtml();
+    // 给本地静态资源引用追加版本参数（仅处理插件自身 assets 路径）
+    const versioned = html.replace(
+      /(assets\/[A-Za-z0-9._/-]+\.(?:js|css))(?![\w.$-])/g,
+      (match, relPath) => `${match}?v=${assetVersionToken(relPath)}`,
+    );
     // 读取 Hana 传递的主题参数
     const requestedTheme = String(c.req.query("hana-theme") || "auto");
     const allowedThemes = new Set(["auto", "light", "dark", "warm-paper", "new-warm-paper", "midnight", "midnight-contrast", "high-contrast", "grass-aroma", "contemplation", "absolutely", "delve", "deep-think", "coral"]);
     const theme = allowedThemes.has(requestedTheme) ? requestedTheme : "auto";
     // 主题只接受白名单值，避免把查询参数直接写入 HTML 属性。
-    const patched = html.replace(
+    const patched = versioned.replace(
       /<body([^>]*)>/,
       `<body data-hana-theme="${theme}"$1>`
     );
