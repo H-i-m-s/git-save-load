@@ -1,12 +1,12 @@
-# Git Save/Load WebView assets
+# Git Save/Load WebView 资源说明
 
-`git.html` is the no-build WebView entry served by the authenticated `/git` card route. It keeps only the DOM structure and the module load order; styles live in `git.css` and the front-end logic is split into `git/*.js` (26 modules loaded in the original execution order).
+`git.html` 是由认证路由 `/git` 服务的无构建 WebView 入口。页面只保留 DOM 结构和模块加载顺序：样式在 `git.css`，前端逻辑在 `git/*.js`（26 个模块，按拆分前的顶层执行顺序加载）。
 
-Same-plugin API requests go through the local `pluginFetch` helper (`env.js`), which attaches the Hana WebView surface-session header; clipboard and external-open go through the host bridge shim.
+插件 API 请求通过本地 `pluginFetch` 助手（`env.js`）发出，自动附带 Hana WebView 的 surface session 请求头；剪贴板和外部打开走宿主桥接 shim。
 
-The card iframe authenticates with a surface-session credential only, which cannot load host static assets (`/assets/*` requires the `chat` scope, and surface credentials carry no scopes). When rendering the page, the backend rewrites `assets/...` references to the plugin's own `git-asset/...` routes and appends two query params:
+卡片 iframe 仅携带 surface session 凭证，无法加载宿主静态资产（`/assets/*` 要求 `chat` scope，而 surface 凭证不带任何 scope）。因此后端在返回页面时，把 `assets/...` 引用重写为插件自身路由 `git-asset/...`，并追加两个查询参数：
 
-- `?v=` — derived from each file's mtime+size; the file URL changes on every edit so the WebView never serves stale cached assets.
-- `&token=` — the connection token already present in the iframe document URL, passed through so each subresource request authenticates via the host's query-token channel (the same pattern the host uses for `theme.css`). The proxy strips `pluginSurfaceSession`/`pluginIframeTicket` from forwarded URLs, so the document token is the only credential the page can echo back.
+- `?v=`：由文件 mtime+size 计算的版本号；文件每次修改 URL 随之变化，WebView 永远不会用到旧缓存。
+- `&token=`：iframe 文档 URL 中自带的连接令牌，原样回传后子资源经主鉴权 queryToken 通道放行（与宿主给 `theme.css` 的处理方式一致）。代理层会剥离转发 URL 中的 `pluginSurfaceSession` 和 `pluginIframeTicket`，所以文档里的 token 是页面唯一能回传的凭证。
 
-`git.html` itself is re-read whenever its mtime+size signature changes, so page edits take effect without reloading the plugin.
+`git.html` 本身按 mtime+size 签名自动重读，修改页面后无需重载插件即可生效。
