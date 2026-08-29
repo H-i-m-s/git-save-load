@@ -18,6 +18,27 @@ async function readLegacyConfig(ctx) {
 }
 
 const CONFIG_KEYS = new Set(["repoPath", "stashMode", "pushMode", "pullMode", "defaultDiffMode", "theme", "paperTexture", "remoteSettings"]);
+const CONFIG_ENUMS = {
+  stashMode: new Set(["normal", "untracked", "all"]),
+  pushMode: new Set(["normal", "force-with-lease", "force"]),
+  pullMode: new Set(["merge", "rebase", "ff-only"]),
+  defaultDiffMode: new Set(["detail", "simple"]),
+  theme: new Set(["auto", "light", "dark", "warm-paper", "new-warm-paper", "midnight", "midnight-contrast", "high-contrast", "grass-aroma", "contemplation", "absolutely", "delve", "deep-think", "coral"]),
+  paperTexture: new Set(["on", "off"]),
+};
+
+export function validateConfigPatch(patch = {}) {
+  const result = {};
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return { ok: false, message: "配置格式不正确" };
+  for (const [key, value] of Object.entries(patch)) {
+    if (!CONFIG_KEYS.has(key)) continue;
+    if (CONFIG_ENUMS[key] && (!CONFIG_ENUMS[key].has(value))) return { ok: false, message: `${key} 的值不正确` };
+    if (key === "repoPath" && typeof value !== "string") return { ok: false, message: "仓库路径必须是字符串" };
+    if (key === "remoteSettings" && (!value || typeof value !== "object" || Array.isArray(value))) return { ok: false, message: "远程设置格式不正确" };
+    result[key] = value;
+  }
+  return { ok: true, value: result };
+}
 
 export async function readConfig(ctx) {
   const configApi = ctx?.config;
@@ -41,7 +62,9 @@ export async function readConfig(ctx) {
 }
 
 export async function writeConfig(ctx, config) {
-  const next = config && typeof config === "object" ? config : {};
+  const checked = validateConfigPatch(config);
+  if (!checked.ok) throw new Error(checked.message);
+  const next = checked.value;
   if (ctx?.config?.set) {
     const failures = [];
     for (const [key, value] of Object.entries(next)) {

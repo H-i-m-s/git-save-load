@@ -737,7 +737,9 @@ select:disabled{opacity:.5;cursor:not-allowed}
   <div class="commit-subtitle">留空不打 tag · 不懂可不管</div>
   <div class="commit-area">
     <input type="text" id="versionInput" placeholder="可选" value="0.0.1" autocomplete="off" style="width:80px;padding:6px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;font-family:monospace;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;flex-shrink:0">
-    <button id="btnCommit" onclick="doCommit()" style="padding:6px 14px;border:0;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:var(--hana-accent,#4a8cff);color:#fff;white-space:nowrap;transition:opacity .15s">存档</button>
+    <span id="commitActionSlot" class="commit-action-slot">
+      <button id="btnCommit" onclick="doCommit()" style="padding:6px 14px;border:0;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:var(--hana-accent,#4a8cff);color:#fff;white-space:nowrap;transition:opacity .15s">存档</button>
+    </span>
     <span id="pushActionSlot" class="commit-action-slot">
       <button id="btnPush" onclick="doPush(this)" style="padding:6px 10px 6px 7.5px;border:1px solid #27ae60;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:#27ae60;white-space:nowrap" title="把本地存档推送到默认远程仓库">📤 推送</button>
     </span>
@@ -5078,6 +5080,7 @@ function syncCommitActionLayout() {
     _commitActionLayoutFrame = 0;
     var area = document.querySelector(".commit-area");
     var slots = [
+      { el: document.getElementById("commitActionSlot"), states: ["存档", "存档中...", "提交中...", "✅ 已存档"] },
       { el: document.getElementById("pushActionSlot"), states: ["📤 推送", "检查中...", "覆盖中...", "✅ 已推送", "✅ 已覆盖"] },
       { el: document.getElementById("pullActionSlot"), states: ["📥 拉取", "拉取中...", "✅ 已拉取"] },
     ];
@@ -5127,7 +5130,7 @@ function setupCommitActionLayout() {
   if (_commitActionLayoutObserver) return;
   var area = document.querySelector(".commit-area");
   if (!area) return;
-  var buttons = area.querySelectorAll("#pushActionSlot button, #pullActionSlot button");
+  var buttons = area.querySelectorAll("#commitActionSlot button, #pushActionSlot button, #pullActionSlot button");
   var textObserver = new MutationObserver(syncCommitActionLayout);
   buttons.forEach(function(button) {
     textObserver.observe(button, { childList: true, characterData: true, subtree: true });
