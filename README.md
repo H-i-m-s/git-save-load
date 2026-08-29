@@ -584,15 +584,31 @@ git push origin --tags
 git-save-load/
 ├── manifest.json          # HanaAgent 插件清单与配置项
 ├── routes/
-│   └── git.js             # Widget 页面与 Git / GitHub 后端路由
+│   ├── git.js             # Card 页面入口、公共辅助和路由装配
+│   ├── local-git.js       # 状态、提交、身份和回滚
+│   ├── history.js         # 提交历史查询
+│   ├── history-edit.js    # amend、tag、squash、reword
+│   ├── diff-conflicts.js  # diff、版本对比和冲突处理
+│   ├── repository.js      # 仓库路径、信息、初始化和版本
+│   ├── github.js          # GitHub CLI 管理
+│   ├── remote-query.js    # 远程列表和角色
+│   ├── remote-sync.js     # 远程状态、fetch、merge、remove
+│   ├── remote-edit.js     # 远程名称和地址编辑
+│   ├── remote-push.js     # pull、push 和远程覆盖
+│   ├── branch.js          # 分支管理
+│   ├── stash.js           # Stash 管理
+│   ├── config.js          # 配置读写
+│   └── misc.js            # 兼容接口
+├── assets/
+│   └── git.html           # 当前 Card 前端入口、样式和交互逻辑
+├── views/
+│   └── git.html           # 历史遗留视图，当前入口不使用
 ├── tools/
 │   ├── _helpers.js        # Git 路径探测与命令辅助
 │   ├── git_status.js      # Agent：查看状态
 │   ├── git_commit.js      # Agent：创建提交
 │   ├── git_log.js         # Agent：查看历史
 │   └── git_reset.js       # Agent：回滚提交
-├── views/
-│   └── git.html           # 侧栏界面、样式和交互逻辑
 ├── docs/
 │   ├── 简易使用文档.md
 │   ├── 架构文档.md
@@ -601,7 +617,7 @@ git-save-load/
 └── README.md
 ```
 
-插件采用前端单页面 Widget + Node.js 路由的结构。界面内部通过事件总线刷新文件状态、提交记录和 Stash 卡片；Git 命令使用参数数组执行，尽量避免 shell 字符串拼接带来的注入和转义问题。
+插件采用前端单页面 Card + Node.js 路由的结构。当前页面入口为 `assets/git.html`，后端路由按职责拆分到多个 `routes/*.js` 模块；界面内部通过事件总线刷新文件状态、提交记录和 Stash 卡片。Git 命令使用参数数组执行，尽量避免 shell 字符串拼接带来的注入和转义问题。
 
 ---
 
@@ -614,8 +630,11 @@ cd git-save-load
 
 插件主体没有独立的前端构建步骤，主要修改文件为：
 
-- `views/git.html`：界面、CSS 和前端交互
-- `routes/git.js`：Git / GitHub CLI 后端路由
+- `assets/git.html`：当前 Card 界面、CSS 和前端交互
+- `routes/*.js`：按职责拆分的 Git、GitHub CLI 和配置后端路由
+- `routes/git.js`：页面入口、公共辅助函数和模块装配
+- `views/git.html`：历史遗留文件，当前运行入口不使用
+- `assets/git-api.js`：历史遗留请求封装，当前页面未引用
 - `tools/*.js`：Agent 可调用工具
 - `manifest.json`：插件元数据与配置
 
@@ -626,7 +645,7 @@ cd git-save-load
 ## 当前版本
 
 ```text
-v1.9.0
+v2.2.0
 ```
 
 1.9.0 重点更新：
