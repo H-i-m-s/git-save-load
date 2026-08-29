@@ -454,7 +454,9 @@ function applyRemoteSettings(remoteInfo, settings) {
 
 export default function (app, ctx) {
   // ======== 页面 ========
-  const renderSurface = async (c) => {
+  // Route declared by the WebView card contribution.
+  // 生成页面 HTML 字符串（主题注入 + 资源重写 + 凭证回传），供 /git 与 /widget 共用。
+  const buildSurfaceHtml = async (c) => {
     const html = await loadHtml();
     // 读取 Hana 传递的主题参数
     const requestedTheme = String(c.req.query("hana-theme") || "auto");
@@ -477,11 +479,25 @@ export default function (app, ctx) {
       /<body([^>]*)>/,
       `<body data-hana-theme="${theme}"$1>`
     );
-    return c.html(patched);
+    return patched;
   };
+
+  const renderSurface = async (c) => c.html(await buildSurfaceHtml(c));
 
   // Route declared by the WebView card contribution.
   app.get("/git", renderSurface);
+
+  // Route declared by the legacy widget contribution（经典界面右侧工作台面板）。
+  // 复用同一张页面的 HTML 与模块，通过 body 上的 data-hana-widget 标记让
+  // 前端进入窄面板模式：隐藏大页面专属区块，仅保留存档/读档主卡片。
+  app.get("/widget", async (c) => {
+    const patched = await buildSurfaceHtml(c);
+    const withWidgetFlag = patched.replace(
+      /<body([^>]*)>/,
+      (m, attrs) => `<body${attrs} data-hana-widget="1">`,
+    );
+    return c.html(withWidgetFlag);
+  });
 
   // 兼容性静态资源路由（严格白名单，逐个注册，无通配无拼接）。
   for (const info of GIT_ASSET_FILES) {

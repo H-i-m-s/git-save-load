@@ -13,6 +13,10 @@
     ]
   },
   "contributes": {
+    "widget": {
+      "title": "Git",
+      "route": "/widget"
+    },
     "cards": [
       {
         "id": "git-save-load",

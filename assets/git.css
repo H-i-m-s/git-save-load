@@ -601,3 +601,23 @@ select:disabled{opacity:.5;cursor:not-allowed}
   line-height: 1.5;
 }
 #confirmModal::-webkit-scrollbar{display:none}
+
+/* ============================================================
+   Widget 模式（经典界面右侧工作台面板，?widget=1 路由 + body 标记）
+   只保留存档/读档核心流程：仓库状态、变更文件、存档、暂存、读档。
+   整页专属区块（分支画布、历史编辑、GitHub、设置、工作流引导）隐藏。
+   ============================================================ */
+body[data-hana-widget="1"]{
+  padding:8px;
+  font-size:12px;
+}
+body[data-hana-widget="1"] #collapseBlock{display:none!important}
+body[data-hana-widget="1"] #panelsArea{padding-bottom:0}
+body[data-hana-widget="1"] #workflowGuide{display:none!important}
+body[data-hana-widget="1"] .header h1{font-size:14px}
+body[data-hana-widget="1"] .card{padding:8px 10px;margin-bottom:8px}
+body[data-hana-widget="1"] #fileCard{max-height:220px;min-height:80px;resize:none}
+body[data-hana-widget="1"] .card-title{font-size:12px}
+body[data-hana-widget="1"] #commitList{max-height:170px}
+body[data-hana-widget="1"] #repoHistory{max-height:120px}
+body[data-hana-widget="1"] .card:last-child{margin-bottom:0}
