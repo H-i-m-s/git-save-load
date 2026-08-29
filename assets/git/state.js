@@ -156,6 +156,9 @@ function scheduleBackgroundWarmup(path, delay) {
     loadStash();
     loadNextVersion();
     requestGhRepos(false).catch(function() {});
+    // 顺带预热仓库历史的元信息：下次点“切换”时历史行直接全量就绪。
+    // fetchRepoInfoBatch 内部会跳过已缓存路径，且单条缓存 30s TTL 兜底。
+    fetchRepoInfoBatch(getRepoHistory()).catch(function() {});
   }, typeof delay === "number" ? delay : 0);
 }
 

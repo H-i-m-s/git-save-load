@@ -70,6 +70,30 @@ function formatRepoDisplay(path, info, opts = {}) {
 }
 
 
+// 批量预热/拉取仓库元信息：过滤已缓存路径，一次请求拉齐（服务端内部全并行）。
+// 结果写入 _repoInfoCache（与单条 fetchRepoInfo 共用同一缓存）。
+async function fetchRepoInfoBatch(paths) {
+  const todo = [...new Set(paths.filter(Boolean))].filter(p => {
+    const cached = _repoInfoCache.get(p);
+    return !(cached && Date.now() - cached.ts < REPO_INFO_CACHE_TTL);
+  });
+  if (!todo.length) return;
+  try {
+    const res = await pluginFetch("api/repo-info-batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths: todo }),
+    });
+    const data = await res.json();
+    if (data && data.ok && data.infos) {
+      const now = Date.now();
+      for (const [p, info] of Object.entries(data.infos)) {
+        _repoInfoCache.set(p, { ts: now, info });
+      }
+    }
+  } catch {}
+}
+
 // 渲染仓库历史
 async function renderRepoHistory() {
   const el = document.getElementById("repoHistory");
@@ -85,7 +109,10 @@ async function renderRepoHistory() {
       '<button data-del="' + i + '" class="hist-del" title="从历史中移除">×</button>' +
     '</div>';
   }).join("");
-  // 并行获取每条仓库的元信息，填补 origin 行（布局高度早已预留，不跳）
+  // 并行获取每条仓库的元信息，填补 origin 行（布局高度早已预留，不跳）。
+  // 用批量接口一次拉齐（服务端异步并行），避免逐条请求串行排队；
+  // 已缓存的路径直接命中，不发请求。
+  await fetchRepoInfoBatch(history);
   await Promise.all(history.map(async (p) => {
     const info = await fetchRepoInfo(p);
     const slot = el.querySelector('.hist-row[data-path="' + CSS.escape(p) + '"] .hist-slot');

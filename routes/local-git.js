@@ -3,18 +3,31 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export function registerLocalGitRoutes(app, { repoPath, gitExecFile, commandErrorText }) {
+export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, commandErrorText }) {
   app.get("/api/status", async (c) => {
     const path = repoPath(c.req.query("path"));
 
     try {
-      const branch = gitExecFile(path, ["branch", "--show-current"]);
-      const statusShort = gitExecFile(path, ["-c", "core.quotepath=false", "status", "--short"]);
-      // git log 在空仓库（无 commit）会失败，单独处理
-      let recentCommits = [];
+      // 四个只读 git 调用并行执行（异步不阻塞事件循环），总耗时从串行累加
+      // 降为最慢单项。branch/status 失败 = 不是仓库；log/diff 失败静默降级
+      //（空仓库无 commit 时 log 会失败，属正常情况）。
+      const branchP = gitExecFileAsync(path, ["branch", "--show-current"]);
+      const statusP = gitExecFileAsync(path, ["-c", "core.quotepath=false", "status", "--short"]);
+      const logP = gitExecFileAsync(path, ["log", "--format=%H %s", "--numstat", "-n", "5"]).catch(() => "");
+      const diffP = gitExecFileAsync(path, ["-c", "core.quotepath=false", "diff", "--numstat"]).catch(() => "");
+      let branch;
+      let statusShort;
       try {
-        const logRaw = gitExecFile(path, ["log", "--format=%H %s", "--numstat", "-n", "5"]);
-        // 解析 log --numstat 输出
+        [branch, statusShort] = await Promise.all([branchP, statusP]);
+      } catch (e) {
+        return c.json({ ok: false, isRepo: false, path, message: e.message });
+      }
+      const logRaw = await logP;
+      const diffRaw = await diffP;
+
+      // 解析 log --numstat 输出（空仓库 logRaw 为空串，recentCommits 保持空）
+      let recentCommits = [];
+      if (logRaw) {
         const lines = logRaw.split("\n");
         let current = null;
         for (const line of lines) {
@@ -29,7 +42,7 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, commandErro
           }
         }
         if (current) recentCommits.push(current);
-      } catch {}
+      }
 
       let changed = [];
       let untracked = [];
@@ -42,16 +55,15 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, commandErro
         }
       }
 
-      // 获取每个文件的增删统计
+      // 获取每个文件的增删统计（与 branch/status/log 并行，上面已发起）
       const numstat = {};
-      try {
-        const raw = gitExecFile(path, ["-c", "core.quotepath=false", "diff", "--numstat"]);
-        for (const line of raw.split("\n").filter(Boolean)) {
+      if (diffRaw) {
+        for (const line of diffRaw.split("\n").filter(Boolean)) {
           const [added, deleted, ...nameParts] = line.split("\t");
           const name = nameParts.join("\t");
           if (name && added !== "-") numstat[name] = { added: parseInt(added) || 0, deleted: parseInt(deleted) || 0 };
         }
-      } catch {}
+      }
 
       // 增强 changedFiles，带上统计
       const changedWithStats = changed.map(line => {

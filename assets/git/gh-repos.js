@@ -304,5 +304,17 @@ function savePath() {
   _highlightedPath = p;            // 点击后的“预期”路径已成为事实
   onCurrentRepoChanged(p);
   cancelEditPath();
+  // 乐观 UI：不等接口返回，先把名片和列表切到加载态。
+  // 否则等待期间界面停留在旧仓库内容，切换观感不丝滑。
+  updateRepoPathDisplay(p);        // 名片骨架（name/tail 同步可算）立即换新
+  document.getElementById("branch").textContent = "…";
+  document.getElementById("initArea").style.display = "none";
+  document.getElementById("fileCard").style.display = "";
+  document.getElementById("commitCard").style.display = "";
+  document.getElementById("logCard").style.display = "";
+  document.getElementById("fileList").innerHTML = '<li class="empty-hint">正在加载仓库…</li>';
+  document.getElementById("commitList").innerHTML = '<li class="empty-hint">加载中…</li>';
+  const stashListEl = document.getElementById("stashList");
+  if (stashListEl) stashListEl.innerHTML = '<li class="empty-hint">加载中…</li>';
   refresh();
 }

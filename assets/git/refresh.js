@@ -126,22 +126,31 @@ async function refresh(force) {
   try {
     const cacheKey = "status-" + savedPath;
     let status = force ? null : cacheGet(cacheKey);
-    if (!status) {
-      const p = savedPath ? "path=" + encodeURIComponent(savedPath) : "";
-      const statusUrl = p ? "api/status?" + p : "api/status";
-      const statusRes = await pluginFetch(statusUrl);
-      status = await statusRes.json();
-      cacheSet(cacheKey, status);
+    if (status) {
+      // 缓存命中：直接渲染，提交记录按需并行加载（保持原有次序语义）
+      renderStatus(status);
+      if (status.ok) {
+        const path = currentPath;
+        resetLogPager(path);
+        loadLogPage(path, false);
+        scheduleBackgroundWarmup(path, 0);
+      }
+      return;
     }
-    renderStatus(status);
 
-    // 首屏核心内容：状态先显示，提交记录立即并行加载，不等待后台卡片。
-    if (status.ok) {
-      const path = currentPath;
-      resetLogPager(path);
-      loadLogPage(path, false);
-      scheduleBackgroundWarmup(path, 0);
+    // 缓存未命中：status 与提交记录并行拉取。log 不依赖 status 结果，
+    // 只依赖目标路径；谁先返回谁先渲染，切仓库时提交记录不再等状态。
+    // 非仓库场景：renderStatus 非 ok 会隐藏 logCard，log 的报错渲染不可见。
+    const p = savedPath ? "path=" + encodeURIComponent(savedPath) : "";
+    if (savedPath) {
+      resetLogPager(savedPath);
+      loadLogPage(savedPath, false).catch(function() {});
     }
+    const statusRes = await pluginFetch(p ? "api/status?" + p : "api/status");
+    status = await statusRes.json();
+    cacheSet(cacheKey, status);
+    renderStatus(status);
+    if (status.ok) scheduleBackgroundWarmup(currentPath, 0);
   } catch (e) {
     toast("刷新失败：" + e.message, "err");
   } finally {
@@ -149,19 +158,17 @@ async function refresh(force) {
   }
 }
 
-// 带指定路径刷新
+// 带指定路径刷新（初始化仓库后用）：status 与提交记录并行，同 refresh()。
 async function refreshWithPath(path) {
   const btn = document.getElementById("btnRefresh");
   btn.classList.add("spinning");
   try {
+    const logPromise = (resetLogPager(path), loadLogPage(path, false).catch(function() {}));
     const statusRes = await pluginFetch("api/status?path=" + encodeURIComponent(path));
     const status = await statusRes.json();
     renderStatus(status);
-    if (status.ok) {
-      resetLogPager(path);
-      await loadLogPage(path, false);
-      loadStash();
-    }
+    await logPromise;
+    if (status.ok) loadStash();
   } catch (e) {
     toast("刷新失败：" + e.message, "err");
   } finally {

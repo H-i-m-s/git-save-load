@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync, statSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { execSync, execFileSync } from "node:child_process";
+import { execSync, execFileSync, execFile } from "node:child_process";
 
 import { readConfig, writeConfig, readRepoPath, writeRepoPath, validateConfigPatch, registerConfigRoutes } from "./config.js";
 import { registerLocalGitRoutes } from "./local-git.js";
@@ -183,6 +183,27 @@ function gitExecFile(cwd, args, opts = {}) {
     env: gitEnv(),
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
+}
+
+// 异步版本：与 gitExecFile 同参，但不阻塞事件循环，供热点读路径并行执行。
+// 多个请求并发到达时，同步版本会在事件循环上排队串行，这是历史列表/状态刷新
+// 观感慢的根源；异步版本让 git 子进程真正并行。
+function gitExecFileAsync(cwd, args, opts = {}) {
+  const timeout = opts.timeout || 60000;
+  return new Promise((resolveP, rejectP) => {
+    execFile(resolveGitPath(), args, {
+      cwd,
+      encoding: "utf8",
+      timeout,
+      windowsHide: true,
+      env: gitEnv(),
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: opts.maxBuffer || 10 * 1024 * 1024,
+    }, (err, stdout) => {
+      if (err) rejectP(err);
+      else resolveP(String(stdout || "").trim());
+    });
+  });
 }
 
 // 历史重写需要在不打开外部编辑器的情况下为 Git 注入临时编辑器环境。
@@ -505,7 +526,7 @@ export default function (app, ctx) {
   }
 
   // ======== 模块注册 ========
-  registerLocalGitRoutes(app, { repoPath, gitExecFile, commandErrorText });
+  registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, commandErrorText });
   registerHistoryRoutes(app, { repoPath, gitExecFile });
   registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecFileWithEnv, commandErrorText, getGitOperationState });
   registerDiffConflictRoutes(app, { repoPath, gitExecFile });
@@ -515,6 +536,7 @@ export default function (app, ctx) {
     readRepoPath,
     writeRepoPath,
     gitExecFile,
+    gitExecFileAsync,
     extractBasename,
     extractParentTail,
     parseOriginUrl,
