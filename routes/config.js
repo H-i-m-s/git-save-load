@@ -88,3 +88,24 @@ export async function writeRepoPath(ctx, path) {
   const current = await readConfig(ctx);
   await writeConfig(ctx, { ...current, repoPath: path });
 }
+
+// Config read/write routes.
+export function registerConfigRoutes(app, { ctx, readConfig, writeConfig, validateConfigPatch }) {
+  app.get("/api/config", async (c) => {
+    try {
+      return c.json({ ok: true, config: await readConfig(ctx) });
+    } catch { return c.json({ ok: true, config: {} }); }
+  });
+
+  app.post("/api/config", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    try {
+      const checked = validateConfigPatch(body);
+      if (!checked.ok) return c.json({ ok: false, message: checked.message });
+      const current = await readConfig(ctx);
+      const merged = { ...current, ...checked.value };
+      await writeConfig(ctx, merged);
+      return c.json({ ok: true, config: await readConfig(ctx) });
+    } catch (e) { return c.json({ ok: false, message: e.message }); }
+  });
+}
