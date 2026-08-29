@@ -90,11 +90,13 @@ export function registerDiffConflictRoutes(app, { repoPath, gitExecFile }) {
     }
 
     try {
-      const repoRoot = gitExecFile(repo, ["rev-parse", "--show-toplevel"], { timeout: 10000 });
-      const filePath = join(repoRoot, file);
-      const normalizedRoot = repoRoot.replace(/[\\/]+$/, "").toLowerCase();
+      const repoRoot = gitExecFile(repo, ["rev-parse", "--show-toplevel"], { timeout: 10000 }).replace(/\\/g, "/");
+      const filePath = join(repoRoot, file).replace(/\\/g, "/");
+      // git 在 Windows 上返回正斜杠路径，而 path.join 产生反斜杠；必须先统一
+      // 分隔符再做包含检查，否则合法文件会被误判为仓库外路径。
+      const normalizedRoot = repoRoot.replace(/\/+$/, "").toLowerCase();
       const normalizedFile = filePath.toLowerCase();
-      if (normalizedFile !== normalizedRoot && !normalizedFile.startsWith(normalizedRoot + "\\") && !normalizedFile.startsWith(normalizedRoot + "/")) {
+      if (normalizedFile !== normalizedRoot && !normalizedFile.startsWith(normalizedRoot + "/")) {
         return c.json({ ok: false, message: "文件路径必须位于当前仓库内" });
       }
       let content = readFileSync(filePath, "utf8");

@@ -603,8 +603,6 @@ git-save-load/
 │   ├── git.html            # Card 入口（DOM 结构 + 模块加载顺序）
 │   ├── git.css             # 全部样式
 │   └── git/                # 前端 JS 模块（26 个）
-├── views/
-│   └── git.html           # 历史遗留视图，当前入口不使用
 ├── tools/
 │   ├── _helpers.js        # Git 路径探测与命令辅助
 │   ├── git_status.js      # Agent：查看状态
@@ -639,8 +637,6 @@ cd git-save-load
 - `assets/git/*.js`：前端功能模块，加载顺序即拆分前顶层执行顺序，勿随意调整
 - `routes/*.js`：按职责拆分的 Git、GitHub CLI 和配置后端路由
 - `routes/git.js`：页面入口、前端资源服务路由（git-asset）、公共辅助函数和模块装配
-- `views/git.html`：历史遗留文件，当前运行入口不使用
-- `assets/git-api.js`：历史遗留请求封装，当前页面未引用
 - `tools/*.js`：Agent 可调用工具
 - `manifest.json`：插件元数据与配置
 

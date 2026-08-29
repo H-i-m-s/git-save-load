@@ -3,7 +3,7 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export function registerLocalGitRoutes(app, { repoPath, gitExecFile }) {
+export function registerLocalGitRoutes(app, { repoPath, gitExecFile, commandErrorText }) {
   app.get("/api/status", async (c) => {
     const path = repoPath(c.req.query("path"));
 
@@ -119,7 +119,10 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile }) {
         writeFileSync(msgFile, message, "utf8");
         gitExecFile(path, ["commit", "-F", msgFile]);
       } catch (e) {
-        if (e.message.includes("nothing to commit") || e.message.includes("nothing added")) {
+        // execFileSync 抛错时 git 的真实输出在 stderr/stdout，不在 e.message 里，
+        // 必须用 commandErrorText 拼接后才能匹配 "nothing to commit"。
+        const errText = commandErrorText(e);
+        if (errText.includes("nothing to commit") || errText.includes("nothing added")) {
           return c.json({ ok: true, nothingToCommit: true, message: "没有需要提交的变更" });
         }
         throw e;
@@ -137,7 +140,7 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile }) {
 
       return c.json({ ok: true, commit: last, message, tag });
     } catch (e) {
-      return c.json({ ok: false, message: `提交失败：${e.message}` });
+      return c.json({ ok: false, message: `提交失败：${commandErrorText(e) || e.message}` });
     } finally {
       // 清理临时文件
       if (msgFile) {

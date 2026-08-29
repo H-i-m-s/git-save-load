@@ -489,7 +489,7 @@ export default function (app, ctx) {
   }
 
   // ======== 模块注册 ========
-  registerLocalGitRoutes(app, { repoPath, gitExecFile });
+  registerLocalGitRoutes(app, { repoPath, gitExecFile, commandErrorText });
   registerHistoryRoutes(app, { repoPath, gitExecFile });
   registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecFileWithEnv, commandErrorText, getGitOperationState });
   registerDiffConflictRoutes(app, { repoPath, gitExecFile });
