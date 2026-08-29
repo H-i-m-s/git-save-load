@@ -428,16 +428,22 @@ export default function (app, ctx) {
   // ======== 页面 ========
   const renderSurface = async (c) => {
     const html = await loadHtml();
-    // 给本地静态资源引用追加版本参数（仅处理插件自身 assets 路径）
-    const versioned = html.replace(
-      /(assets\/[A-Za-z0-9._/-]+\.(?:js|css))(?![\w.$-])/g,
-      (match, relPath) => `${match}?v=${assetVersionToken(relPath)}`,
-    );
     // 读取 Hana 传递的主题参数
     const requestedTheme = String(c.req.query("hana-theme") || "auto");
     const allowedThemes = new Set(["auto", "light", "dark", "warm-paper", "new-warm-paper", "midnight", "midnight-contrast", "high-contrast", "grass-aroma", "contemplation", "absolutely", "delve", "deep-think", "coral"]);
     const theme = allowedThemes.has(requestedTheme) ? requestedTheme : "auto";
     // 主题只接受白名单值，避免把查询参数直接写入 HTML 属性。
+    // 桌面本地模式的卡片 iframe 仅携带 pluginSurfaceSession 查询凭证，宿主不会
+    // 为它下发资产 cookie，静态子资源必须原样回传 session 才能通过主鉴权后备
+    // （协议允许 header 或同名 query 回传，见 plugin-protocol 的注释）。
+    const surfaceSession = String(c.req.query("pluginSurfaceSession") || "");
+    const sessionSuffix = surfaceSession
+      ? `&pluginSurfaceSession=${encodeURIComponent(surfaceSession)}`
+      : "";
+    const versioned = html.replace(
+      /(assets\/[A-Za-z0-9._/-]+\.(?:js|css))(?![\w.$-])/g,
+      (match, relPath) => `${match}?v=${assetVersionToken(relPath)}${sessionSuffix}`,
+    );
     const patched = versioned.replace(
       /<body([^>]*)>/,
       `<body data-hana-theme="${theme}"$1>`

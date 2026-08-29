@@ -707,5 +707,21 @@
 <script src="assets/git/walkthrough.js"></script>
 <script src="assets/git/identity.js"></script>
 <script src="assets/git/main.js"></script>
+<script>
+// 加载健康检查：任一模块请求失败（如会话失效）时给出可见提示，避免静默白板。
+(function() {
+  function gslHealthCheck() {
+    if (typeof window.doRefreshAll === "function" && typeof window.initCardDrag === "function") return;
+    var el = document.getElementById("toast");
+    if (el) {
+      el.textContent = "⚠ 前端模块加载失败，界面不完整。请重启 HanaAgent 或重载插件后重试。";
+      el.className = "msg-toast err";
+      el.style.display = "block";
+    }
+  }
+  if (document.readyState === "complete") setTimeout(gslHealthCheck, 1500);
+  else window.addEventListener("load", function() { setTimeout(gslHealthCheck, 1500); });
+})();
+</script>
 </body>
 </html>
