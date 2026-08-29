@@ -461,12 +461,13 @@ export default function (app, ctx) {
     const allowedThemes = new Set(["auto", "light", "dark", "warm-paper", "new-warm-paper", "midnight", "midnight-contrast", "high-contrast", "grass-aroma", "contemplation", "absolutely", "delve", "deep-think", "coral"]);
     const theme = allowedThemes.has(requestedTheme) ? requestedTheme : "auto";
     // 主题只接受白名单值，避免把查询参数直接写入 HTML 属性。
-    // 桌面本地模式的卡片 iframe 仅携带 pluginSurfaceSession 查询凭证；静态子资源
-    // 改由插件路由 git-asset/* 提供（见上方说明），这里把 assets/ 引用重写为
-    // 路由地址，并追加版本参数与会话回传（协议允许同名 query 回传）。
-    const surfaceSession = String(c.req.query("pluginSurfaceSession") || "");
-    const sessionSuffix = surfaceSession
-      ? `&pluginSurfaceSession=${encodeURIComponent(surfaceSession)}`
+    // 子资源凭证回传：桌面本地模式 iframe 文档 URL 携带 ?token=（loopback_token
+    // 凭证），代理层会删除 pluginSurfaceSession/iframeTicket 但保留 token。把
+    // token 原样回传到子资源 URL 上，主鉴权 queryToken 通道即可放行（与宿主给
+    // theme.css 的处理方式一致）；非本地模式由资产 cookie 兑底，无需后缀。
+    const queryToken = String(c.req.query("token") || "");
+    const sessionSuffix = queryToken
+      ? `&token=${encodeURIComponent(queryToken)}`
       : "";
     const versioned = html.replace(
       /assets\/([A-Za-z0-9._/-]+\.(?:js|css))(?![\w.$-])/g,
