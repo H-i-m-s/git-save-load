@@ -611,7 +611,6 @@ body[data-hana-widget="1"]{
   padding:8px;
   font-size:12px;
 }
-body[data-hana-widget="1"] #collapseBlock{display:none!important}
 body[data-hana-widget="1"] #panelsArea{padding-bottom:0}
 body[data-hana-widget="1"] #workflowGuide{display:none!important}
 body[data-hana-widget="1"] .header h1{font-size:14px}
@@ -621,3 +620,6 @@ body[data-hana-widget="1"] .card-title{font-size:12px}
 body[data-hana-widget="1"] #commitList{max-height:170px}
 body[data-hana-widget="1"] #repoHistory{max-height:120px}
 body[data-hana-widget="1"] .card:last-child{margin-bottom:0}
+/* 分支画布在侧栏内可用：collapseBlock 占满视口高度（body 有 min-height:100vh），
+   退出按钮在画布标题栏内，不依赖整页专属元素。 */
+body[data-hana-widget="1"] #collapseBlock{min-height:0}

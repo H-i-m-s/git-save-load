@@ -572,6 +572,7 @@ export default function (app, ctx) {
     ctx,
     repoPath,
     gitExecFile,
+    gitExecFileAsync,
     listRemoteDetails,
     readRemoteSettings,
     applyRemoteSettings,
@@ -581,6 +582,9 @@ export default function (app, ctx) {
     commandErrorText,
     writeRemoteSettings,
     isValidRemoteName,
+    sanitizeRemoteUrl,
+    parseCommitList,
+    parseNameStatus,
   });
   registerRemoteSyncRoutes(app, {
     ctx,

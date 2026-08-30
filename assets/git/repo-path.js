@@ -142,6 +142,18 @@ async function renderRepoHistory() {
       }
     }
   };
+  // 双击历史行直接切换仓库：跳过“填入输入框 → 点确定”，切换本身不等远程数据
+  el.ondblclick = function(e) {
+    if (e.target.closest("button[data-del]")) return;
+    var row = e.target.closest("div.hist-row");
+    if (!row) return;
+    var p = row.getAttribute("data-path");
+    if (!p) return;
+    var input = document.getElementById("pathInput");
+    if (input) input.value = p;
+    _highlightedPath = p;
+    savePath();
+  };
 }
 
 // 仅刷新历史列表的高亮态（避免重新拉仓库元信息）
