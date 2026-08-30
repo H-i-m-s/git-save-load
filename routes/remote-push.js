@@ -100,8 +100,13 @@ export function registerRemotePushRoutes(app, { ctx, repoPath, gitExecFile, comm
       else if (stderr.includes("Could not read from remote")) cn = "无法连接远程仓库，请检查网络或仓库地址";
       else if (stderr.includes("Repository not found")) cn = "远程仓库不存在，请检查仓库地址";
       else if (stderr.includes("Permission denied")) cn = "权限不足，请检查 GitHub 登录状态";
-      else if (stderr.includes("unable to access")) cn = "无法访问远程仓库，请检查网络连接";
-      else {
+      else if (stderr.includes("unable to access")) {
+        // unable to access 只说明 HTTP(S) 传输层失败；常见根因：代理软件未运行
+        // （git 全局配置写死了 http.proxy）或目标主机不可达。透出 git 原始
+        // 报错行，用户能直接看到是连不上代理还是连不上远端。
+        const detail = stderr.split(/\r?\n/).find(l => l.includes("unable to access")) || "";
+        cn = "无法访问远程仓库，请检查网络连接" + (detail ? "\n" + detail.trim() : "");
+      } else {
         const errLine = stderr.split("\n").find(l => l.includes("error:") || l.includes("fatal:"));
         cn = errLine ? "推送失败：" + errLine.replace(/^(error:|fatal:)\s*/, "").trim() : "推送失败";
       }
