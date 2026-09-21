@@ -4,7 +4,7 @@
   "name": "Git Save/Load",
   "version": "2.4.1",
   "entry": "index.js",
-  "icon": "assets/icon.png",
+  "icon": "assets/icon.svg",
   "description": "Git 存档与读档。支持一键存档、版本历史浏览、分支管理、已有 GitHub 仓库关联，以及带二次确认的远程覆盖推送。",
   "minAppVersion": "0.978.0",
   "capabilities": [
