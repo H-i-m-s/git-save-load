@@ -123,26 +123,42 @@ function applyTheme(theme) {
   applyTexture(textureEnabled);
 }
 
+// 宿主主题名解析：已知主题名直接用，未知时按宿主声明的明暗外观兜底
+var HANA_HOST_THEME_NAMES = {
+  "dark": "dark", "warm-paper": "warm-paper", "new-warm-paper": "new-warm-paper",
+  "midnight": "midnight", "midnight-contrast": "midnight-contrast",
+  "high-contrast": "high-contrast", "grass-aroma": "grass-aroma",
+  "contemplation": "contemplation", "absolutely": "absolutely",
+  "delve": "delve", "deep-think": "deep-think", "coral": "coral"
+};
+function resolveHostThemeName(name, appearance) {
+  if (name && HANA_HOST_THEME_NAMES[name]) return HANA_HOST_THEME_NAMES[name];
+  if (appearance === "dark") return "midnight";
+  if (appearance === "light") return "warm-paper";
+  return null;
+}
+
 // 获取Hana当前主题
 function getHanaTheme() {
-  // 优先：读取 body 上的 data-hana-theme（Hana 平台通过 URL 参数传递）
-  var fromAttr = document.body.getAttribute("data-hana-theme");
-  if (fromAttr && fromAttr !== "") {
-    var themeMap = {
-      "warm-paper": "warm-paper", "new-warm-paper": "new-warm-paper",
-      "midnight": "midnight", "midnight-contrast": "midnight-contrast",
-      "high-contrast": "high-contrast", "grass-aroma": "grass-aroma",
-      "contemplation": "contemplation", "absolutely": "absolutely",
-      "delve": "delve", "deep-think": "deep-think", "coral": "coral"
-    };
-    if (themeMap[fromAttr]) return themeMap[fromAttr];
-  }
-
-  // 备选：上次同步到的宿主主题（模接模块每次拿到快照都会写入，
-  // 重启时宿主还没握手完也能直接命中，避免先闪暖白再变色）
+  // 首选：上次同步到的宿主主题。宿主重启时渲染进程的 data-theme 可能还是默认值，
+  // 面板 URL 里带的也就是默认值；先用记住的主题上色，真正的变更推来会立刻覆盖。
   try {
-    var lastSynced = localStorage.getItem("git-sl-host-theme");
-    if (lastSynced && themeMap[lastSynced]) return themeMap[lastSynced];
+    var remembered = resolveHostThemeName(
+      localStorage.getItem("git-sl-host-theme"),
+      localStorage.getItem("git-sl-host-appearance")
+    );
+    if (remembered) return remembered;
+  } catch {}
+
+  // 其次：读取 body 上的 data-hana-theme（桥接模块写入）
+  var fromAttr = resolveHostThemeName(document.body.getAttribute("data-hana-theme"), null);
+  if (fromAttr) return fromAttr;
+
+  // 再其次：宿主在 iframe URL 里声明的主题（挂载当刻的值）
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var fromUrl = resolveHostThemeName(params.get("hana-theme"), params.get("hana-theme-appearance"));
+    if (fromUrl) return fromUrl;
   } catch {}
 
   // 备选：读 localStorage
