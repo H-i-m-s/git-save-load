@@ -465,7 +465,7 @@ gh auth status
 
 ### 前置条件
 
-- HanaAgent `0.82.0` 或更高版本
+- HanaAgent `0.978.0` 或更高版本（v2 App）
 - Git
 - GitHub CLI `gh`：仅 GitHub 面板需要
 - 如果要执行提交，需要为当前仓库配置 Git 姓名和邮箱
@@ -479,19 +479,21 @@ git config user.email "you@example.com"
 
 ### 通过 HanaAgent 安装
 
-在 HanaAgent 中打开：
+本目录是 manifestVersion 2 的 Hana App，位于 `<HANA_HOME>/apps/git-save-load`。重启 HanaAgent 后，到市场「已安装」页 App 类目的「待批准」区块批准它。首次批准时会对以下能力一次性确认：
 
-```text
-设置 → 插件 → 搜索 git-save-load → 安装并启用
-```
+| 能力 | 用途 |
+| --- | --- |
+| `app/process.spawn` | 运行 git / gh 子进程 |
+| `app/tools.expose-to-model` | 四个 Agent 工具进入模型工具循环 |
+| `app/ui.open-external` | 在系统浏览器打开 GitHub 链接 |
+| `app/ui.clipboard-write` | 复制仓库地址 |
+| `app/resources.read` / `app/resources.write` | 冲突解决、.gitignore、LICENSE 等仓库文件读写（经宿主 ResourceIO 门） |
 
-### 手动安装
+之后可在设置窗「安全」页的「应用能力」面板单独开关。
 
-```bash
-git clone https://github.com/H-i-m-s/git-save-load.git "$env:USERPROFILE\.hanako\plugins\git-save-load"
-```
+### 从 v1 插件迁移
 
-安装后重启 HanaAgent，或通过插件管理界面重新加载插件。
+v1 插件（`plugins/git-save-load`）可继续运行；v2 App 与它互不影响。仓库路径、主题、远程角色等配置已从 v1 的 `plugin-data/git-save-load/config.json` 迁到本 App 的 `app-data/git-save-load/config.json`，首次读取时生效，之后以 v2 配置存储为准。确认 v2 版本工作正常后，可在插件管理里停用 v1 插件。
 
 ---
 
@@ -582,9 +584,20 @@ git push origin --tags
 
 ```text
 git-save-load/
-├── manifest.json          # HanaAgent 插件清单与配置项
-├── routes/
-│   ├── git.js             # Card 页面入口、公共辅助和路由装配
+├── manifest.json          # v2 App 清单（manifestVersion 2）、设置 schema、卡片与功能面板声明
+├── index.js               # defineApp 入口：注册四个 Agent 工具
+├── assets/
+│   └── icon.png           # App 身份图标
+├── ui/                    # 宿主静态树（/api/apps/git-save-load/ui/*），App 级资源鉴权
+│   ├── git.html           # 卡片与功能面板共用的页面入口
+│   └── assets/
+│       ├── cover.png      # 卡片封面（face.image）
+│       ├── sdk.js         # @hana/app-sdk/ui 浏览器单例
+│       ├── hana-bridge.js # 主题/挂载位桥接（ESM）
+│       ├── git.css        # 全部样式
+│       └── git/           # 前端 JS 模块（26 个）
+├── routes/                # 后端路由（Hono 目录形式，前缀 /api/apps/git-save-load/routes/）
+│   ├── git.js             # 公共辅助函数与各模块装配
 │   ├── local-git.js       # 状态、提交、身份和回滚
 │   ├── history.js         # 提交历史查询
 │   ├── history-edit.js    # amend、tag、squash、reword
@@ -597,29 +610,29 @@ git-save-load/
 │   ├── remote-push.js     # pull、push 和远程覆盖
 │   ├── branch.js          # 分支管理
 │   ├── stash.js           # Stash 管理
-│   ├── config.js          # 配置读写
+│   ├── config.js          # 配置读写（v2 config + dataDir 遗留文件回退）
 │   └── misc.js            # 兼容接口
-├── assets/
-│   ├── git.html            # Card 入口（DOM 结构 + 模块加载顺序）
-│   ├── git.css             # 全部样式
-│   └── git/                # 前端 JS 模块（26 个）
-├── tools/
+├── tools/                 # Agent 可调用工具的实现模块
 │   ├── _helpers.js        # Git 路径探测与命令辅助
-│   ├── git_status.js      # Agent：查看状态
-│   ├── git_commit.js      # Agent：创建提交
-│   ├── git_log.js         # Agent：查看历史
-│   └── git_reset.js       # Agent：回滚提交
+│   ├── git_status.js
+│   ├── git_commit.js
+│   ├── git_log.js
+│   └── git_reset.js
+├── sdk/                   # 随包分发的 @hana/app-sdk 运行时闭包（离线装载，不依赖 npm）
 ├── docs/
-│   ├── 简易使用文档.md
-│   ├── 架构文档.md
-│   └── 踩坑记录.md
-├── DESIGN.md              # 设计规范
+├── DESIGN.md
 └── README.md
 ```
 
-插件采用前端单页面 Card + Node.js 路由的结构。当前页面入口为 `assets/git.html`（DOM 结构与模块加载顺序），样式拆分在 `assets/git.css`，前端逻辑拆分在 `assets/git/*.js`（26 个模块，按拆分前的顶层执行顺序加载）；后端路由按职责拆分到多个 `routes/*.js` 模块；界面内部通过事件总线刷新文件状态、提交记录和 Stash 卡片。Git 命令使用参数数组执行，尽量避免 shell 字符串拼接带来的注入和转义问题。
+### v2 相对 v1 的关键变化
 
-> 桌面本地模式下卡片 iframe 仅携带 surface session 凭证，无法加载宿主静态资产（`/assets/*` 要求 chat scope）。后端返回页面前会把 `assets/...` 引用重写为插件路由 `git-asset/...`，并追加两个查询参数：基于文件 mtime+size 的 `?v=`（文件一变 URL 就变，缓存立即失效）和文档 URL 自带的 `token=`（回传后子资源经主鉴权 queryToken 通道放行，与宿主给 theme.css 的处理一致）。文件更新后 WebView 立即拿到新内容。
+- **页面与静态资源**：v1 由插件路由 serve HTML 并白名单转发 `assets/`（token 回传 + mtime 版本号）；v2 页面与资源全部来自 `ui/` 静态树，由宿主按 App 级票据鉴权，`git-asset` 机制已删除。
+- **侧栏 Widget**：v1 的 `contributes.widget` 在 v2 没有对应贡献点，改为卡片的 `functionPanel`（同一张 `git.html`，由 `hana.surface.getContext().slot` 识别后套用原 widget 窄面板样式）。
+- **文件系统边界**：App 进程运行在 Node Permission Model 下（安装目录只读、`app-data/git-save-load` 可写）。仓库内文件读写改走 `ctx.resources`（`app/resources.read` / `app/resources.write`），临时文件（commit 消息、rebase 编辑器脚本）落 `dataDir`，`.git` 状态文件的存在性检查走宿主 `resources.stat`。git / gh 子进程不受该限制（需 `app/process.spawn`）。
+- **配置**：`contributes.configuration` → `contributes.settings.schema`；`ctx.config` 为异步读写。
+- **工具**：`tools/*.js` 模块不变，由 `index.js` 包一层执行上下文后经 `sdk.tools.register` 注册；模型可调用需 `app/tools.expose-to-model` 授权。
+- **前端 API 基址**：`/api/plugins/git-save-load/` → `/api/apps/git-save-load/routes/`，凭证头 `X-Hana-Plugin-Surface-Session` → `X-Hana-App-Surface-Session`（env.js 一处）。
+- **主题**：宿主主题名经 `hana.theme` 订阅写入 `body[data-hana-theme]`，原有 14 套主题逻辑不变。
 
 ---
 
@@ -647,16 +660,46 @@ cd git-save-load
 ## 当前版本
 
 ```text
-v2.2.0
+v2.4.0（v2 App 迁移版）
 ```
 
-1.9.0 重点更新：
+v2.4.0 重点更新：
 
-- 提交记录首屏加载 20 条，接近底部自动加载更早记录
-- 提交记录分页接口增加 `skip` 与 `hasMore`
-- 改善已有记录追加时的滚动体验
-- 完善推送、拉取按钮在不同状态文案下的换行布局
-- 延续提交历史编辑、版本号管理和连续提交合并能力
+- 从 HanaAgent v1 插件迁移为 manifestVersion 2 的 App
+- 侧栏 Widget 改为卡片 functionPanel
+- 仓库文件读写改走宿主 ResourceIO 门，临时文件落 App dataDir
+- 主题跟随改用 `hana.theme` 订阅
+
+历史重点更新：
+
+- 1.9.0：提交记录首屏加载 20 条，接近底部自动加载更早记录；分页接口增加 `skip` 与 `hasMore`；改善追加滚动体验；完善推送、拉取按钮换行布局；延续提交历史编辑、版本号管理和连续提交合并能力
+
+---
+
+## 开发
+
+```bash
+# 目录位于 <HANA_HOME>/apps/git-save-load，改完在 App 详情页点「重新加载」
+```
+
+主要修改文件：
+
+- `manifest.json`：清单、设置 schema、卡片与功能面板声明
+- `index.js`：工具注册（`defineApp`）
+- `ui/git.html`：页面入口（DOM 结构与模块加载顺序）
+- `ui/assets/git/*.js`：前端功能模块，加载顺序即拆分前顶层执行顺序，勿随意调整
+- `ui/assets/hana-bridge.js`：v2 桥接（主题、function-panel 识别、App SDK 单例）
+- `routes/*.js`：后端路由；`routes/git.js` 是公共辅助与模块装配
+- `tools/*.js`：Agent 工具
+
+改完后校验（在 Hana 检出树或已安装的 author tools 下执行）：
+
+```bash
+node scripts/validate-app.mjs --dir <HANA_HOME>/apps/git-save-load --json
+node scripts/validate-app.mjs --dir <HANA_HOME>/apps/git-save-load --smoke --json
+```
+
+`--smoke` 需要独立 Electron 运行时（`HANA_APP_ELECTRON` 指向 Electron 二进制）。
 
 ---
 

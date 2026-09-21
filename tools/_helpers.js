@@ -18,6 +18,12 @@ export async function resolvePath(input = {}, ctx = {}) {
 }
 
 // 定位 git 可执行文件并缓存。仅当 PATH 无法解析 git 时探测常见安装位置。
+// Node Permission Model 下 existsSync 对安装目录/dataDir 之外的路径会抛
+// ERR_ACCESS_DENIED 而不是返回 false，探测一律走 safeExists；宿主侧的
+// resolveExecutable 探测见 routes/git.js。
+function safeExists(p) {
+  try { return existsSync(p); } catch { return false; }
+}
 let _cachedGitPath = null;
 export function resolveGitPath() {
   if (_cachedGitPath !== null) return _cachedGitPath;
@@ -34,7 +40,7 @@ export function resolveGitPath() {
     join(process.env.USERPROFILE || "", "scoop", "apps", "git", "current", "cmd", "git.exe"),
   ];
   for (const candidate of candidates) {
-    if (!candidate || !existsSync(candidate)) continue;
+    if (!candidate || !safeExists(candidate)) continue;
     try {
       execFileSync(candidate, ["--version"], { encoding: "utf8", timeout: 10000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       _cachedGitPath = candidate;
@@ -50,12 +56,15 @@ export function resolveGitPath() {
  */
 export function gitExec(cwd, args, opts = {}) {
   const timeout = opts.timeout || 60000;
+  // maxBuffer 预留 10MB：大仓库单次提交可能包含数千文件，git log --numstat
+  // 输出可超 Node 默认的 1MB，不足时报 ENOBUFS（实测 project 仓库触发过）。
   return execFileSync(resolveGitPath(), args, {
     cwd,
     encoding: "utf8",
     timeout,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: opts.maxBuffer || 10 * 1024 * 1024,
   }).trim();
 }
 

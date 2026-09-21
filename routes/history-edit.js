@@ -2,8 +2,7 @@
 // All four rewrite repository history, so they share one per-repo lock and
 // the tag / rebase-identity helpers below.
 
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 // 历史重写是仓库级别的危险操作。同一 HanaAgent 进程内，同一仓库只能同时执行一个 reword/squash。
@@ -138,7 +137,8 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
 
     let msgFile = null;
     try {
-      msgFile = join(tmpdir(), "git-sl-amend-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) + ".txt");
+      // 临时文件落 App dataDir（PM 下只有 dataDir 可写）
+      msgFile = tmpFile("git-sl-amend", ".txt");
       writeFileSync(msgFile, message, "utf8");
       gitExecFile(path, ["commit", "--amend", "-F", msgFile]);
       const last = gitExecFile(path, ["log", "--oneline", "-n", "1"]);
@@ -228,12 +228,12 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
       }
     };
 
-    const recoverAfterFailure = () => {
+    const recoverAfterFailure = async () => {
       if (!rebaseStarted || !originalHead) return "";
       try {
         const currentBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
         const currentGitDir = resolve(path, gitExecFile(path, ["rev-parse", "--git-dir"], { timeout: 10000 }));
-        const rebaseIdentity = getRebaseIdentity(path, gitExecFile);
+        const rebaseIdentity = await getRebaseIdentity(path, gitExecFile, readTextFile);
         const currentBranchMatches = currentBranch === startBranch || !currentBranch;
         const belongsToThisRequest = currentBranchMatches
           && currentGitDir === startGitDir
@@ -253,7 +253,7 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
     try {
       const branch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
       if (!branch) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到一个本地分支" });
-      const operationState = getGitOperationState(path);
+      const operationState = await getGitOperationState(path);
       if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
       const status = gitExecFile(path, ["-c", "core.quotepath=false", "status", "--porcelain", "--untracked-files=all"], { timeout: 10000 });
       if (status) return c.json({ ok: false, code: "DIRTY", message: "当前工作区不干净，请先提交或暂存这些修改后再合并历史提交" });
@@ -336,8 +336,8 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
       backupRef = `refs/backup/git-save-load/squash-${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
       gitExecFile(path, ["update-ref", backupRef, originalHead], { timeout: 10000 });
 
-      sequenceEditorFile = join(tmpdir(), `git-sl-squash-sequence-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.cjs`);
-      messageEditorFile = join(tmpdir(), `git-sl-squash-message-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.cjs`);
+      sequenceEditorFile = tmpFile("git-sl-squash-sequence", ".cjs");
+      messageEditorFile = tmpFile("git-sl-squash-message", ".cjs");
       writeFileSync(sequenceEditorFile, [
         "const fs = require('node:fs');",
         "const todo = process.argv[2];",
@@ -365,7 +365,7 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
         "",
       ].join("\n"), "utf8");
       const quoteCommandPath = value => `"${String(value).replace(/"/g, '\\\"')}"`;
-      messageContentFile = join(tmpdir(), `git-sl-squash-content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
+      messageContentFile = tmpFile("git-sl-squash-content", ".txt");
       writeFileSync(messageContentFile, message, "utf8");
       const editorEnv = {
         GIT_SAVE_LOAD_SQUASH_SELECTED: selectedOrdered.join(","),
@@ -436,7 +436,7 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
       if (rebaseCompleted) {
         return c.json({ ok: true, code: "SQUASH_COMPLETED", backupRef, message: `提交合并已经完成，但后续处理出现异常：${commandErrorText(e) || "未知错误"}。请刷新提交记录确认；备份引用为 ${backupRef}` });
       }
-      const recoveryMessage = recoverAfterFailure();
+      const recoveryMessage = await recoverAfterFailure();
       return c.json({ ok: false, code: "SQUASH_FAILED", backupRef, recovered: !recoveryMessage, message: `合并历史提交失败：${commandErrorText(e) || "Git rebase 执行失败"}${recoveryMessage ? `；${recoveryMessage}` : "；已恢复到操作前状态"}` });
     } finally {
       cleanupTempEditors();
@@ -486,12 +486,12 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
       }
     };
 
-    const recoverAfterFailure = () => {
+    const recoverAfterFailure = async () => {
       if (!rebaseStarted || !originalHead) return "";
       try {
         const currentBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
         const currentGitDir = resolve(path, gitExecFile(path, ["rev-parse", "--git-dir"], { timeout: 10000 }));
-        const rebaseIdentity = getRebaseIdentity(path, gitExecFile);
+        const rebaseIdentity = await getRebaseIdentity(path, gitExecFile, readTextFile);
         const currentBranchMatches = currentBranch === startBranch || !currentBranch;
         const belongsToThisRequest = currentBranchMatches
           && currentGitDir === startGitDir
@@ -520,7 +520,7 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
       }
 
       // rebase / merge / cherry-pick / revert / bisect 未完成时，不允许嵌套历史重写。
-      const operationState = getGitOperationState(path);
+      const operationState = await getGitOperationState(path);
       if (operationState) {
         return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
       }
@@ -605,8 +605,8 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
 
       // Git 的交互式 rebase 通过两个编辑器完成：sequence editor 把目标行改成 reword，
       // message editor 把目标提交的说明替换为用户输入。两者均使用临时 Node 脚本，避免打开外部编辑器。
-      sequenceEditorFile = join(tmpdir(), `git-sl-reword-sequence-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.cjs`);
-      messageEditorFile = join(tmpdir(), `git-sl-reword-message-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.cjs`);
+      sequenceEditorFile = tmpFile("git-sl-reword-sequence", ".cjs");
+      messageEditorFile = tmpFile("git-sl-reword-message", ".cjs");
       writeFileSync(sequenceEditorFile, [
         "const fs = require('node:fs');",
         "const todo = process.argv[2];",
@@ -635,7 +635,7 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
       const editorEnv = {
         GIT_SAVE_LOAD_REWORD_TARGET: targetHash,
       };
-      messageContentFile = join(tmpdir(), `git-sl-reword-content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
+      messageContentFile = tmpFile("git-sl-reword-content", ".txt");
       editorEnv.GIT_SAVE_LOAD_REWORD_MESSAGE_FILE = messageContentFile;
       writeFileSync(messageContentFile, message, "utf8");
       editorEnv.GIT_SEQUENCE_EDITOR = `${quoteCommandPath(process.execPath)} ${quoteCommandPath(sequenceEditorFile)}`;
@@ -716,7 +716,7 @@ export function registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecF
           message: `历史提交说明已经修改完成，但后续处理出现异常：${commandErrorText(e) || "未知错误"}。请刷新提交记录确认；备份引用为 ${backupRef}`,
         });
       }
-      const recoveryMessage = recoverAfterFailure();
+      const recoveryMessage = await recoverAfterFailure();
       return c.json({
         ok: false,
         code: "REWORD_FAILED",

@@ -1,9 +1,8 @@
 // Local Git state, basic write, and rollback routes.
 import { writeFileSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, commandErrorText }) {
+export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, commandErrorText, tmpFile }) {
   app.get("/api/status", async (c) => {
     const path = repoPath(c.req.query("path"));
 
@@ -126,8 +125,9 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
       gitExecFile(path, ["add", "."]);
 
       try {
-        // 用系统临时目录存提交消息文件，用完 unlink，避免污染 .git/COMMIT_EDITMSG
-        msgFile = join(tmpdir(), "git-sl-msg-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) + ".txt");
+        // 临时消息文件落 App dataDir（Node Permission Model 下只有 dataDir 可写），
+        // 用完 unlink，避免污染 .git/COMMIT_EDITMSG
+        msgFile = tmpFile("git-sl-msg", ".txt");
         writeFileSync(msgFile, message, "utf8");
         gitExecFile(path, ["commit", "-F", msgFile]);
       } catch (e) {

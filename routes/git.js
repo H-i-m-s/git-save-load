@@ -1,9 +1,11 @@
 // git-tools / routes / git.js
-// 页面入口 + 公共函数/依赖装配 + 各模块注册。
+// 公共函数/依赖装配 + 各模块注册。
+// v2：页面与静态资源改由宿主 ui/ 树提供（/api/apps/<appId>/ui/*），本文件不再
+// serve HTML 与资产，只保留 /api/* 业务路由。
 // 各功能路由已按职责拆分到 routes/*.js，本文件不再定义业务端点。
 
-import { readFile } from "node:fs/promises";
-import { existsSync, statSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { execSync, execFileSync, execFile } from "node:child_process";
@@ -24,22 +26,26 @@ import { registerStashRoutes } from "./stash.js";
 import { registerMiscRoutes } from "./misc.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// Static WebView entry is kept under assets/ so the plugin follows the current
-// Hana asset boundary. The route remains the authenticated document entry.
-const htmlPath = join(__dirname, "..", "assets", "git.html");
-let cachedHtml = null;
-let cachedHtmlSig = "";
+const PLUGIN_DIR = join(__dirname, "..");
+
+// Node Permission Model 下，existsSync 对安装目录/dataDir 之外的路径会直接抛
+// ERR_ACCESS_DENIED（不是返回 false）。探测类调用统一走 safeExists。
+function safeExists(p) {
+  try { return existsSync(p); } catch { return false; }
+}
 
 function gitPathExists(cwd, name) {
   try {
     const gitPath = gitExecFile(cwd, ["rev-parse", "--git-path", name], { timeout: 10000 });
-    return existsSync(resolve(cwd, gitPath));
+    return safeExists(resolve(cwd, gitPath));
   } catch {
     return false;
   }
 }
 
-function getGitOperationState(cwd) {
+// 仓库内 .git 状态文件的存在性检查在 v2 走宿主 ResourceIO 门（app/resources.read），
+ // 由 export default 里用 ctx.resources.stat 构造后注入；默认退回 safeExists。
+async function getGitOperationState(cwd, pathExists = safeExists) {
   const names = [
     "rebase-merge",
     "rebase-apply",
@@ -49,60 +55,15 @@ function getGitOperationState(cwd) {
     "sequencer",
     "BISECT_LOG",
   ];
-  return names.find(name => gitPathExists(cwd, name)) || "";
-}
-
-async function loadHtml() {
-  // 按文件签名（mtime+size）自动重读：开发时改完 git.html 无需重载插件即可生效。
-  const st = statSync(htmlPath);
-  const sig = `${Math.floor(st.mtimeMs)}-${st.size}`;
-  if (!cachedHtml || cachedHtmlSig !== sig) {
-    cachedHtml = await readFile(htmlPath, "utf8");
-    cachedHtmlSig = sig;
+  for (const name of names) {
+    let gitPath = "";
+    try {
+      gitPath = gitExecFile(cwd, ["rev-parse", "--git-path", name], { timeout: 10000 });
+    } catch { continue; }
+    if (!gitPath) continue;
+    if (await pathExists(resolve(cwd, gitPath))) return name;
   }
-  return cachedHtml;
-}
-
-// 静态资源由宿主以 immutable 策略（max-age=31536000）缓存。返回页面前给 HTML 里
-// 引用的 assets 资源 URL 追加基于 mtime+size 的版本参数，文件变更后 URL 随之变化，
-// WebView 立即拿到新内容，避免旧缓存导致的行为不一致。
-function assetVersionToken(relPath) {
-  if (!relPath || relPath.includes("..")) return "0";
-  try {
-    const st = statSync(join(__dirname, "..", "assets", relPath));
-    return Math.floor(st.mtimeMs).toString(36) + "." + st.size.toString(36);
-  } catch {
-    return "0";
-  }
-}
-
-// 兼容性静态资源路由：桌面本地模式的卡片 iframe 仅携带 surface session 凭证，
-// 宿主不为它派发资产 cookie，且 /assets/* 的授权策略要求 chat scope（surface
-// 凭证无 scope），导致 <link>/<script> 子资源必然 403。改为由插件自身路由
-// 提供同一批文件：plugin_route 策略允许匹配插件的 surface session 凭证，
-// 与卡片内 /api/* 请求同一权限模型。文件仍以 assets/ 为源，严格白名单无路径拼接。
-const GIT_ASSET_BASE = join(__dirname, "..", "assets");
-const GIT_ASSET_FILES = [
-  { route: "git.css", file: "git.css", type: "text/css; charset=utf-8" },
-  ...[
-    "env", "state", "card-drag", "repo-path", "settings", "gh-panel", "remotes",
-    "gh-connect", "gh-repos", "branch-canvas", "ctx-menu", "hana-select",
-    "branch-actions", "refresh", "status-card", "log-view", "commit-actions",
-    "commit-edit", "reset", "diff-view", "confirm-modal", "conflicts",
-    "repo-init", "walkthrough", "identity", "main",
-  ].map((name) => ({ route: `git/${name}.js`, file: `git/${name}.js`, type: "text/javascript; charset=utf-8" })),
-];
-
-function serveGitAsset(c, info) {
-  let text;
-  try {
-    text = readFileSync(join(GIT_ASSET_BASE, info.file), "utf8");
-  } catch {
-    return c.body("/* asset unavailable */", 404, { "Content-Type": "text/plain; charset=utf-8" });
-  }
-  c.header("Content-Type", info.type);
-  c.header("Cache-Control", "public, max-age=31536000, immutable");
-  return c.body(text);
+  return "";
 }
 
 // 缓存用户级代理环境变量，避免每次 git 调用都查询 Windows 注册表
@@ -111,8 +72,11 @@ function getUserProxy() {
   if (_cachedUserProxy) return _cachedUserProxy;
   _cachedUserProxy = {};
   try {
-    const userHttps = execSync('[System.Environment]::GetEnvironmentVariable("HTTPS_PROXY", "User")', { encoding: 'utf8', shell: 'powershell', windowsHide: true }).trim();
-    const userHttp = execSync('[System.Environment]::GetEnvironmentVariable("HTTP_PROXY", "User")', { encoding: 'utf8', shell: 'powershell', windowsHide: true }).trim();
+    // 必须带 -NoProfile：否则 Windows PowerShell 会先加载用户 profile（例如 conda init 块），
+    // 连带拉起 conda/python，并把新建的控制台交给 Windows Terminal，弹出多余窗口。
+    // 用 -NoLogo 去横幅，命令串内只用单引号，避免 Node 传参时与 PowerShell 的引号解析打架。
+    const userHttps = execFileSync("powershell.exe", ["-NoProfile", "-NoLogo", "-Command", "[System.Environment]::GetEnvironmentVariable('HTTPS_PROXY', 'User')"], { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }).trim();
+    const userHttp = execFileSync("powershell.exe", ["-NoProfile", "-NoLogo", "-Command", "[System.Environment]::GetEnvironmentVariable('HTTP_PROXY', 'User')"], { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }).trim();
     if (userHttps) _cachedUserProxy.HTTPS_PROXY = userHttps;
     if (userHttp) _cachedUserProxy.HTTP_PROXY = userHttp;
   } catch {}
@@ -154,7 +118,7 @@ function resolveGitDir() {
   for (const dir of candidates) {
     if (!dir) continue;
     const exe = join(dir, "git.exe");
-    if (!existsSync(exe)) continue;
+    if (!safeExists(exe)) continue;
     try {
       execFileSync(exe, ["--version"], { encoding: "utf8", timeout: 10000, windowsHide: true, env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] });
       _cachedGitDir = dir;
@@ -166,7 +130,14 @@ function resolveGitDir() {
 }
 
 // 返回 git 可执行文件的绝对路径；PATH 可用时返回 "git" 交给系统解析
+// resolveExecutable（宿主侧探测）的结果通过 setGitExecutableOverride 注入优先使用。
+let _gitExecutableOverride = "";
+function setGitExecutableOverride(absPath) {
+  const value = String(absPath || "").trim();
+  if (value) _gitExecutableOverride = value;
+}
 function resolveGitPath() {
+  if (_gitExecutableOverride) return _gitExecutableOverride;
   const dir = resolveGitDir();
   return dir ? join(dir, "git.exe") : "git";
 }
@@ -182,6 +153,9 @@ function gitExecFile(cwd, args, opts = {}) {
     windowsHide: true,
     env: gitEnv(),
     stdio: ["ignore", "pipe", "pipe"],
+    // 与异步版 gitExecFileAsync 保持一致：大仓库单次提交可能包含数千文件，
+    // git log --numstat 输出可超 1MB（Node 默认 maxBuffer），不足时报 ENOBUFS。
+    maxBuffer: opts.maxBuffer || 10 * 1024 * 1024,
   }).trim();
 }
 
@@ -474,62 +448,63 @@ function applyRemoteSettings(remoteInfo, settings) {
 }
 
 export default function (app, ctx) {
-  // ======== 页面 ========
-  // Route declared by the WebView card contribution.
-  // 生成页面 HTML 字符串（主题注入 + 资源重写 + 凭证回传），供 /git 与 /widget 共用。
-  const buildSurfaceHtml = async (c) => {
-    const html = await loadHtml();
-    // 读取 Hana 传递的主题参数
-    const requestedTheme = String(c.req.query("hana-theme") || "auto");
-    const allowedThemes = new Set(["auto", "light", "dark", "warm-paper", "new-warm-paper", "midnight", "midnight-contrast", "high-contrast", "grass-aroma", "contemplation", "absolutely", "delve", "deep-think", "coral"]);
-    const theme = allowedThemes.has(requestedTheme) ? requestedTheme : "auto";
-    // 主题只接受白名单值，避免把查询参数直接写入 HTML 属性。
-    // 子资源凭证回传：桌面本地模式 iframe 文档 URL 携带 ?token=（loopback_token
-    // 凭证），代理层会删除 pluginSurfaceSession/iframeTicket 但保留 token。把
-    // token 原样回传到子资源 URL 上，主鉴权 queryToken 通道即可放行（与宿主给
-    // theme.css 的处理方式一致）；非本地模式由资产 cookie 兑底，无需后缀。
-    const queryToken = String(c.req.query("token") || "");
-    const sessionSuffix = queryToken
-      ? `&token=${encodeURIComponent(queryToken)}`
-      : "";
-    const versioned = html.replace(
-      /assets\/([A-Za-z0-9._/-]+\.(?:js|css))(?![\w.$-])/g,
-      (match, relPath) => `git-asset/${relPath}?v=${assetVersionToken(relPath)}${sessionSuffix}`,
-    );
-    const patched = versioned.replace(
-      /<body([^>]*)>/,
-      `<body data-hana-theme="${theme}"$1>`
-    );
-    return patched;
+  // ======== v2 边界适配 ========
+  // App 进程运行在 Node Permission Model 下：安装目录只读、dataDir 可写，
+  // 仓库内文件的直接读写改走宿主 ResourceIO 门（app/resources.read|write 授权），
+  // 临时文件（commit -F 消息、GIT_SEQUENCE_EDITOR 脚本）落 dataDir。
+  const dataDir = ctx && ctx.dataDir ? String(ctx.dataDir) : "";
+
+  async function readTextFile(absPath) {
+    const res = await ctx.resources.read({ kind: "local-file", path: absPath });
+    const content = res && typeof res === "object" && "content" in res ? res.content : res;
+    if (content == null) return "";
+    return Buffer.isBuffer(content) ? content.toString("utf8")
+      : content instanceof Uint8Array ? Buffer.from(content).toString("utf8")
+      : String(content);
+  }
+
+  async function writeTextFile(absPath, text) {
+    await ctx.resources.write({ kind: "local-file", path: absPath }, String(text));
+  }
+
+  function tmpFile(prefix, ext) {
+    const name = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext || ""}`;
+    return dataDir ? join(dataDir, name) : join(tmpdir(), name);
+  }
+
+  // 仓库内路径的存在性检查：宿主侧 stat，dataDir 内不查账本，盘外读需要
+  // app/resources.read（清单已声明）。
+  const pathExists = async (absPath) => {
+    try {
+      await ctx.resources.stat({ kind: "local-file", path: absPath });
+      return true;
+    } catch {
+      return false;
+    }
   };
+  const gitOperationState = (cwd) => getGitOperationState(cwd, pathExists);
 
-  const renderSurface = async (c) => c.html(await buildSurfaceHtml(c));
-
-  // Route declared by the WebView card contribution.
-  app.get("/git", renderSurface);
-
-  // Route declared by the legacy widget contribution（经典界面右侧工作台面板）。
-  // 复用同一张页面的 HTML 与模块，通过 body 上的 data-hana-widget 标记让
-  // 前端进入窄面板模式：隐藏大页面专属区块，仅保留存档/读档主卡片。
-  app.get("/widget", async (c) => {
-    const patched = await buildSurfaceHtml(c);
-    const withWidgetFlag = patched.replace(
-      /<body([^>]*)>/,
-      (m, attrs) => `<body${attrs} data-hana-widget="1">`,
-    );
-    return c.html(withWidgetFlag);
-  });
-
-  // 兼容性静态资源路由（严格白名单，逐个注册，无通配无拼接）。
-  for (const info of GIT_ASSET_FILES) {
-    app.get("/git-asset/" + info.route, (c) => serveGitAsset(c, info));
+  // PATH 解析不到 git 时，用宿主侧的 resolveExecutable 探测常见安装位置
+  // （AppHost 内直接 stat 外部路径会被 Permission Model 拒绝）。
+  if (ctx && ctx.process && typeof ctx.process.resolveExecutable === "function") {
+    ctx.process.resolveExecutable({
+      candidates: [
+        "git",
+        "C:\\Program Files\\Git\\cmd\\git.exe",
+        join(process.env.LOCALAPPDATA || "", "Programs", "Git", "cmd", "git.exe"),
+        join(process.env.LOCALAPPDATA || "", "Programs", "HanaAgent", "resources", "git", "cmd", "git.exe"),
+        join(process.env.USERPROFILE || "", "scoop", "apps", "git", "current", "cmd", "git.exe"),
+      ].filter(Boolean),
+    }).then((info) => {
+      if (info && info.path) setGitExecutableOverride(info.path);
+    }).catch(() => {});
   }
 
   // ======== 模块注册 ========
-  registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, commandErrorText });
+  registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, commandErrorText, tmpFile });
   registerHistoryRoutes(app, { repoPath, gitExecFile });
-  registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecFileWithEnv, commandErrorText, getGitOperationState });
-  registerDiffConflictRoutes(app, { repoPath, gitExecFile });
+  registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecFileWithEnv, commandErrorText, getGitOperationState: gitOperationState, tmpFile, readTextFile });
+  registerDiffConflictRoutes(app, { repoPath, gitExecFile, readTextFile, writeTextFile });
   registerRepositoryRoutes(app, {
     ctx,
     repoPath,
@@ -541,6 +516,7 @@ export default function (app, ctx) {
     extractParentTail,
     parseOriginUrl,
     readRemoteSettings,
+    writeTextFile,
   });
   registerGitHubRoutes(app, {
     ctx,
@@ -552,6 +528,8 @@ export default function (app, ctx) {
     sanitizeRemoteUrl,
     readRemoteSettings,
     readRepoPath,
+    writeTextFile,
+    pathExists,
   });
   registerRemoteEditRoutes(app, {
     ctx,
@@ -566,7 +544,7 @@ export default function (app, ctx) {
     isValidRemoteUrl,
     sanitizeRemoteUrl,
     configuredRemoteUrls,
-    getGitOperationState,
+    getGitOperationState: gitOperationState,
   });
   registerRemoteQueryRoutes(app, {
     ctx,
@@ -598,7 +576,7 @@ export default function (app, ctx) {
     sanitizeRemoteUrl,
     commandErrorText,
     isValidRemoteName,
-    getGitOperationState,
+    getGitOperationState: gitOperationState,
     writeRemoteSettings,
   });
   registerConfigRoutes(app, { ctx, readConfig, writeConfig, validateConfigPatch });
@@ -618,5 +596,5 @@ export default function (app, ctx) {
     parseNameStatus,
   });
   registerStashRoutes(app, { repoPath, gitExecFile, commandErrorText });
-  registerMiscRoutes(app, { pluginDir: join(__dirname, "..") });
+  registerMiscRoutes(app, { pluginDir: PLUGIN_DIR });
 }

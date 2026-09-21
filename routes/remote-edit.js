@@ -83,7 +83,7 @@ export function registerRemoteEditRoutes(app, { ctx, repoPath, gitExecFile, comm
     let settings = null;
     let revision = "";
     try {
-      const operationState = getGitOperationState(path);
+      const operationState = await getGitOperationState(path);
       if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
       const state = await readRemoteEditState(ctx, path, oldRemote);
       const names = state.names;

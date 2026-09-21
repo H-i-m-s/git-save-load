@@ -1,115 +1,118 @@
 {
-  "manifestVersion": 1,
+  "manifestVersion": 2,
   "id": "git-save-load",
   "name": "Git Save/Load",
-  "version": "2.3.2",
+  "version": "2.4.1",
+  "entry": "index.js",
+  "icon": "assets/icon.png",
   "description": "Git 存档与读档。支持一键存档、版本历史浏览、分支管理、已有 GitHub 仓库关联，以及带二次确认的远程覆盖推送。",
-  "trust": "full-access",
-  "minAppVersion": "0.159.0",
-  "ui": {
-    "hostCapabilities": [
-      "external.open",
-      "clipboard.writeText"
-    ]
-  },
+  "minAppVersion": "0.978.0",
+  "capabilities": [
+    "app/process.spawn",
+    "app/tools.expose-to-model",
+    "app/ui.open-external",
+    "app/ui.clipboard-write",
+    "app/resources.read",
+    "app/resources.write"
+  ],
   "contributes": {
-    "widget": {
-      "title": "Git",
-      "route": "/widget"
+    "settings": {
+      "title": "Git Save/Load 设置",
+      "schema": {
+        "properties": {
+          "repoPath": {
+            "type": "string",
+            "title": "仓库路径",
+            "default": "",
+            "description": "管理的 Git 仓库路径"
+          },
+          "stashMode": {
+            "type": "string",
+            "title": "暂存模式",
+            "default": "untracked",
+            "enum": ["normal", "untracked", "all"],
+            "description": "暂存模式"
+          },
+          "pushMode": {
+            "type": "string",
+            "title": "推送模式",
+            "default": "normal",
+            "enum": ["normal", "force-with-lease", "force"],
+            "description": "推送模式"
+          },
+          "pullMode": {
+            "type": "string",
+            "title": "拉取模式",
+            "default": "merge",
+            "enum": ["merge", "rebase", "ff-only"],
+            "description": "拉取模式"
+          },
+          "defaultDiffMode": {
+            "type": "string",
+            "title": "Diff 显示模式",
+            "default": "detail",
+            "enum": ["detail", "simple"],
+            "description": "默认 diff 显示模式"
+          },
+          "theme": {
+            "type": "string",
+            "title": "主题",
+            "default": "auto",
+            "enum": [
+              "auto",
+              "light",
+              "dark",
+              "warm-paper",
+              "new-warm-paper",
+              "midnight",
+              "midnight-contrast",
+              "high-contrast",
+              "grass-aroma",
+              "contemplation",
+              "absolutely",
+              "delve",
+              "deep-think",
+              "coral"
+            ],
+            "description": "主题"
+          },
+          "paperTexture": {
+            "type": "string",
+            "title": "纸质纹理",
+            "default": "off",
+            "enum": ["on", "off"],
+            "description": "纸质纹理"
+          },
+          "remoteSettings": {
+            "type": "object",
+            "title": "远程仓库设置",
+            "default": {},
+            "description": "按仓库保存的远程仓库角色和同步设置"
+          }
+        }
+      }
     },
     "cards": [
       {
         "id": "git-save-load",
         "title": "Git Save/Load",
-        "route": "/git",
+        "description": "Git 存档、读档、分支与远程仓库管理面板",
+        "route": "/git.html",
         "realization": "page",
         "cardForm": "flush",
-        "titlebar": "solid"
-      }
-    ],
-    "configuration": {
-      "type": "object",
-      "properties": {
-        "repoPath": {
-          "type": "string",
-          "default": "",
-          "description": "管理的 Git 仓库路径"
+        "titlebar": "solid",
+        "closable": false,
+        "siteNavEntry": false,
+        "fpFullPanel": true,
+        "functionPanel": {
+          "id": "git-save-load-panel",
+          "label": "Git",
+          "route": "/git.html"
         },
-        "stashMode": {
-          "type": "string",
-          "default": "untracked",
-          "enum": [
-            "normal",
-            "untracked",
-            "all"
-          ],
-          "description": "暂存模式"
-        },
-        "pushMode": {
-          "type": "string",
-          "default": "normal",
-          "enum": [
-            "normal",
-            "force-with-lease",
-            "force"
-          ],
-          "description": "推送模式"
-        },
-        "pullMode": {
-          "type": "string",
-          "default": "merge",
-          "enum": [
-            "merge",
-            "rebase",
-            "ff-only"
-          ],
-          "description": "拉取模式"
-        },
-        "defaultDiffMode": {
-          "type": "string",
-          "default": "detail",
-          "enum": [
-            "detail",
-            "simple"
-          ],
-          "description": "默认 diff 显示模式"
-        },
-        "theme": {
-          "type": "string",
-          "default": "auto",
-          "enum": [
-            "auto",
-            "light",
-            "dark",
-            "warm-paper",
-            "new-warm-paper",
-            "midnight",
-            "midnight-contrast",
-            "high-contrast",
-            "grass-aroma",
-            "contemplation",
-            "absolutely",
-            "delve",
-            "deep-think",
-            "coral"
-          ],
-          "description": "主题"
-        },
-        "paperTexture": {
-          "type": "string",
-          "default": "off",
-          "enum": [
-            "on",
-            "off"
-          ],
-          "description": "纸质纹理"
-        },
-        "remoteSettings": {
-          "type": "object",
-          "default": {},
-          "description": "按仓库保存的远程仓库角色和同步设置"
+        "face": {
+          "image": "assets/cover.png"
         }
       }
-    }
+    ]
   }
 }

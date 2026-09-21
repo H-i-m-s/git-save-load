@@ -1,8 +1,9 @@
 // Diff and merge-conflict routes.
-import { readFileSync, writeFileSync } from "node:fs";
+// v2：仓库文件读写走宿主 ResourceIO 门（app/resources.read|write），App 进程在
+// Node Permission Model 下不能直接读写仓库路径。
 import { join } from "node:path";
 
-export function registerDiffConflictRoutes(app, { repoPath, gitExecFile }) {
+export function registerDiffConflictRoutes(app, { repoPath, gitExecFile, readTextFile, writeTextFile }) {
   // ======== API: diff ========
   app.get("/api/diff", async (c) => {
     const path = repoPath(c.req.query("path"));
@@ -57,7 +58,7 @@ export function registerDiffConflictRoutes(app, { repoPath, gitExecFile }) {
 
       const conflicts = [];
       for (const { raw, name } of conflictFiles) {
-        const content = readFileSync(join(path, name), "utf8");
+        const content = await readTextFile(join(path, name));
         const blocks = [];
         const re = /<<<<<<<\s+(\S+)\s*\r?\n([\s\S]*?)=======\r?\n([\s\S]*?)>>>>>>>\s+(\S+)\s*/g;
         let m;
@@ -99,7 +100,7 @@ export function registerDiffConflictRoutes(app, { repoPath, gitExecFile }) {
       if (normalizedFile !== normalizedRoot && !normalizedFile.startsWith(normalizedRoot + "/")) {
         return c.json({ ok: false, message: "文件路径必须位于当前仓库内" });
       }
-      let content = readFileSync(filePath, "utf8");
+      let content = await readTextFile(filePath);
 
       // 从后往前替换，避免 index 错位
       const re = /<<<<<<<\s+\S+\s*\r?\n[\s\S]*?=======\r?\n[\s\S]*?>>>>>>>\s+\S+\s*/g;
@@ -121,7 +122,7 @@ export function registerDiffConflictRoutes(app, { repoPath, gitExecFile }) {
         content = content.replace(rawBlock, keep.replace(/\n$/, ""));
       }
 
-      writeFileSync(filePath, content, "utf8");
+      await writeTextFile(filePath, content);
       gitExecFile(repo, ["add", "--", file]);
 
       return c.json({ ok: true, message: `${file} 冲突已解决` });

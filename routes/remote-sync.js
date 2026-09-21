@@ -58,7 +58,7 @@ export function registerRemoteSyncRoutes(app, helpers) {
       gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
       const targetBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
       if (!targetBranch || !validateBranchName(path, targetBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
-      const operationState = getGitOperationState(path);
+      const operationState = await getGitOperationState(path);
       if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
       if (gitExecFile(path, ["status", "--porcelain"], { timeout: 10000 })) return c.json({ ok: false, code: "DIRTY", message: "当前工作区有未提交修改，请先存档、暂存或清理后再合并上游更新" });
       gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
@@ -68,11 +68,11 @@ export function registerRemoteSyncRoutes(app, helpers) {
       const remoteRef = `${remote}/${remoteBranch}`;
       gitExecFile(path, ["rev-parse", "--verify", `${remoteRef}^{commit}`], { timeout: 10000 });
       const raw = gitExecFile(path, ["merge", "--no-edit", remoteRef], { timeout: 120000 });
-      if (getGitOperationState(path) === "MERGE_HEAD") return c.json({ ok: false, code: "MERGE_CONFLICT", requiresResolution: true, remote, remoteBranch, targetBranch, sourceRef: remoteRef, message: "合并产生冲突，请先解决冲突" });
+      if ((await getGitOperationState(path)) === "MERGE_HEAD") return c.json({ ok: false, code: "MERGE_CONFLICT", requiresResolution: true, remote, remoteBranch, targetBranch, sourceRef: remoteRef, message: "合并产生冲突，请先解决冲突" });
       return c.json({ ok: true, remote, remoteBranch, targetBranch, sourceRef: remoteRef, message: raw.includes("Already up to date") ? "已经是最新" : `已将 ${remoteRef} 合并到本地 ${targetBranch}` });
     } catch (e) {
       const stderr = commandErrorText(e);
-      if (getGitOperationState(path) === "MERGE_HEAD") return c.json({ ok: false, code: "MERGE_CONFLICT", requiresResolution: true, remote, message: "合并产生冲突，请先解决冲突" });
+      if ((await getGitOperationState(path)) === "MERGE_HEAD") return c.json({ ok: false, code: "MERGE_CONFLICT", requiresResolution: true, remote, message: "合并产生冲突，请先解决冲突" });
       const errLine = stderr.split("\n").find(l => l.includes("error:") || l.includes("fatal:"));
       return c.json({ ok: false, message: errLine ? errLine.replace(/^(error:|fatal:)\s*/, "").trim() : `合并失败：${stderr || "无法合并远程更新"}` });
     }
@@ -85,7 +85,7 @@ export function registerRemoteSyncRoutes(app, helpers) {
     if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
     try {
       gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
-      const operationState = getGitOperationState(path);
+      const operationState = await getGitOperationState(path);
       if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
       const currentUrl = gitExecFile(path, ["remote", "get-url", remote], { timeout: 10000 });
       const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);

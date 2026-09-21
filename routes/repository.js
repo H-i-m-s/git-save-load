@@ -1,8 +1,7 @@
 // Repository path, metadata, init and version routes.
-import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export function registerRepositoryRoutes(app, { ctx, repoPath, readRepoPath, writeRepoPath, gitExecFile, gitExecFileAsync, extractBasename, extractParentTail, parseOriginUrl, readRemoteSettings }) {
+export function registerRepositoryRoutes(app, { ctx, repoPath, readRepoPath, writeRepoPath, gitExecFile, gitExecFileAsync, extractBasename, extractParentTail, parseOriginUrl, readRemoteSettings, writeTextFile }) {
   // ======== API: 读写仓库路径配置 ========
   app.get("/api/repo", async (c) => {
     const configuredPath = await readRepoPath(ctx);
@@ -105,9 +104,9 @@ export function registerRepositoryRoutes(app, { ctx, repoPath, readRepoPath, wri
     try {
       gitExecFile(path, ["init"]);
 
-      // 有 .gitignore 模板就写入
+      // .gitignore 写仓库文件，走 ResourceIO 门（app/resources.write）
       if (gitignore) {
-        writeFileSync(join(path, ".gitignore"), gitignore, "utf8");
+        await writeTextFile(join(path, ".gitignore"), gitignore);
       }
 
       const branch = gitExecFile(path, ["branch", "--show-current"]);

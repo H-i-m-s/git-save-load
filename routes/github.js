@@ -1,6 +1,6 @@
 // GitHub CLI integration routes.
 import { execFileSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 function ghEnvironment() {
@@ -11,6 +11,10 @@ function ghEnvironment() {
 
 // 定位 gh 可执行文件。插件进程的 PATH 可能不包含 GitHub CLI 安装目录
 // （例如仅安装了 GitHub Desktop 或 PATH 被修改过），因此探测常见安装位置并缓存。
+function safeExists(p) {
+  try { return existsSync(p); } catch { return false; }
+}
+
 let _cachedGhPath = null;
 function resolveGhPath() {
   if (_cachedGhPath) return _cachedGhPath;
@@ -27,7 +31,7 @@ function resolveGhPath() {
       // 裸命令交给 PATH 解析；绝对路径直接检查存在性
       if (candidate === "gh") {
         execFileSync("gh", ["--version"], { encoding: "utf8", timeout: 10000, windowsHide: true, env: ghEnvironment(), stdio: ["ignore", "pipe", "pipe"] });
-      } else if (existsSync(candidate)) {
+      } else if (safeExists(candidate)) {
         execFileSync(candidate, ["--version"], { encoding: "utf8", timeout: 10000, windowsHide: true, env: ghEnvironment(), stdio: ["ignore", "pipe", "pipe"] });
       } else {
         continue;
@@ -75,10 +79,11 @@ function readLicenseFile(cwd, license, ghExec) {
   }
 }
 
-function applyLicenseToLocalRepo(cwd, license, gitExecFile, ghExec) {
+async function applyLicenseToLocalRepo(cwd, license, gitExecFile, ghExec, writeTextFile, pathExists) {
   if (!license) return { applied: false, existing: false, committed: false };
   const licensePath = join(cwd, "LICENSE");
-  if (existsSync(licensePath)) return { applied: false, existing: true, committed: false };
+  // LICENSE 是否已存在：宿主侧 stat（app/resources.read）
+  if (await pathExists(licensePath)) return { applied: false, existing: true, committed: false };
   const content = readLicenseFile(cwd, license, ghExec);
   if (!content) throw new Error("无法获取许可证模板，请检查 GitHub CLI 是否支持该许可证");
   const identity = getGitIdentity(cwd, gitExecFile);
@@ -87,11 +92,11 @@ function applyLicenseToLocalRepo(cwd, license, gitExecFile, ghExec) {
   const normalized = content
     .replace(/\[year\]/gi, year)
     .replace(/\[fullname\]/gi, identity.name);
-  writeFileSync(licensePath, normalized + "\n", "utf8");
+  await writeTextFile(licensePath, normalized + "\n");
   return { applied: true, existing: false, committed: false };
 }
 
-export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, validateBranchName, isValidRemoteName, isValidRemoteUrl, sanitizeRemoteUrl, readRemoteSettings, readRepoPath }) {
+export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, validateBranchName, isValidRemoteName, isValidRemoteUrl, sanitizeRemoteUrl, readRemoteSettings, readRepoPath, writeTextFile, pathExists }) {
   // ======== API: GitHub 管理 ========
   // gh 自己会读取 GitHub CLI 的登录配置。不要把 Git 的用户级代理强行注入 gh，
   // 否则可能与 gh 的网络实现或本机代理状态冲突，导致 GraphQL 返回 EOF。
@@ -124,7 +129,7 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
         gitExecFile(localPath, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
         localHasCommit = hasHeadCommit(localPath, gitExecFile);
         if (license && localHasCommit) {
-          localLicense = applyLicenseToLocalRepo(localPath, license, gitExecFile, ghExec);
+          localLicense = await applyLicenseToLocalRepo(localPath, license, gitExecFile, ghExec, writeTextFile, pathExists);
           if (localLicense.applied) {
             const status = gitExecFile(localPath, ["status", "--porcelain", "--", "LICENSE"], { timeout: 10000 });
             if (status) {
