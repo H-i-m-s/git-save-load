@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "git-save-load",
   "name": "Git Save/Load",
-  "version": "2.4.1",
+  "version": "2.4.5",
   "entry": "index.js",
   "icon": "assets/icon.svg",
   "description": "Git 存档与读档。支持一键存档、版本历史浏览、分支管理、已有 GitHub 仓库关联，以及带二次确认的远程覆盖推送。",
@@ -110,7 +110,7 @@
           "route": "/git.html"
         },
         "face": {
-          "image": "assets/cover.png"
+          "image": "assets/icon.png"
         }
       }
     ]

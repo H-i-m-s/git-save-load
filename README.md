@@ -587,11 +587,12 @@ git-save-load/
 ├── manifest.json          # v2 App 清单（manifestVersion 2）、设置 schema、卡片与功能面板声明
 ├── index.js               # defineApp 入口：注册四个 Agent 工具
 ├── assets/
-│   └── icon.png           # App 身份图标
+│   ├── icon.svg           # App 身份图标（manifest.icon）
+│   └── icon.png           # 同一图标的位图版本
 ├── ui/                    # 宿主静态树（/api/apps/git-save-load/ui/*），App 级资源鉴权
 │   ├── git.html           # 卡片与功能面板共用的页面入口
 │   └── assets/
-│       ├── cover.png      # 卡片封面（face.image）
+│       ├── icon.png       # 卡片封面（face.image）
 │       ├── sdk.js         # @hana/app-sdk/ui 浏览器单例
 │       ├── hana-bridge.js # 主题/挂载位桥接（ESM）
 │       ├── git.css        # 全部样式
