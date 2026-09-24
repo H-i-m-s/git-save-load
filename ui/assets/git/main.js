@@ -37,13 +37,13 @@
     pluginFetch("api/status?path="+encodeURIComponent(p)).then(function(r){return r.json()}).then(function(d){
       renderStatus(d);
       if (event === "refresh-all") markRefreshPartDone(runId);
-    }).catch(function(){ if (event === "refresh-all") markRefreshPartDone(runId); });
+    }).catch(function(e){ notifyApiFailure(e); if (event === "refresh-all") markRefreshPartDone(runId); });
   }});
   Cards.register("logCard", { events: ["commit","reset","branch-switch","refresh-all"], refresh: function(event, runId){
     var p = currentPath || getSavedPath();
     if (!p) { if (event === "refresh-all") markRefreshPartDone(runId); return; }
     resetLogPager(p);
-    loadLogPage(p, false).then(function(){ if (event === "refresh-all") markRefreshPartDone(runId); }).catch(function(){ if (event === "refresh-all") markRefreshPartDone(runId); });
+    loadLogPage(p, false).then(function(){ if (event === "refresh-all") markRefreshPartDone(runId); }).catch(function(e){ notifyApiFailure(e, "提交记录加载失败"); if (event === "refresh-all") markRefreshPartDone(runId); });
   }});
   Cards.register("stashCard", { events: ["commit","stash-push","stash-pop","stash-drop","refresh-all"], refresh: function(event, runId){
     var p = currentPath || getSavedPath();
@@ -51,8 +51,10 @@
     pluginFetch("api/stash/list?path="+encodeURIComponent(p)).then(function(r){return r.json()}).then(function(d){
       loadStash();
       if (event === "refresh-all") markRefreshPartDone(runId);
-    }).catch(function(){ if (event === "refresh-all") markRefreshPartDone(runId); });
+    }).catch(function(e){ notifyApiFailure(e, "暂存列表加载失败"); if (event === "refresh-all") markRefreshPartDone(runId); });
   }});
+  // 进入面板先清掉历史遗留的失败缓存：它们会被非强制 refresh 重放成"仓库不见了"。
+  purgeFailedStatusCache();
   // The config request is authoritative; bypass any status cached by an
   // older Card instance that may point at a different repository.
   refresh(true);

@@ -1,10 +1,46 @@
 // Git Save/Load Card 前端模块 15/26：status-card.js — 变更文件卡片渲染、时间格式化、版本对比
 // 由原单文件脚本按原始顺序机械切分；加载顺序即拆分前的顶层执行顺序，勿随意调整。
+
+// 接口被拒绝 ≠ 这个目录不是仓库。
+// apiFailureInfo()（env.js）把 app_route 的失败分成会话 / 后端两类；这里保留仓库状态、
+// 把原因说出来，并且不弹「初始化仓库」——那是换目录的动作，不是失败的动作。
+function renderApiFailure(failure) {
+  const branchEl = document.getElementById("branch");
+  if (branchEl) branchEl.textContent = "⚠";
+  updateRepoPathDisplay(currentPath || getSavedPath() || "");
+  const initArea = document.getElementById("initArea");
+  if (initArea) initArea.style.display = "none";
+  ["fileCard", "commitCard", "logCard"].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "";
+  });
+  const mutedStyle = 'font-size:11px;color:var(--hana-fg-muted,#9ca3af)';
+  const detailLine = failure.detail
+    ? '<br><span style="font-size:10px;color:var(--hana-fg-muted,#9ca3af)">' + escapeHtml(String(failure.detail).split("\n")[0]) + '</span>'
+    : '';
+  const fl = document.getElementById("fileList");
+  if (fl) {
+    fl.innerHTML = '<li class="empty-hint">' + escapeHtml(failure.message) +
+      '<br><span style="' + mutedStyle + '">💡 ' + escapeHtml(failure.hint) + '</span>' + detailLine +
+      '<br><button onclick="doRefreshAll()" style="margin-top:6px;padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24);font-size:11px;cursor:pointer">重试</button></li>';
+  }
+  const btnCommit = document.getElementById("btnCommit");
+  if (btnCommit) btnCommit.disabled = true;
+  notifyApiFailure(null, "Git 面板接口被拒绝：" + (failure.message || "") + "（" + (failure.hint || "") + "）", true);
+}
+
 function renderStatus(data) {
+  // 先分清"接口被拒绝"和"这个目录不是仓库"，否则一次 403 会被演成"仓库没了"。
+  const failure = typeof apiFailureInfo === "function" ? apiFailureInfo(data) : null;
+  if (failure) { renderApiFailure(failure); return; }
   if (!data.ok || data.isRepo === false) {
     document.getElementById("branch").textContent = "✕";
-    updateRepoPathDisplay(data.path || currentPath || "");
-    document.getElementById("fileList").innerHTML = '<li class="empty-hint">不是 git 仓库<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 点顶部「切换」选一个 Git 项目文件夹</span></li>';
+    updateRepoPathDisplay(data.path || currentPath || getSavedPath() || "");
+    // git 自己的报错文本（索引被锁、权限、仓库损坏…）以前看不到，现在附在下面。
+    const repoFailDetail = data.message
+      ? '<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">' + escapeHtml(String(data.message).split("\n")[0]) + '</span>'
+      : '';
+    document.getElementById("fileList").innerHTML = '<li class="empty-hint">不是 git 仓库' + repoFailDetail + '<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 点顶部「切换」选一个 Git 项目文件夹</span></li>';
     // 显示初始化按钮
     const initArea = document.getElementById("initArea");
     if (initArea) initArea.style.display = "block";

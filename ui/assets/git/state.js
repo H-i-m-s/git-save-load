@@ -75,14 +75,34 @@ var _backgroundWarmupTimer = null;
 var _lastBackgroundRefreshAt = 0;
 
 function cacheSet(key, data) {
+  // 失败的返回不写缓存：一次 403/503 不该在 TTL 内被反复渲染成"这不是仓库"。
+  if (!data || data.ok !== true) {
+    try { localStorage.removeItem("gsl-cache-" + key); } catch {}
+    return;
+  }
   try { localStorage.setItem("gsl-cache-" + key, JSON.stringify({ t: Date.now(), d: data })); } catch {}
 }
 function cacheGet(key) {
   try {
     var raw = JSON.parse(localStorage.getItem("gsl-cache-" + key));
-    if (raw && Date.now() - raw.t < CACHE_TTL) return raw.d;
+    if (raw && Date.now() - raw.t < CACHE_TTL && raw.d && raw.d.ok === true) return raw.d;
   } catch {}
   return null;
+}
+
+// 清理历史遗留的失败缓存：旧版本会把 403/503 的 body 当状态写进去，
+// 之后非强制 refresh 又把它读出来重放一遍，看着就像"仓库时不时自己消失"。
+function purgeFailedStatusCache() {
+  try {
+    Object.keys(localStorage)
+      .filter(function(k) { return k.indexOf("gsl-cache-status-") === 0; })
+      .forEach(function(k) {
+        try {
+          var raw = JSON.parse(localStorage.getItem(k));
+          if (!raw || !raw.d || raw.d.ok !== true) localStorage.removeItem(k);
+        } catch { localStorage.removeItem(k); }
+      });
+  } catch {}
 }
 function repoCacheKey(path) {
   return String(path || "").trim().replace(/[\\/]+$/, "").toLowerCase();
