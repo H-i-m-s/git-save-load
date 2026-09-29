@@ -546,6 +546,7 @@ select:disabled{opacity:.5;cursor:not-allowed}
   padding:8px 12px;border-radius:6px;font-size:12px;display:none;
   white-space:pre-line;word-break:break-word;line-height:1.5;
   max-height:60vh;overflow-y:auto;
+  cursor:pointer; /* 提示可点击提前关闭 */
 }
 .msg-toast.info{background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe}
 .msg-toast.err{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}

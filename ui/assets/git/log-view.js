@@ -107,14 +107,15 @@ function renderLog(data, append) {
   if (!data.ok || !data.commits || data.commits.length === 0) {
     if (!append) {
       cl._commits = [];
-      // 接口被拒绝时说清楚原因，不要演成"没有提交记录"。
+      // 接口被拒绝时说实话，不演成"没有提交记录"；但 git 层面的正常状态
+      // （目录还没 init、刚 init 还没有提交）就用原来的友好文案，不当异常报。
       const failure = typeof apiFailureInfo === "function" ? apiFailureInfo(data) : null;
-      if (failure) {
+      const quietFailure = !failure || failure.kind === "repo";
+      if (quietFailure) {
+        cl.innerHTML = '<li class="empty-hint">暂无提交记录<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 改一下文件，然后点上面的「存档」按钮</span></li>';
+      } else {
         cl.innerHTML = '<li class="empty-hint">' + escapeHtml(failure.message) +
           '<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 ' + escapeHtml(failure.hint) + '</span></li>';
-        notifyApiFailure(null, "提交记录加载失败：" + failure.message);
-      } else {
-        cl.innerHTML = '<li class="empty-hint">暂无提交记录<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 改一下文件，然后点上面的「存档」按钮</span></li>';
       }
     }
     return;

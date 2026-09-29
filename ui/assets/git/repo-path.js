@@ -227,10 +227,10 @@ function toast(msg, type = "info", options = {}) {
   const defaultDuration = type === "err" ? 12000 : 8000;
   const duration = Number.isFinite(options.duration) ? options.duration : defaultDuration;
   _toastTimer = setTimeout(hideToast, duration);
-  _toastDismissEvent = options.dismissEvent || "click";
-  _toastDismissHandler = (e) => {
-    if (el !== e.target && !el.contains(e.target)) hideToast();
-  };
+  // 任意一次按下都立即关掉：提示上、提示外一视同仁。用 pointerdown 而非 click，
+  // 按下即生效，不必等抬起配对，也就不会出现「点了没反应」（选字、滑动都不再挡住它）。
+  _toastDismissEvent = options.dismissEvent || "pointerdown";
+  _toastDismissHandler = () => hideToast();
   document.addEventListener(_toastDismissEvent, _toastDismissHandler, true);
 }
 

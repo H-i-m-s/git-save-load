@@ -1,29 +1,97 @@
 // GitHub CLI integration routes.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
+
+// Hana v2 的 App 跑在独立子进程里，宿主只传 PATH / HOME / TMPDIR / LANG 四个
+// 环境变量，所以 process.env 里没有 APPDATA、LOCALAPPDATA、USERPROFILE。
+// gh 靠 %APPDATA%\GitHub CLI 找自己的登录配置，路径拿不到就会报
+// "please run: gh auth login"（其实用户早已登录）。下面的 shellFolders()
+// 直接从注册表读用户的两个 Shell 目录，不依赖进程环境变量。
+function safeExists(p) {
+  try { return existsSync(p); } catch { return false; }
+}
+
+let _cachedShellFolders = null;
+function shellFolders() {
+  if (_cachedShellFolders) return _cachedShellFolders;
+  const folders = {};
+  if (process.platform === "win32") {
+    try {
+      const out = execFileSync(
+        "reg",
+        ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders"],
+        { encoding: "utf8", timeout: 15000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }
+      );
+      for (const line of String(out).split(/\r?\n/)) {
+        const match = line.match(/^\s+([A-Za-z ]+?)\s+REG_SZ\s+(.+?)\s*$/);
+        if (!match) continue;
+        const key = match[1].trim().toLowerCase();
+        if (key === "appdata") folders.roaming = match[2];
+        else if (key === "local appdata") folders.local = match[2];
+      }
+    } catch {}
+    if (!folders.roaming || !folders.local) {
+      try {
+        const home = homedir();
+        if (!folders.roaming) folders.roaming = join(home, "AppData", "Roaming");
+        if (!folders.local) folders.local = join(home, "AppData", "Local");
+      } catch {}
+    }
+  }
+  _cachedShellFolders = folders;
+  return folders;
+}
+
+function userHomeDir() {
+  if (process.env.USERPROFILE) return process.env.USERPROFILE;
+  if (process.env.HOME) return process.env.HOME;
+  try { return homedir(); } catch { return ""; }
+}
+
+function localAppDataDir() {
+  return process.env.LOCALAPPDATA || shellFolders().local || "";
+}
+
+// gh 的登录配置目录：Windows 是 %APPDATA%\GitHub CLI，其它平台是 ~/.config/gh。
+function ghConfigDir() {
+  if (process.env.GH_CONFIG_DIR) return process.env.GH_CONFIG_DIR;
+  if (process.platform === "win32") {
+    const roaming = process.env.APPDATA || shellFolders().roaming || "";
+    return roaming ? join(roaming, "GitHub CLI") : "";
+  }
+  const home = userHomeDir();
+  return home ? join(home, ".config", "gh") : "";
+}
 
 function ghEnvironment() {
   const env = { ...process.env };
   if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
+  // 补上 gh 的登录配置目录，否则 App 进程里的 gh 一律认为"未登录"。
+  // 这里不能用 existsSync 校验：App 受 Node 权限模型限制，安装目录/dataDir
+  // 之外的路径 existsSync 会直接抛（被 safeExists 吞成 false）。注册表已经
+  // 给出真实用户目录，直接用；目录不存在时 gh 的表现与现在一致。
+  if (!env.GH_CONFIG_DIR) {
+    const dir = ghConfigDir();
+    if (dir) env.GH_CONFIG_DIR = dir;
+  }
   return env;
 }
 
 // 定位 gh 可执行文件。插件进程的 PATH 可能不包含 GitHub CLI 安装目录
 // （例如仅安装了 GitHub Desktop 或 PATH 被修改过），因此探测常见安装位置并缓存。
-function safeExists(p) {
-  try { return existsSync(p); } catch { return false; }
-}
-
 let _cachedGhPath = null;
 function resolveGhPath() {
   if (_cachedGhPath) return _cachedGhPath;
+  const localAppData = localAppDataDir();
+  const home = userHomeDir();
   const candidates = [
     "gh",
     "C:\\Program Files\\GitHub CLI\\gh.exe",
-    join(process.env.LOCALAPPDATA || "", "Programs", "GitHub CLI", "gh.exe"),
-    join(process.env.LOCALAPPDATA || "", "GitHubDesktop", "bin", "gh.exe"),
-    join(process.env.USERPROFILE || "", ".local", "bin", "gh.exe"),
+    localAppData ? join(localAppData, "Programs", "GitHub CLI", "gh.exe") : "",
+    localAppData ? join(localAppData, "GitHubDesktop", "bin", "gh.exe") : "",
+    home ? join(home, ".local", "bin", "gh.exe") : "",
   ];
   for (const candidate of candidates) {
     if (!candidate) continue;

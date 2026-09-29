@@ -40,8 +40,14 @@ function escapeHtml(s) {
 // app_route 这扇门的凭证是宿主挂在 iframe URL 上的 appSurfaceSession（TTL 上限 12h，
 // 面板自己无法续签）。它一过期，所有 api/* 都返回 403 {error:"app_surface_session_expired"}；
 // 这种「接口被拒绝」跟「这个目录不是仓库」是两件事，UI 不能拿前者去清屏。
-// 返回 null 表示"这不是接口失败"：可能是成功（ok:true），也可能是服务端就这个路径
-// 给出的仓库结论（isRepo:false），后者交给调用方原本的"不是 git 仓库"分支。
+//
+// 分级契约（调用方按 kind 决定要不要弹警告）：
+//   null             —— 不是接口级故障：ok:true，或服务端就这个路径给出的仓库结论（isRepo:false）
+//   {kind:"session"}  —— 凭证过期/被拒：唯一需要用户动手的一类，该弹警告
+//   {kind:"runtime"}  —— App 后端没起来：稍后可重试，该弹警告
+//   {kind:"repo"}     —— git 层面的失败（目录还没 init、还没有提交、索引被锁…）：
+//                       这是正常工作流里会出现的状态，只在卡片里就地说明，不弹警告
+//   {kind:"unknown"}  —— 认不出来的返回：就地说明，不弹警告
 const API_SESSION_ERROR_CODES = {
   app_surface_session_expired: 1,
   app_surface_session_invalid: 1,
@@ -57,6 +63,12 @@ const API_RUNTIME_ERROR_CODES = {
   APP_RUNTIME_SERVICE_EXITED: 1,
   APP_UI_NOT_FOUND: 1
 };
+// git 自己说"这里还没有仓库 / 还没有提交"属于预期状态（新目录的必经之路），
+// 不该当成异常去弹警告。
+const EXPECTED_GIT_STATE_RE = /not a git repository|does not have any commits yet|no commits yet|ENOENT|not a directory|does not exist/i;
+function isExpectedGitState(text) {
+  return !text || EXPECTED_GIT_STATE_RE.test(String(text));
+}
 function apiFailureInfo(data) {
   if (!data || typeof data !== "object") {
     return { kind: "unknown", code: "", detail: "", message: "接口返回了无法识别的内容", hint: "请稍后重试；仍失败就关闭并重新打开本面板" };
@@ -76,12 +88,21 @@ function apiFailureInfo(data) {
   if (matches(API_RUNTIME_ERROR_CODES)) {
     return { kind: "runtime", code: candidates.filter(Boolean)[0] || "", detail: detail, message: "应用后端暂时不可用", hint: "稍等几秒后点「重试」" };
   }
-  if (data.isRepo === false) return null;   // 服务端明确回答了"不是仓库"
+  if (data.isRepo === false) return null;   // 服务端就这个路径给出的仓库结论，交给调用方原本的"不是仓库"分支
+  // app 自带路由的 git 类失败都带 message（status/log/version/…），归到 repo 一档：就地说明，不弹。
+  if (data.ok === false && detail) {
+    const expected = isExpectedGitState(detail);
+    return {
+      kind: "repo", code: candidates.filter(Boolean)[0] || "", detail: detail,
+      message: expected ? "这个目录还不是 Git 仓库" : "git 读取失败",
+      hint: expected ? "点「初始化仓库」把它变成 Git 项目，或点「切换」换个目录" : "下面是 git 自己的报错"
+    };
+  }
   return { kind: "unknown", code: candidates.filter(Boolean)[0] || "", detail: detail, message: detail || "接口调用失败", hint: "请稍后重试；仍失败就关闭并重新打开本面板" };
 }
 
 // 请求层面就失败了（返回不是 JSON、网络断了、被宿主拦掉）：这些 catch 以前是静默的，
-// 面板会停在旧画面上。统一报出来，同一条失败 6 秒内只提示一次（toast 会替换上一条，不堆叠）。
+// 面板会停在旧画面上。这是真异常，该报；同一条失败 6 秒内只提示一次（toast 会替换上一条，不堆叠）。
 var _lastApiFailureNoticeAt = 0;
 function notifyApiFailure(err, what, force) {
   var now = Date.now();

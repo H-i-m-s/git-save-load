@@ -26,7 +26,10 @@ function renderApiFailure(failure) {
   }
   const btnCommit = document.getElementById("btnCommit");
   if (btnCommit) btnCommit.disabled = true;
-  notifyApiFailure(null, "Git 面板接口被拒绝：" + (failure.message || "") + "（" + (failure.hint || "") + "）", true);
+  // 只有需要用户动手的两类才弹警告（会话过期 / 后端不可用）；其他只在卡片里就地说明。
+  if (failure.kind === "session" || failure.kind === "runtime") {
+    notifyApiFailure(null, "Git 面板接口被拒绝：" + (failure.message || "") + "（" + (failure.hint || "") + "）", true);
+  }
 }
 
 function renderStatus(data) {
@@ -36,11 +39,15 @@ function renderStatus(data) {
   if (!data.ok || data.isRepo === false) {
     document.getElementById("branch").textContent = "✕";
     updateRepoPathDisplay(data.path || currentPath || getSavedPath() || "");
-    // git 自己的报错文本（索引被锁、权限、仓库损坏…）以前看不到，现在附在下面。
-    const repoFailDetail = data.message
-      ? '<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">' + escapeHtml(String(data.message).split("\n")[0]) + '</span>'
-      : '';
-    document.getElementById("fileList").innerHTML = '<li class="empty-hint">不是 git 仓库' + repoFailDetail + '<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 点顶部「切换」选一个 Git 项目文件夹</span></li>';
+    document.getElementById("fileList").innerHTML = '<li class="empty-hint">不是 git 仓库<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 点顶部「切换」选一个 Git 项目文件夹</span></li>';
+    // 新目录还没 init 是正常工作流（git 说"not a git repository"），不再多说一句；
+    // 只有"目录在、但 git 读不出来"这类非预期原因才把 git 原文摆到初始化卡片里。
+    const initResultEl = document.getElementById("initResult");
+    const expectedNotRepo = typeof isExpectedGitState !== "function" || isExpectedGitState(data.message);
+    if (initResultEl && data.message && !expectedNotRepo) {
+      initResultEl.textContent = String(data.message).split("\n")[0];
+      initResultEl.style.color = "var(--hana-fg-muted,#9ca3af)";
+    }
     // 显示初始化按钮
     const initArea = document.getElementById("initArea");
     if (initArea) initArea.style.display = "block";
