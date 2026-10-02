@@ -1,23 +1,27 @@
 ﻿#requires -Version 5.1
 <#
-Git Save/Load 一键发版脚本
+Git Save/Load 出包与发版脚本
 
 用法:
-  .\scripts\release.ps1                                  # 用 manifest.json 的版本号发版
-  .\scripts\release.ps1 -Notes "- 修复xxx`n- 新增yyy"    # 附带发布说明（支持多行）
-  .\scripts\release.ps1 -PackageOnly                     # 只打包不发布（输出 zip 与 sha256）
+  .\scripts\release.ps1                                          # 只出包（默认）：跑完就有 dist 三件，不联网
+  .\scripts\release.ps1 -Publish                                 # 出包并发布到 GitHub Release
+  .\scripts\release.ps1 -Publish -Notes "- 修复xxx`n- 新增yyy"   # 发布并附带说明（支持多行）
 
-前置条件（发布）:
-  - Node 与 gh CLI 已安装，gh 已登录（gh auth login）
-  - 工作区干净：改动已提交并推送
+默认（不带 -Publish）是纯本地操作：不查工作区、不联网、不碰 gh，出包必定完成。
+-Publish 在出包之后才走发布门禁，任一条没过就停在发布之前（包已出好，不受影响）:
+  - 工作区干净（-SkipCleanCheck 可跳）
+  - 本地提交已推送到 origin/master
+  - gh 已登录（gh auth login）
+  - 该 tag 的 Release 不存在（重名会拦下，避免同版本发两次不同内容）
   - manifest.json 的 version 就是本次要发的版本号（tag 与它强绑定）
 
 出包统一交给 scripts/pack.mjs，产物落 <repo>\dist：
   <id>-v<version>.zip / .zip.sha256 / .entry.json
--PackageOnly 只做这一步，不需要 gh、不需要网络、不要求工作区干净。
+-PackageOnly 是历史写法，等同于默认行为。
 #>
 param(
   [string]$Notes = "",
+  [switch]$Publish,
   [switch]$PackageOnly,
   [switch]$SkipCleanCheck
 )
@@ -50,36 +54,12 @@ function Invoke-Pack {
   return $zipPath
 }
 
-# ---------- 1.5 -PackageOnly：只本地出包，不发布 ----------
-# 纯本地操作，所以排在网络与 gh 校验之前：没登录、没网络、工作区脏也能出包。
-if ($PackageOnly) {
-  $localZip = Invoke-Pack
-  Write-Host ""
-  Write-Host "==> -PackageOnly：到此为止，未发布。"
-  Write-Host "    zip:    $localZip"
-  Write-Host "    sha256: $localZip.sha256  （校验值侧车文件）"
-  Write-Host "    entry:  $(Join-Path $repoRoot ('dist\{0}-{1}.entry.json' -f $manifest.id, $tag))  （市场条目）"
-  return
-}
-
-# ---------- 2. 前置校验 ----------
-if (-not $SkipCleanCheck) {
-  $dirty = & git -C $repoRoot status --porcelain
-  if ($dirty) { throw "工作区有未提交变更，先 commit + push 再发版（或加 -SkipCleanCheck）" }
-}
-cmd /c "git -C ""$repoRoot"" fetch origin --quiet >nul 2>&1"
-$ahead = & git -C $repoRoot rev-list --count "origin/master..master"
-if ("$ahead" -ne "0") { throw "本地有 $ahead 个提交未推送到 origin/master，先 git push" }
-cmd /c "gh auth status >nul 2>&1"
-if ($LASTEXITCODE -ne 0) { throw "gh CLI 未登录，先运行 gh auth login" }
-cmd /c "gh release view $tag --repo $RepoSlug >nul 2>&1"
-if ($LASTEXITCODE -eq 0) { throw "Release $tag 已存在，换版本号或先删除旧 Release" }
-
-# ---------- 3. 打包：调 scripts/pack.mjs，产物落 dist（顶层 <id>/ 包裹，正斜杠条目） ----------
+# ---------- 2. 出包：调 scripts/pack.mjs，产物落 dist（顶层 <id>/ 包裹，正斜杠条目） ----------
 # 自检由 pack.mjs 内部执行（scripts/selfcheck.mjs），这里不再重复跑一遍。
+# 出包排在发布门禁之前：不管后面发布成不成，包都先出好，不会白跑一趟。
 $asset = Invoke-Pack
 
-# ---------- 4. 校验 zip：条目必须是正斜杠（yauzl 拒绝反斜杠条目），manifest 版本一致 ----------
+# ---------- 3. 校验 zip：条目必须是正斜杠（yauzl 拒绝反斜杠条目），manifest 版本一致 ----------
 $zip = [System.IO.Compression.ZipFile]::OpenRead($asset)
 try {
   $bad = @($zip.Entries | Where-Object { $_.FullName.Contains("\") })
@@ -97,7 +77,31 @@ try {
 $sha256 = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLower()
 Write-Host "==> sha256: $sha256"
 
-# ---------- 5. 创建 GitHub Release 并上传 ----------
+# ---------- 4. 不带 -Publish 就到此为止（默认行为，纯本地） ----------
+# -PackageOnly 是历史写法，语义就是「不要发布」，同样在此收尾。
+if ($PackageOnly -or -not $Publish) {
+  Write-Host ""
+  Write-Host "==> 只出包，未发布。要发布到 GitHub Release 加 -Publish。"
+  Write-Host "    zip:    $asset"
+  Write-Host "    sha256: $asset.sha256  （校验值侧车文件）"
+  Write-Host "    entry:  $(Join-Path $repoRoot ('dist\{0}-{1}.entry.json' -f $manifest.id, $tag))  （市场条目）"
+  return
+}
+
+# ---------- 5. 发布门禁（只有 -Publish 才校验） ----------
+if (-not $SkipCleanCheck) {
+  $dirty = & git -C $repoRoot status --porcelain
+  if ($dirty) { throw "工作区有未提交变更，先 commit + push 再发版（或加 -SkipCleanCheck）" }
+}
+cmd /c "git -C ""$repoRoot"" fetch origin --quiet >nul 2>&1"
+$ahead = & git -C $repoRoot rev-list --count "origin/master..master"
+if ("$ahead" -ne "0") { throw "本地有 $ahead 个提交未推送到 origin/master，先 git push" }
+cmd /c "gh auth status >nul 2>&1"
+if ($LASTEXITCODE -ne 0) { throw "gh CLI 未登录，先运行 gh auth login" }
+cmd /c "gh release view $tag --repo $RepoSlug >nul 2>&1"
+if ($LASTEXITCODE -eq 0) { throw "Release $tag 已存在，换版本号或先删除旧 Release" }
+
+# ---------- 6. 创建 GitHub Release 并上传 ----------
 $notesFile = Join-Path $env:TEMP "gsl-notes-$tag.md"
 $notesText = "## Git Save/Load $tag`n`n$Notes`n`n---`n`n安装：下载附件 zip 拖入 HanaAgent 设置 → 插件；提交到官方插件目录后可直接在市场更新。`n"
 [System.IO.File]::WriteAllText($notesFile, $notesText, (New-Object System.Text.UTF8Encoding($false)))

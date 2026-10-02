@@ -752,7 +752,7 @@ runner 会为每个用例 spawn 一个**受限模式**子进程（`--permission`
 | --- | --- |
 | `selfcheck.mjs` | 结构自检：manifest 必备字段、entry / icon 存在、entry 与 `routes/` 与 `tools/` 全量 JS 语法、`ui/*.html` 引用的本地资源是否存在、manifest 声明的 route 对应页面是否存在 |
 | `pack.mjs` | 零依赖出包（自带最小 ZIP 写入器，不调外部 zip / tar，不用 npm 库）；出包前先跑 selfcheck |
-| `release.ps1` | 一键发版：前置校验 → selfcheck → 打包 → 创建 GitHub Release |
+| `release.ps1` | 出包与发版：默认只出包（调 `pack.mjs`，产物落 `dist`）；加 `-Publish` 才走发布门禁并创建 GitHub Release |
 
 **结构自检**
 
@@ -773,16 +773,23 @@ node scripts/pack.mjs --publisher <name>  # 指定 entry.json 的 publisher（�
 
 打包排除项：任意层级的 `.git`、`.github`、`node_modules`、`dist`、`scripts`、`tests`；按文件名排除 `.DS_Store`、`Thumbs.db`、`desktop.ini`、`._*`、`*.tmp` / `.temp` / `.swp` / `.swo` / `.log` / `.bak`、`*~`；符号链接一律跳过。
 
-**发版**
+**出包与发版**
+
+默认只出包：
 
 ```powershell
-.\scripts\release.ps1                                  # 用 manifest.json 的版本号发版
-.\scripts\release.ps1 -Notes "- 修复xxx`n- 新增yyy"    # 附带发布说明
-.\scripts\release.ps1 -PackageOnly                     # 只打包不发布
-.\scripts\release.ps1 -SkipCleanCheck                  # 跳过工作区干净检查
+.\scripts\release.ps1                                   # 只出包（默认）：跑完 dist 就有三件产物，不联网
 ```
 
-前置条件：gh CLI 已安装并登录、工作区干净且已推送、`manifest.json` 的 version 就是要发的版本号（tag 与它强绑定）。它同样会先跑一次 `selfcheck`（`node` 或脚本缺失时只提示跳过，不阻断发版）。
+要发布到 GitHub Release，加 `-Publish`：
+
+```powershell
+.\scripts\release.ps1 -Publish                           # 出包并发布
+.\scripts\release.ps1 -Publish -Notes "- 修复xxx`n- 新增yyy"   # 附带发布说明
+.\scripts\release.ps1 -Publish -SkipCleanCheck            # 发布时跳过工作区干净检查
+```
+
+不带 `-Publish` 时是纯本地操作：不查工作区、不联网、不碰 gh。加 `-Publish` 才会在出包之后走发布门禁：工作区干净、本地提交已推送到 `origin/master`、gh 已登录、该 tag 的 Release 不存在（防同版本发两次不同内容）、`manifest.json` 的 version 与 tag 强绑定。任一没过就停在发布之前，已出好的包不受影响。`-PackageOnly` 是历史写法，等同于默认行为。
 
 ---
 
