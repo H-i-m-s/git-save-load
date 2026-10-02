@@ -5,6 +5,20 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { getUserProxy } from "../lib/user-proxy.js";
+
+/**
+ * 子进程环境基线：进程环境 + 用户级代理（见 lib/user-proxy.js）+ 调用方显式注入。
+ *
+ * 为什么必须显式带上：App 进程只拿到宿主传的 PATH/HOME/TMPDIR/LANG，用户级
+ * HTTPS_PROXY/HTTP_PROXY/NO_PROXY 不在这份环境里；不带就等于逼 git/gh 走直连，
+ * 而 git 那边往往被它自己的 http.proxy 掩盖了，gh 那边不会（Go 只认环境变量）。
+ * 面板侧（routes/）走 gitEnv()/ghEnvironment()，这里是工具侧的同一道口子。
+ */
+function toolEnv(extra) {
+  return { ...process.env, ...getUserProxy(), ...(extra || {}) };
+}
+
 /**
  * 解析仓库路径。
  * 优先使用 input.path，否则使用当前工作目录。
@@ -53,7 +67,7 @@ export function resolveGitPath() {
 
 /**
  * 执行 git 命令（数组传参，不经过 shell）。
- * opts.env 存在时在 process.env 之上叠加（提交签名需要注入隔离 GNUPGHOME）。
+ * 环境 = 进程环境 + 用户级代理 + opts.env（提交签名需要注入隔离 GNUPGHOME）。
  */
 export function gitExec(cwd, args, opts = {}) {
   const timeout = opts.timeout || 60000;
@@ -66,8 +80,8 @@ export function gitExec(cwd, args, opts = {}) {
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: opts.maxBuffer || 10 * 1024 * 1024,
+    env: toolEnv(opts.env),
   };
-  if (opts.env) options.env = { ...process.env, ...opts.env };
   return execFileSync(resolveGitPath(), args, options).trim();
 }
 
@@ -84,9 +98,11 @@ export function execCapture(bin, args, opts = {}) {
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: opts.maxBuffer || 10 * 1024 * 1024,
+    // 始终走基线并叠加，不再“传了就整份替换”：以前只传 GNUPGHOME 的调用
+    // （git_commit 里的 gpgconf 探针）会把 PATH/HOME 一起丢掉。
+    env: toolEnv(opts.env),
   };
   if (opts.cwd) options.cwd = opts.cwd;
-  if (opts.env) options.env = opts.env;
   try {
     const stdout = execFileSync(bin, args, options);
     return { ok: true, code: 0, errCode: null, stdout: String(stdout || "").trim(), stderr: "" };
@@ -101,10 +117,9 @@ export function execCapture(bin, args, opts = {}) {
   }
 }
 
-/** git 版 execCapture：定位 git 后执行，opts.env 叠加在 process.env 之上。 */
+/** git 版 execCapture：定位 git 后执行，环境 = 进程环境 + 用户级代理 + opts.env。 */
 export function gitExecCapture(cwd, args, opts = {}) {
-  const env = opts.env ? { ...process.env, ...opts.env } : undefined;
-  return execCapture(resolveGitPath(), args, { ...opts, cwd, env });
+  return execCapture(resolveGitPath(), args, { ...opts, cwd, env: toolEnv(opts.env) });
 }
 
 /**
