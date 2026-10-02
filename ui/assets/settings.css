@@ -159,6 +159,53 @@ html, body {
   min-height: 20px;
 }
 
+/* ---------- 表单块（名字/邮箱输入） ---------- */
+.gs-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--gs-line);
+}
+.gs-field-group__title { font-size: 13.5px; font-weight: 650; }
+.gs-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.gs-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gs-field__label { font-size: 12px; color: var(--gs-muted); }
+.gs-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--gs-ink);
+  background: color-mix(in srgb, var(--gs-ink) 4%, transparent);
+  border: 1px solid var(--gs-line);
+  border-radius: var(--gs-radius-sm);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.gs-input::placeholder { color: var(--gs-muted); }
+.gs-input:focus-visible { border-color: var(--gs-accent); box-shadow: 0 0 0 3px var(--gs-accent-ring); }
+.gs-input:disabled { opacity: 0.55; }
+
+/* ---------- 公钥查看 ---------- */
+.gs-pubkey {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  font-family: var(--gs-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--gs-sub);
+  background: color-mix(in srgb, var(--gs-ink) 4%, transparent);
+  border: 1px solid var(--gs-line);
+  border-radius: var(--gs-radius-sm);
+  max-height: 220px;
+  overflow: auto;
+  user-select: text;
+}
+
 /* ---------- 开关 ---------- */
 .gs-switch { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
 .gs-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
@@ -242,4 +289,5 @@ html, body {
 @media (max-width: 460px) {
   .gs-row { flex-direction: column; align-items: stretch; gap: 8px; }
   .gs-row__control { justify-content: flex-start; }
+  .gs-field-grid { grid-template-columns: 1fr; }
 }

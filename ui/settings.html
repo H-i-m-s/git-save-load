@@ -102,7 +102,7 @@
         <div class="gs-row__control"><span class="gs-badge" id="sign-badge" data-state="off">未生成</span></div>
       </div>
       <div class="gs-row">
-        <div class="gs-row__label"><span>密钥 ID</span></div>
+        <div class="gs-row__label"><span>完整指纹</span></div>
         <div class="gs-row__control"><span class="gs-mono" id="sign-fpr">—</span></div>
       </div>
       <div class="gs-row">
@@ -122,7 +122,23 @@
         </div>
       </div>
 
+      <div class="gs-field-group">
+        <div class="gs-field-group__title">生成 / 轮换密钥</div>
+        <p class="gs-card__desc">轮换不可逆：GitHub 上已上传的旧公钥会立即失效，需重新上传。身份留空时用当前 gh 账号自动推导。</p>
+        <div class="gs-field-grid">
+          <div class="gs-field">
+            <label class="gs-field__label" for="sign-name">提交者名字（可选）</label>
+            <input class="gs-input" id="sign-name" type="text" autocomplete="off" spellcheck="false" placeholder="留空则用 gh 账号名" />
+          </div>
+          <div class="gs-field">
+            <label class="gs-field__label" for="sign-email">提交者邮箱（可选）</label>
+            <input class="gs-input" id="sign-email" type="text" autocomplete="off" spellcheck="false" placeholder="留空则用 gh 的 noreply 邮箱" />
+          </div>
+        </div>
+      </div>
+
       <div class="gs-actions" id="sign-actions"></div>
+      <pre class="gs-pubkey" id="pubkey-view" hidden></pre>
     </section>
 
     <!-- 确认条（iframe 内 window.confirm 被禁，用页内确认） -->
