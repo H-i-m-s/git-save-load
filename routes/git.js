@@ -68,19 +68,30 @@ async function getGitOperationState(cwd, pathExists = safeExists) {
   return "";
 }
 
-// 缓存用户级代理环境变量，避免每次 git 调用都查询 Windows 注册表
+// 缓存用户级代理环境变量，避免每次 git 调用都查询 Windows 注册表。
+// 读注册表用 reg.exe（Windows 自带，一次约 30 ms）。这里不要用 powershell.exe：
+// 即使带 -NoProfile，冷启一次也要约 1 s；而本函数是在应用进程启动后的第一次 git
+// 调用里同步执行的，两次 powershell 探测会让那次请求凭空慢 2 s 以上——受影响的
+// 正是面板首屏渲染「变更文件」的 GET /api/status。
 let _cachedUserProxy = null;
 function getUserProxy() {
   if (_cachedUserProxy) return _cachedUserProxy;
   _cachedUserProxy = {};
   try {
-    // 必须带 -NoProfile：否则 Windows PowerShell 会先加载用户 profile（例如 conda init 块），
-    // 连带拉起 conda/python，并把新建的控制台交给 Windows Terminal，弹出多余窗口。
-    // 用 -NoLogo 去横幅，命令串内只用单引号，避免 Node 传参时与 PowerShell 的引号解析打架。
-    const userHttps = execFileSync("powershell.exe", ["-NoProfile", "-NoLogo", "-Command", "[System.Environment]::GetEnvironmentVariable('HTTPS_PROXY', 'User')"], { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }).trim();
-    const userHttp = execFileSync("powershell.exe", ["-NoProfile", "-NoLogo", "-Command", "[System.Environment]::GetEnvironmentVariable('HTTP_PROXY', 'User')"], { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }).trim();
-    if (userHttps) _cachedUserProxy.HTTPS_PROXY = userHttps;
-    if (userHttp) _cachedUserProxy.HTTP_PROXY = userHttp;
+    // 只取用户作用域（HKCU\Environment），与旧实现 GetEnvironmentVariable(...,'User') 同义。
+    // reg.exe 每行形如：  HTTPS_PROXY    REG_SZ    http://127.0.0.1:7890
+    const out = execFileSync("reg.exe", ["query", "HKCU\\Environment"], {
+      encoding: "utf8",
+      timeout: 10000,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    for (const line of String(out).split(/\r?\n/)) {
+      const m = line.match(/^\s*(HTTPS_PROXY|HTTP_PROXY)\s+REG_(?:SZ|EXPAND_SZ)\s+(\S.*?)\s*$/i);
+      if (!m) continue;
+      const value = m[2].trim();
+      if (value) _cachedUserProxy[m[1].toUpperCase()] = value;
+    }
   } catch {}
   return _cachedUserProxy;
 }
@@ -504,7 +515,7 @@ export default function (app, ctx) {
 
   // ======== 模块注册 ========
   registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, gitExecFileWithEnv, commandErrorText, tmpFile, getCommitSigning: () => resolveCommitSigning(dataDir, resolveGitPath()) });
-  registerHistoryRoutes(app, { repoPath, gitExecFile });
+  registerHistoryRoutes(app, { repoPath, gitExecFile, gitExecFileAsync });
   registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecFileWithEnv, commandErrorText, getGitOperationState: gitOperationState, tmpFile, readTextFile });
   registerDiffConflictRoutes(app, { repoPath, gitExecFile, readTextFile, writeTextFile });
   registerRepositoryRoutes(app, {
@@ -523,6 +534,7 @@ export default function (app, ctx) {
   registerGitHubRoutes(app, {
     ctx,
     gitExecFile,
+    gitExecFileAsync,
     commandErrorText,
     validateBranchName,
     isValidRemoteName,
@@ -540,6 +552,7 @@ export default function (app, ctx) {
     ctx,
     repoPath,
     gitExecFile,
+    gitExecFileAsync,
     commandErrorText,
     readConfig,
     writeConfig,
@@ -573,6 +586,7 @@ export default function (app, ctx) {
     ctx,
     repoPath,
     gitExecFile,
+    gitExecFileAsync,
     listRemoteBranches,
     readRemoteSettings,
     chooseRemoteBranch,
@@ -590,6 +604,7 @@ export default function (app, ctx) {
     ctx,
     repoPath,
     gitExecFile,
+    gitExecFileAsync,
     commandErrorText,
     readConfig,
     readRemoteSettings,

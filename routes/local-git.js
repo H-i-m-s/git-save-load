@@ -7,12 +7,15 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
     const path = repoPath(c.req.query("path"));
 
     try {
-      // 四个只读 git 调用并行执行（异步不阻塞事件循环），总耗时从串行累加
-      // 降为最慢单项。branch/status 失败 = 不是仓库；log/diff 失败静默降级
-      //（空仓库无 commit 时 log 会失败，属正常情况）。
+      // 只跑渲染这个接口真正需要的三条只读 git 调用，并行执行（异步不阻塞事件循环），
+      // 总耗时从串行累加降为最慢单项。branch/status 失败 = 不是仓库；diff 失败静默降级。
+      //
+      // 这里以前还顺带跑一条 `git log --numstat -n 5` 产出 recentCommits，但前端从未
+      // 消费该字段（全仓库 grep 只在本文件命中），而它在大仓库上极贵：
+      // e:\isaacsim\project（10262 个跟踪文件）实测这一条 2678 ms，占掉 /api/status
+      // 整体 2940 ms 里的绝大部分，而真正渲染「变更文件」的 status + diff 只要约 250 ms。
       const branchP = gitExecFileAsync(path, ["branch", "--show-current"]);
       const statusP = gitExecFileAsync(path, ["-c", "core.quotepath=false", "status", "--short"]);
-      const logP = gitExecFileAsync(path, ["log", "--format=%H %s", "--numstat", "-n", "5"]).catch(() => "");
       const diffP = gitExecFileAsync(path, ["-c", "core.quotepath=false", "diff", "--numstat"]).catch(() => "");
       let branch;
       let statusShort;
@@ -21,27 +24,7 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
       } catch (e) {
         return c.json({ ok: false, isRepo: false, path, message: e.message });
       }
-      const logRaw = await logP;
       const diffRaw = await diffP;
-
-      // 解析 log --numstat 输出（空仓库 logRaw 为空串，recentCommits 保持空）
-      let recentCommits = [];
-      if (logRaw) {
-        const lines = logRaw.split("\n");
-        let current = null;
-        for (const line of lines) {
-          if (!line.trim()) { if (current) { recentCommits.push(current); current = null; } continue; }
-          const parts = line.trim().split(/\s+/);
-          if (parts.length >= 2 && /^[0-9a-f]{40}$/i.test(parts[0])) {
-            if (current) recentCommits.push(current);
-            current = { hash: parts[0].slice(0, 7), subject: parts.slice(1).join(" "), added: 0, deleted: 0 };
-          } else if (current && parts.length >= 2 && /^\d+$/.test(parts[0])) {
-            current.added += parseInt(parts[0]) || 0;
-            current.deleted += parseInt(parts[1]) || 0;
-          }
-        }
-        if (current) recentCommits.push(current);
-      }
 
       let changed = [];
       let untracked = [];
@@ -81,7 +64,6 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
         changedFiles: changed,
         changedWithStats,
         untrackedFiles: untracked,
-        recentCommits,
         changedCount: changed.length,
         untrackedCount: untracked.length,
       });

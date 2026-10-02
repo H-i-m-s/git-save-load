@@ -1,11 +1,12 @@
 // Atomic remote rename / URL edit route with confirmation tokens.
 import { createHash } from "node:crypto";
+import { withRepoLock } from "../lib/repo-lock.js";
 
-export function registerRemoteEditRoutes(app, { ctx, repoPath, gitExecFile, commandErrorText, readConfig, writeConfig, readRemoteSettings, writeRemoteSettings, isValidRemoteName, isValidRemoteUrl, sanitizeRemoteUrl, configuredRemoteUrls, getGitOperationState }) {
-  function restoreConfiguredRemoteUrls(cwd, remote, urls, push = false) {
+export function registerRemoteEditRoutes(app, { ctx, repoPath, gitExecFile, gitExecFileAsync, commandErrorText, readConfig, writeConfig, readRemoteSettings, writeRemoteSettings, isValidRemoteName, isValidRemoteUrl, sanitizeRemoteUrl, configuredRemoteUrls, getGitOperationState }) {
+  async function restoreConfiguredRemoteUrls(cwd, remote, urls, push = false) {
     const key = `remote.${remote}.${push ? "pushurl" : "url"}`;
-    try { gitExecFile(cwd, ["config", "--unset-all", key], { timeout: 10000 }); } catch {}
-    for (const url of urls) gitExecFile(cwd, ["config", "--add", key, url], { timeout: 10000 });
+    try { await gitExecFileAsync(cwd, ["config", "--unset-all", key], { timeout: 10000 }); } catch {}
+    for (const url of urls) await gitExecFileAsync(cwd, ["config", "--add", key, url], { timeout: 10000 });
   }
 
   function hashRemoteEditValue(value) {
@@ -129,34 +130,37 @@ export function registerRemoteEditRoutes(app, { ctx, repoPath, gitExecFile, comm
         return c.json({ ok: false, code: "REMOTE_CHANGED", requiresReconfirmation: true, message: "远程配置在确认期间发生了变化，请刷新后重新确认" });
       }
 
-      if (oldRemote !== newRemote) {
-        gitExecFile(path, ["remote", "rename", oldRemote, newRemote], { timeout: 10000 });
-        renamed = true;
-        gitChanged = true;
-      }
       const activeRemote = newRemote;
-      if (fetchChanged) {
-        gitChanged = true;
-        gitExecFile(path, ["remote", "set-url", activeRemote, effectiveNewUrl], { timeout: 10000 });
-      }
-      if (newPushUrl) {
-        restoreConfiguredRemoteUrls(path, activeRemote, [newPushUrl], true);
-        gitChanged = true;
-      } else if (clearPushUrl) {
-        restoreConfiguredRemoteUrls(path, activeRemote, [], true);
-        gitChanged = true;
-      }
+      // 修改 remote 配置会写 .git/config（rename 还会重写 refs/remotes/*），属写操作，与其它写操作串行。
+      await withRepoLock(path, async () => {
+        if (oldRemote !== newRemote) {
+          await gitExecFileAsync(path, ["remote", "rename", oldRemote, newRemote], { timeout: 10000 });
+          renamed = true;
+          gitChanged = true;
+        }
+        if (fetchChanged) {
+          gitChanged = true;
+          await gitExecFileAsync(path, ["remote", "set-url", activeRemote, effectiveNewUrl], { timeout: 10000 });
+        }
+        if (newPushUrl) {
+          await restoreConfiguredRemoteUrls(path, activeRemote, [newPushUrl], true);
+          gitChanged = true;
+        } else if (clearPushUrl) {
+          await restoreConfiguredRemoteUrls(path, activeRemote, [], true);
+          gitChanged = true;
+        }
+      });
 
       if (fetchChanged) {
         try {
-          gitExecFile(path, ["ls-remote", "--heads", activeRemote], { timeout: 120000 });
+          await gitExecFileAsync(path, ["ls-remote", "--heads", activeRemote], { timeout: 120000 });
         } catch (verifyError) {
           throw Object.assign(new Error(`新的获取地址验证失败：${commandErrorText(verifyError) || "无法访问远程仓库"}`), { code: "REMOTE_FETCH_URL_VERIFY_FAILED" });
         }
       }
       if (newPushUrl) {
         try {
-          gitExecFile(path, ["ls-remote", "--heads", newPushUrl], { timeout: 120000 });
+          await gitExecFileAsync(path, ["ls-remote", "--heads", newPushUrl], { timeout: 120000 });
         } catch (verifyError) {
           throw Object.assign(new Error(`新的推送地址验证失败：${commandErrorText(verifyError) || "无法访问远程仓库"}`), { code: "REMOTE_PUSH_URL_VERIFY_FAILED" });
         }
@@ -191,9 +195,12 @@ export function registerRemoteEditRoutes(app, { ctx, repoPath, gitExecFile, comm
       let rollbackError = "";
       try {
         if (gitChanged) {
-          if (renamed) gitExecFile(path, ["remote", "rename", newRemote, oldRemote], { timeout: 10000 });
-          restoreConfiguredRemoteUrls(path, oldRemote, oldFetchUrls.length ? oldFetchUrls : (oldFetchEffective ? [oldFetchEffective] : []), false);
-          restoreConfiguredRemoteUrls(path, oldRemote, oldPushUrls, true);
+          // 回滚同样是写仓库配置，纳入同一把仓库锁，避免与并发写操作交叉。
+          await withRepoLock(path, async () => {
+            if (renamed) await gitExecFileAsync(path, ["remote", "rename", newRemote, oldRemote], { timeout: 10000 });
+            await restoreConfiguredRemoteUrls(path, oldRemote, oldFetchUrls.length ? oldFetchUrls : (oldFetchEffective ? [oldFetchEffective] : []), false);
+            await restoreConfiguredRemoteUrls(path, oldRemote, oldPushUrls, true);
+          });
         }
         if (originalConfig) await writeConfig(ctx, originalConfig);
       } catch (rollbackErrorValue) {

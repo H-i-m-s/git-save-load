@@ -1,10 +1,11 @@
 // GitHub CLI integration routes.
-import { execFileSync } from "node:child_process";
+import { execFileSync, execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { getCachedToken } from "../lib/secret.js";
+import { withRepoLock } from "../lib/repo-lock.js";
 
 // Hana v2 的 App 跑在独立子进程里，宿主只传 PATH / HOME / TMPDIR / LANG 四个
 // 环境变量，所以 process.env 里没有 APPDATA、LOCALAPPDATA、USERPROFILE。
@@ -144,21 +145,22 @@ function getGitIdentity(cwd, gitExecFile) {
   }
 }
 
-function readLicenseFile(cwd, license, ghExec) {
+// gh repo license view 会从 GitHub 侧取回许可证正文，属网络调用，异步执行。
+async function readLicenseFile(cwd, license, ghExecAsync) {
   try {
-    const output = ghExec(["repo", "license", "view", license], { timeout: 30000, cwd });
+    const output = await ghExecAsync(["repo", "license", "view", license], { timeout: 30000, cwd });
     return output;
   } catch {
     return "";
   }
 }
 
-async function applyLicenseToLocalRepo(cwd, license, gitExecFile, ghExec, writeTextFile, pathExists) {
+async function applyLicenseToLocalRepo(cwd, license, gitExecFile, ghExecAsync, writeTextFile, pathExists) {
   if (!license) return { applied: false, existing: false, committed: false };
   const licensePath = join(cwd, "LICENSE");
   // LICENSE 是否已存在：宿主侧 stat（app/resources.read）
   if (await pathExists(licensePath)) return { applied: false, existing: true, committed: false };
-  const content = readLicenseFile(cwd, license, ghExec);
+  const content = await readLicenseFile(cwd, license, ghExecAsync);
   if (!content) throw new Error("无法获取许可证模板，请检查 GitHub CLI 是否支持该许可证");
   const identity = getGitIdentity(cwd, gitExecFile);
   if (!identity) throw new Error("当前仓库还没有配置 Git 姓名和邮箱，无法自动提交许可证");
@@ -170,11 +172,18 @@ async function applyLicenseToLocalRepo(cwd, license, gitExecFile, ghExec, writeT
   return { applied: true, existing: false, committed: false };
 }
 
-export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, validateBranchName, isValidRemoteName, isValidRemoteUrl, sanitizeRemoteUrl, readRemoteSettings, readRepoPath, writeTextFile, pathExists }) {
+export function registerGitHubRoutes(app, { ctx, gitExecFile, gitExecFileAsync, commandErrorText, validateBranchName, isValidRemoteName, isValidRemoteUrl, sanitizeRemoteUrl, readRemoteSettings, readRepoPath, writeTextFile, pathExists }) {
   // ======== API: GitHub 管理 ========
   // gh 自己会读取 GitHub CLI 的登录配置。不要把 Git 的用户级代理强行注入 gh，
   // 否则可能与 gh 的网络实现或本机代理状态冲突，导致 GraphQL 返回 EOF。
-  function ghExec(args, opts = {}) {
+  // gh 调用一律走异步版 ghExecAsync：它全是网络调用，同步 spawn 会占住事件循环，
+  // 一次网络等待就能把整个后端（含本地很快的接口）一起冻住。这里刻意不再提供同步版，
+  // 免得日后有人顺手拿到同步的那个又把问题带回来。
+  // opts 语义：encoding / timeout（默认 30000）/ windowsHide / env / stdio / cwd，
+  // 额外支持 opts.maxBuffer（供大输出的 repo list / search 使用）。
+  // 失败时 reject 原始 child error，因此 commandErrorText(e) 仍能从
+  // e.stderr / e.stdout / e.message 取到可读文本。
+  function ghExecAsync(args, opts = {}) {
     const env = ghEnvironment();
     const options = {
       encoding: "utf8",
@@ -184,7 +193,13 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
       stdio: ["ignore", "pipe", "pipe"],
     };
     if (opts.cwd) options.cwd = opts.cwd;
-    return execFileSync(resolveGhPath(), args, options).trim();
+    if (opts.maxBuffer) options.maxBuffer = opts.maxBuffer;
+    return new Promise((resolve, reject) => {
+      execFile(resolveGhPath(), args, options, (err, stdout) => {
+        if (err) reject(err);
+        else resolve(String(stdout == null ? "" : stdout).trim());
+      });
+    });
   }
 
   app.post("/api/gh/create", async (c) => {
@@ -203,7 +218,7 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
         gitExecFile(localPath, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
         localHasCommit = hasHeadCommit(localPath, gitExecFile);
         if (license && localHasCommit) {
-          localLicense = await applyLicenseToLocalRepo(localPath, license, gitExecFile, ghExec, writeTextFile, pathExists);
+          localLicense = await applyLicenseToLocalRepo(localPath, license, gitExecFile, ghExecAsync, writeTextFile, pathExists);
           if (localLicense.applied) {
             const status = gitExecFile(localPath, ["status", "--porcelain", "--", "LICENSE"], { timeout: 10000 });
             if (status) {
@@ -219,25 +234,30 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
       if (description) args.push("--description", description);
       // 已有本地提交时，许可证已经在本地生成并提交，远程必须保持空初始化，避免产生分叉。
       if (license && !localHasCommit) args.push("--license", license);
-      const url = ghExec(args);
+      const url = await ghExecAsync(args);
 
       if (localPath) {
         try {
           const existingRemotes = gitExecFile(localPath, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
           const remoteSettings = await readRemoteSettings(ctx, localPath, existingRemotes);
           const targetRemote = remoteSettings.pushRemote || "origin";
-          try {
-            gitExecFile(localPath, ["remote", "get-url", targetRemote], { timeout: 10000 });
-            gitExecFile(localPath, ["remote", "set-url", targetRemote, url], { timeout: 10000 });
-          } catch {
-            gitExecFile(localPath, ["remote", "add", targetRemote, url], { timeout: 10000 });
-          }
+          // 只读命令留在锁外；配置远程与首次推送同属一组写操作，放进同一个仓库锁，
+          // 避免异步化后与同仓库的其它写操作撞 git 的 ref / index 锁。
+          let branch = "";
           if (localHasCommit) {
-            const branch = gitExecFile(localPath, ["branch", "--show-current"], { timeout: 10000 });
-            if (branch && validateBranchName(localPath, branch)) {
-              gitExecFile(localPath, ["push", "--set-upstream", targetRemote, `${branch}:${branch}`], { timeout: 120000 });
-            }
+            branch = gitExecFile(localPath, ["branch", "--show-current"], { timeout: 10000 });
           }
+          await withRepoLock(localPath, async () => {
+            try {
+              gitExecFile(localPath, ["remote", "get-url", targetRemote], { timeout: 10000 });
+              gitExecFile(localPath, ["remote", "set-url", targetRemote, url], { timeout: 10000 });
+            } catch {
+              gitExecFile(localPath, ["remote", "add", targetRemote, url], { timeout: 10000 });
+            }
+            if (branch && validateBranchName(localPath, branch)) {
+              await gitExecFileAsync(localPath, ["push", "--set-upstream", targetRemote, `${branch}:${branch}`], { timeout: 120000 });
+            }
+          });
         } catch (e) {
           return c.json({ ok: false, url, license, message: `GitHub 仓库已创建，但本地关联或首次推送失败：${commandErrorText(e)}` });
         }
@@ -256,7 +276,7 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
     try {
       const args = ["repo", "clone", url];
       if (dir) args.push(dir);
-      ghExec(args, { timeout: 120000 });
+      await ghExecAsync(args, { timeout: 120000 });
       return c.json({ ok: true, message: "克隆成功" });
     } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "克隆失败" }); }
   });
@@ -267,10 +287,10 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
       const args = ["repo", "list"];
       if (owner) args.push(owner);
       args.push("--limit", "30", "--json", "name,owner,description,url,isPrivate,updatedAt,licenseInfo");
-      const raw = ghExec(args);
+      const raw = await ghExecAsync(args, { maxBuffer: 10 * 1024 * 1024 });
       const repos = JSON.parse(raw);
       let viewerLogin = "";
-      try { viewerLogin = ghExec(["api", "user", "--jq", ".login"]); } catch {}
+      try { viewerLogin = await ghExecAsync(["api", "user", "--jq", ".login"]); } catch {}
       return c.json({ ok: true, repos, viewerLogin });
     } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "获取仓库列表失败" }); }
   });
@@ -281,7 +301,7 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
     if (!name) return c.json({ ok: false, message: "请指定仓库名" });
     if (!body.confirmed) return c.json({ ok: false, code: "CONFIRM_REQUIRED", message: "删除 GitHub 仓库需要二次确认" });
     try {
-      ghExec(["repo", "delete", name, "--yes"]);
+      await ghExecAsync(["repo", "delete", name, "--yes"]);
       return c.json({ ok: true, message: `已删除：${name}` });
     } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "删除失败" }); }
   });
@@ -319,14 +339,14 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
           // gh 要求改可见性时必须显式接受后果
           args.push("--accept-visibility-change-consequences");
         }
-        ghExec(args);
+        await ghExecAsync(args);
         actions.push("描述/可见性");
       }
 
       // 2. 改名（改名后后续操作统一用新名）
       let localRemote = null;
       if (newName && newName !== repo) {
-        ghExec(["repo", "rename", newName, "--repo", current]);
+        await ghExecAsync(["repo", "rename", newName, "--repo", current]);
         current = `${owner}/${newName}`;
         actions.push("仓库名");
         // 检测插件配置的本地仓库是否关联了被改名的远程（匹配 owner/repo 后缀）
@@ -351,8 +371,8 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
       //    通过 contents API 直接写入/更新 LICENSE 文件。
       if (license) {
         let branch = "main";
-        try { branch = ghExec(["api", `repos/${current}`, "--jq", ".default_branch"]); } catch {}
-        const raw = readLicenseFile(process.cwd(), license, ghExec);
+        try { branch = await ghExecAsync(["api", `repos/${current}`, "--jq", ".default_branch"]); } catch {}
+        const raw = await readLicenseFile(process.cwd(), license, ghExecAsync);
         if (!raw) throw new Error(`无法获取 ${license} 许可证模板，请检查 GitHub CLI 支持情况`);
         const year = String(new Date().getFullYear());
         const normalized = raw
@@ -360,7 +380,7 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
           .replace(/\[fullname\]/gi, owner);
         const content64 = Buffer.from(normalized, "utf8").toString("base64");
         let sha = "";
-        try { sha = ghExec(["api", `repos/${current}/contents/LICENSE`, "--jq", ".sha"]); } catch {}
+        try { sha = await ghExecAsync(["api", `repos/${current}/contents/LICENSE`, "--jq", ".sha"]); } catch {}
         const putArgs = [
           "api", "-X", "PUT", `repos/${current}/contents/LICENSE`,
           "-f", `message=chore: update license to ${license}`,
@@ -368,7 +388,7 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
           "-f", `branch=${branch}`,
         ];
         if (sha) putArgs.push("-f", `sha=${sha}`);
-        ghExec(putArgs);
+        await ghExecAsync(putArgs);
         actions.push("许可证");
       }
 
@@ -399,7 +419,7 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
     const q = String(c.req.query("q") || "").trim();
     if (!q) return c.json({ ok: true, repos: [] });
     try {
-      const raw = ghExec(["search", "repos", q, "--limit", "20", "--json", "name,owner,description,url,isPrivate,updatedAt,licenseInfo"]);
+      const raw = await ghExecAsync(["search", "repos", q, "--limit", "20", "--json", "name,owner,description,url,isPrivate,updatedAt,licenseInfo"], { maxBuffer: 10 * 1024 * 1024 });
       const repos = JSON.parse(raw);
       return c.json({ ok: true, repos });
     } catch (e) { return c.json({ ok: false, message: commandErrorText(e) || "搜索仓库失败" }); }
@@ -423,12 +443,15 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, commandErrorText, 
       if (previousUrl && !body.confirmed) {
         return c.json({ ok: false, code: "REMOTE_REPLACE_CONFIRM", requiresConfirmation: true, remote, previousUrl: sanitizeRemoteUrl(previousUrl), nextUrl: sanitizeRemoteUrl(remoteUrl), message: "当前远程名称已经存在，需要确认是否替换" });
       }
-      if (previousUrl) {
-        gitExecFile(localPath, ["remote", "set-url", remote, remoteUrl], { timeout: 10000 });
-      } else {
-        gitExecFile(localPath, ["remote", "add", remote, remoteUrl], { timeout: 10000 });
-      }
-      gitExecFile(localPath, ["fetch", "--prune", remote], { timeout: 120000 });
+      // 配置远程与 fetch 同属一组写操作，放进同一个仓库锁。
+      await withRepoLock(localPath, async () => {
+        if (previousUrl) {
+          gitExecFile(localPath, ["remote", "set-url", remote, remoteUrl], { timeout: 10000 });
+        } else {
+          gitExecFile(localPath, ["remote", "add", remote, remoteUrl], { timeout: 10000 });
+        }
+        await gitExecFileAsync(localPath, ["fetch", "--prune", remote], { timeout: 120000 });
+      });
       let currentBranch = "";
       try { currentBranch = gitExecFile(localPath, ["branch", "--show-current"], { timeout: 10000 }); } catch {}
       return c.json({

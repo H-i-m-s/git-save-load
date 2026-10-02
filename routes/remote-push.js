@@ -1,5 +1,7 @@
 // Remote push / pull / overwrite routes.
-export function registerRemotePushRoutes(app, { ctx, repoPath, gitExecFile, commandErrorText, readConfig, readRemoteSettings, isValidRemoteName, validateBranchName, listRemoteBranches, chooseRemoteBranch, parseCommitList, parseNameStatus }) {
+import { withRepoLock } from "../lib/repo-lock.js";
+
+export function registerRemotePushRoutes(app, { ctx, repoPath, gitExecFile, gitExecFileAsync, commandErrorText, readConfig, readRemoteSettings, isValidRemoteName, validateBranchName, listRemoteBranches, chooseRemoteBranch, parseCommitList, parseNameStatus }) {
   // ======== API: 拉取远程 ========
   app.post("/api/pull", async (c) => {
     const body = await c.req.json().catch(() => ({}));
@@ -12,20 +14,23 @@ export function registerRemotePushRoutes(app, { ctx, repoPath, gitExecFile, comm
       if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "当前没有可用的默认获取远程，请先在远程卡片中设置" });
       const targetBranch = String(body.branch || "").trim() || gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
       if (!validateBranchName(path, targetBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
-      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
-      const branches = listRemoteBranches(path, remote);
-      const remoteBranch = chooseRemoteBranch(path, remote, targetBranch, branches, requestedRemoteBranch);
-      if (!remoteBranch) return c.json({ ok: false, code: "REMOTE_BRANCH_MISSING", remote, targetBranch, branches, message: `远程 ${remote} 没有可用的目标分支` });
-      const config = await readConfig(ctx);
-      const pullMode = ["merge", "rebase", "ff-only"].includes(body.mode) ? body.mode : (["merge", "rebase", "ff-only"].includes(config.pullMode) ? config.pullMode : "merge");
-      const pullArgs = ["pull"];
-      if (pullMode === "rebase") pullArgs.push("--rebase");
-      else if (pullMode === "ff-only") pullArgs.push("--ff-only");
-      else pullArgs.push("--no-rebase");
-      pullArgs.push(remote, remoteBranch);
-      const raw = gitExecFile(path, pullArgs, { timeout: 120000 });
-      const alreadyUpToDate = raw.includes("Already up to date") || raw.includes("Already-up-to-date");
-      return c.json({ ok: true, mode: pullMode, remote, remoteBranch, targetBranch, message: alreadyUpToDate ? "已经是最新" : `已从 ${remote}/${remoteBranch} 拉取到 ${targetBranch}` });
+      const outcome = await withRepoLock(path, async () => {
+        await gitExecFileAsync(path, ["fetch", "--prune", remote], { timeout: 120000 });
+        const branches = listRemoteBranches(path, remote);
+        const remoteBranch = chooseRemoteBranch(path, remote, targetBranch, branches, requestedRemoteBranch);
+        if (!remoteBranch) return { payload: { ok: false, code: "REMOTE_BRANCH_MISSING", remote, targetBranch, branches, message: `远程 ${remote} 没有可用的目标分支` } };
+        const config = await readConfig(ctx);
+        const pullMode = ["merge", "rebase", "ff-only"].includes(body.mode) ? body.mode : (["merge", "rebase", "ff-only"].includes(config.pullMode) ? config.pullMode : "merge");
+        const pullArgs = ["pull"];
+        if (pullMode === "rebase") pullArgs.push("--rebase");
+        else if (pullMode === "ff-only") pullArgs.push("--ff-only");
+        else pullArgs.push("--no-rebase");
+        pullArgs.push(remote, remoteBranch);
+        const raw = await gitExecFileAsync(path, pullArgs, { timeout: 120000 });
+        const alreadyUpToDate = raw.includes("Already up to date") || raw.includes("Already-up-to-date");
+        return { payload: { ok: true, mode: pullMode, remote, remoteBranch, targetBranch, message: alreadyUpToDate ? "已经是最新" : `已从 ${remote}/${remoteBranch} 拉取到 ${targetBranch}` } };
+      });
+      return c.json(outcome.payload);
     } catch (e) {
       const stderr = commandErrorText(e);
       const errLine = stderr.split("\n").find(l => l.includes("error:") || l.includes("fatal:"));
@@ -51,48 +56,51 @@ export function registerRemotePushRoutes(app, { ctx, repoPath, gitExecFile, comm
       const pushMode = ["normal", "force-with-lease", "force"].includes(body.mode) ? body.mode : (["normal", "force-with-lease", "force"].includes(config.pushMode) ? config.pushMode : "normal");
 
       // 推送前先获取远程状态。确认覆盖必须绑定到用户确认时看到的远程 hash。
-      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
-      const remoteRef = `${remote}/${actualBranch}`;
-      let remoteHash = "";
-      try { remoteHash = gitExecFile(path, ["rev-parse", remoteRef], { timeout: 10000 }); } catch {}
-      if (remoteHash) {
-        const counts = gitExecFile(path, ["rev-list", "--left-right", "--count", `${remoteRef}...${actualBranch}`], { timeout: 10000 }).split(/\s+/).map(Number);
-        const behind = Number.isFinite(counts[0]) ? counts[0] : 0;
-        const ahead = Number.isFinite(counts[1]) ? counts[1] : 0;
-        if (behind > 0 && !force) {
-          const commits = parseCommitList(gitExecFile(path, ["log", "--format=%H|%s", "-n", "20", `${actualBranch}..${remoteRef}`], { timeout: 10000 }))
-            .map((item) => ({ hash: item.hash.slice(0, 12), subject: item.subject }));
-          const files = parseNameStatus(gitExecFile(path, ["diff", "--name-status", `${actualBranch}..${remoteRef}`], { timeout: 10000 }));
-          return c.json({
-            ok: false,
-            code: "REMOTE_AHEAD",
-            requiresConfirmation: true,
-            remoteHash,
-            ahead,
-            behind,
-            diverged: ahead > 0,
-            branch: actualBranch,
-            remote,
-            commits,
-            files,
-            message: ahead > 0 ? "本地与远程已分叉" : "远程包含本地没有的提交",
-          });
+      const outcome = await withRepoLock(path, async () => {
+        await gitExecFileAsync(path, ["fetch", "--prune", remote], { timeout: 120000 });
+        const remoteRef = `${remote}/${actualBranch}`;
+        let remoteHash = "";
+        try { remoteHash = gitExecFile(path, ["rev-parse", remoteRef], { timeout: 10000 }); } catch {}
+        if (remoteHash) {
+          const counts = gitExecFile(path, ["rev-list", "--left-right", "--count", `${remoteRef}...${actualBranch}`], { timeout: 10000 }).split(/\s+/).map(Number);
+          const behind = Number.isFinite(counts[0]) ? counts[0] : 0;
+          const ahead = Number.isFinite(counts[1]) ? counts[1] : 0;
+          if (behind > 0 && !force) {
+            const commits = parseCommitList(gitExecFile(path, ["log", "--format=%H|%s", "-n", "20", `${actualBranch}..${remoteRef}`], { timeout: 10000 }))
+              .map((item) => ({ hash: item.hash.slice(0, 12), subject: item.subject }));
+            const files = parseNameStatus(gitExecFile(path, ["diff", "--name-status", `${actualBranch}..${remoteRef}`], { timeout: 10000 }));
+            return { payload: {
+              ok: false,
+              code: "REMOTE_AHEAD",
+              requiresConfirmation: true,
+              remoteHash,
+              ahead,
+              behind,
+              diverged: ahead > 0,
+              branch: actualBranch,
+              remote,
+              commits,
+              files,
+              message: ahead > 0 ? "本地与远程已分叉" : "远程包含本地没有的提交",
+            } };
+          }
+          if (force && expectedRemoteHash && expectedRemoteHash !== remoteHash) {
+            return { payload: { ok: false, code: "REMOTE_CHANGED", message: "确认后远程仓库又发生了变化，请重新检查后再覆盖" } };
+          }
         }
-        if (force && expectedRemoteHash && expectedRemoteHash !== remoteHash) {
-          return c.json({ ok: false, code: "REMOTE_CHANGED", message: "确认后远程仓库又发生了变化，请重新检查后再覆盖" });
-        }
-      }
 
-      const pushArgs = ["push"];
-      if (force) {
-        // 二次确认后的覆盖只允许安全强推，并锁定用户确认时看到的远程提交。
-        pushArgs.push(expectedRemoteHash ? `--force-with-lease=refs/heads/${actualBranch}:${expectedRemoteHash}` : "--force-with-lease");
-      } else if (pushMode === "force") pushArgs.push("--force");
-      else if (pushMode === "force-with-lease") pushArgs.push("--force-with-lease");
-      pushArgs.push(remote, `${actualBranch}:${actualBranch}`);
-      const raw = gitExecFile(path, pushArgs, { timeout: 120000 });
-      const upToDate = raw.includes("up-to-date") || raw.includes("Everything up-to-date");
-      return c.json({ ok: true, mode: force ? "force-with-lease" : pushMode, message: upToDate ? "没有新提交需要推送" : (force ? "已按本地版本覆盖远程" : "推送成功") });
+        const pushArgs = ["push"];
+        if (force) {
+          // 二次确认后的覆盖只允许安全强推，并锁定用户确认时看到的远程提交。
+          pushArgs.push(expectedRemoteHash ? `--force-with-lease=refs/heads/${actualBranch}:${expectedRemoteHash}` : "--force-with-lease");
+        } else if (pushMode === "force") pushArgs.push("--force");
+        else if (pushMode === "force-with-lease") pushArgs.push("--force-with-lease");
+        pushArgs.push(remote, `${actualBranch}:${actualBranch}`);
+        const raw = await gitExecFileAsync(path, pushArgs, { timeout: 120000 });
+        const upToDate = raw.includes("up-to-date") || raw.includes("Everything up-to-date");
+        return { payload: { ok: true, mode: force ? "force-with-lease" : pushMode, message: upToDate ? "没有新提交需要推送" : (force ? "已按本地版本覆盖远程" : "推送成功") } };
+      });
+      return c.json(outcome.payload);
     } catch (e) {
       const stderr = commandErrorText(e);
       let cn = "";
@@ -155,42 +163,45 @@ export function registerRemotePushRoutes(app, { ctx, repoPath, gitExecFile, comm
       if (!validateBranchName(path, remoteBranch)) return c.json({ ok: false, message: "远程分支名无效" });
 
       // 只更新远程跟踪引用，不修改工作区；覆盖前的远程 hash 由此得到。
-      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
-      const remoteRef = `refs/remotes/${remote}/${remoteBranch}`;
-      let remoteHash = "";
-      try { remoteHash = gitExecFile(path, ["rev-parse", "--verify", `${remoteRef}^{commit}`], { timeout: 10000 }); } catch {}
-      let localHash = "";
-      try { localHash = gitExecFile(path, ["rev-parse", "--verify", `${localBranch}^{commit}`], { timeout: 10000 }); } catch {}
-      if (!localHash) return c.json({ ok: false, message: "当前本地分支还没有可推送的提交" });
-      const statusShort = gitExecFile(path, ["-c", "core.quotepath=false", "status", "--short"], { timeout: 10000 });
-      const dirty = Boolean(statusShort.trim());
+      const outcome = await withRepoLock(path, async () => {
+        await gitExecFileAsync(path, ["fetch", "--prune", remote], { timeout: 120000 });
+        const remoteRef = `refs/remotes/${remote}/${remoteBranch}`;
+        let remoteHash = "";
+        try { remoteHash = gitExecFile(path, ["rev-parse", "--verify", `${remoteRef}^{commit}`], { timeout: 10000 }); } catch {}
+        let localHash = "";
+        try { localHash = gitExecFile(path, ["rev-parse", "--verify", `${localBranch}^{commit}`], { timeout: 10000 }); } catch {}
+        if (!localHash) return { payload: { ok: false, message: "当前本地分支还没有可推送的提交" } };
+        const statusShort = gitExecFile(path, ["-c", "core.quotepath=false", "status", "--short"], { timeout: 10000 });
+        const dirty = Boolean(statusShort.trim());
 
-      if (!confirmed) {
-        return c.json({
-          ok: false,
-          code: "REMOTE_OVERWRITE_CONFIRM",
-          requiresConfirmation: true,
-          remote,
-          localBranch,
-          remoteBranch,
-          localHash,
-          remoteHash,
-          dirty,
-          message: remoteHash ? "远程分支已有提交，确认后将由当前本地分支覆盖" : "远程分支尚未建立，确认后将推送当前本地分支",
-        });
-      }
+        if (!confirmed) {
+          return { payload: {
+            ok: false,
+            code: "REMOTE_OVERWRITE_CONFIRM",
+            requiresConfirmation: true,
+            remote,
+            localBranch,
+            remoteBranch,
+            localHash,
+            remoteHash,
+            dirty,
+            message: remoteHash ? "远程分支已有提交，确认后将由当前本地分支覆盖" : "远程分支尚未建立，确认后将推送当前本地分支",
+          } };
+        }
 
-      if (expectedLocalHash !== localHash || (requestedLocalBranch && requestedLocalBranch !== localBranch)) {
-        return c.json({ ok: false, code: "LOCAL_CHANGED", message: "确认后本地分支或提交发生了变化，请重新检查后再覆盖" });
-      }
-      if (expectedRemoteHash !== remoteHash) {
-        return c.json({ ok: false, code: "REMOTE_CHANGED", message: "确认后远程分支又发生了变化，请重新检查后再覆盖" });
-      }
+        if (expectedLocalHash !== localHash || (requestedLocalBranch && requestedLocalBranch !== localBranch)) {
+          return { payload: { ok: false, code: "LOCAL_CHANGED", message: "确认后本地分支或提交发生了变化，请重新检查后再覆盖" } };
+        }
+        if (expectedRemoteHash !== remoteHash) {
+          return { payload: { ok: false, code: "REMOTE_CHANGED", message: "确认后远程分支又发生了变化，请重新检查后再覆盖" } };
+        }
 
-      const pushArgs = ["push", `--force-with-lease=refs/heads/${remoteBranch}:${remoteHash}`, remote, `${localBranch}:${remoteBranch}`];
-      const raw = gitExecFile(path, pushArgs, { timeout: 120000 });
-      const upToDate = raw.includes("up-to-date") || raw.includes("Everything up-to-date");
-      return c.json({ ok: true, remote, localBranch, remoteBranch, mode: "force-with-lease", dirty, message: upToDate ? "远程已经与本地一致" : `已用本地 ${localBranch} 覆盖 ${remote}/${remoteBranch}` });
+        const pushArgs = ["push", `--force-with-lease=refs/heads/${remoteBranch}:${remoteHash}`, remote, `${localBranch}:${remoteBranch}`];
+        const raw = await gitExecFileAsync(path, pushArgs, { timeout: 120000 });
+        const upToDate = raw.includes("up-to-date") || raw.includes("Everything up-to-date");
+        return { payload: { ok: true, remote, localBranch, remoteBranch, mode: "force-with-lease", dirty, message: upToDate ? "远程已经与本地一致" : `已用本地 ${localBranch} 覆盖 ${remote}/${remoteBranch}` } };
+      });
+      return c.json(outcome.payload);
     } catch (e) {
       const stderr = commandErrorText(e);
       const errLine = stderr.split("\n").find(l => l.includes("error:") || l.includes("fatal:"));

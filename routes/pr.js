@@ -9,7 +9,7 @@
 //   POST /api/gh/pr-create { path, base?, title?, body?, draft? }
 //   POST /api/gh/pr-merge  { path, number, method?, deleteBranch? }
 
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 
 import { resolveGhPath, ghEnvironment } from "./github.js";
 
@@ -34,7 +34,11 @@ function parsePrUrl(text) {
 }
 
 export function registerPrRoutes(app, { ctx, gitExecFile, commandErrorText, readRepoPath } = {}) {
-  function ghExec(args, opts = {}) {
+  // gh 调用一律走异步版：PR 面板的 gh 调用全部会碰网络，同步 spawn 会占住事件循环，
+  // 一次网络等待就能把整个后端冻住。这里刻意不再提供同步版，免得日后有人拿错。
+  // opts 语义：encoding / timeout（默认 120000）/ windowsHide / env / stdio / cwd，
+  // maxBuffer 固定 10MB。失败时 reject 原始 child error，commandErrorText 取文不变。
+  function ghExecAsync(args, opts = {}) {
     const options = {
       encoding: "utf8",
       timeout: opts.timeout || 120000,
@@ -44,7 +48,12 @@ export function registerPrRoutes(app, { ctx, gitExecFile, commandErrorText, read
       maxBuffer: 10 * 1024 * 1024,
     };
     if (opts.cwd) options.cwd = opts.cwd;
-    return String(execFileSync(resolveGhPath(), args, options)).trim();
+    return new Promise((resolve, reject) => {
+      execFile(resolveGhPath(), args, options, (err, stdout) => {
+        if (err) reject(err);
+        else resolve(String(stdout == null ? "" : stdout).trim());
+      });
+    });
   }
 
   // 目标仓库路径：显式 path 优先，缺省回落到插件配置中保存的仓库路径。
@@ -77,7 +86,7 @@ export function registerPrRoutes(app, { ctx, gitExecFile, commandErrorText, read
       limit = Math.min(50, n);
     }
     try {
-      const raw = ghExec([
+      const raw = await ghExecAsync([
         "pr", "list",
         "--state", state,
         "--limit", String(limit),
@@ -103,7 +112,7 @@ export function registerPrRoutes(app, { ctx, gitExecFile, commandErrorText, read
       numArg = [String(n)];
     }
     try {
-      const raw = ghExec(["pr", "view", ...numArg, "--json", VIEW_FIELDS], { cwd: path });
+      const raw = await ghExecAsync(["pr", "view", ...numArg, "--json", VIEW_FIELDS], { cwd: path });
       const parsed = JSON.parse(raw || "{}");
       const pr = Array.isArray(parsed) ? parsed[0] : parsed;
       if (!pr || typeof pr !== "object") return c.json({ ok: false, message: "未取到 PR 数据" });
@@ -142,7 +151,7 @@ export function registerPrRoutes(app, { ctx, gitExecFile, commandErrorText, read
     if (body.draft === true) args.push("--draft");
 
     try {
-      const raw = ghExec(args, { cwd: path, timeout: 180000 });
+      const raw = await ghExecAsync(args, { cwd: path, timeout: 180000 });
       const { url, number } = parsePrUrl(raw);
       return c.json({
         ok: true,
@@ -174,7 +183,7 @@ export function registerPrRoutes(app, { ctx, gitExecFile, commandErrorText, read
     if (deleteBranch) args.push("--delete-branch");
 
     try {
-      ghExec(args, { cwd: path, timeout: 180000 });
+      await ghExecAsync(args, { cwd: path, timeout: 180000 });
     } catch (e) {
       return c.json(failure(e, `合并 PR #${number} 失败`));
     }
@@ -183,7 +192,7 @@ export function registerPrRoutes(app, { ctx, gitExecFile, commandErrorText, read
     let state = "";
     let url = "";
     try {
-      const raw = ghExec(["pr", "view", String(number), "--json", "state,mergedAt,url"], { cwd: path });
+      const raw = await ghExecAsync(["pr", "view", String(number), "--json", "state,mergedAt,url"], { cwd: path });
       const parsed = JSON.parse(raw || "{}");
       const pr = Array.isArray(parsed) ? parsed[0] : parsed;
       if (pr && typeof pr === "object") {

@@ -1,7 +1,9 @@
 // Remote synchronization routes.
+import { withRepoLock } from "../lib/repo-lock.js";
+
 export function registerRemoteSyncRoutes(app, helpers) {
   const {
-    ctx, repoPath, gitExecFile, listRemoteBranches, readRemoteSettings,
+    ctx, repoPath, gitExecFile, gitExecFileAsync, listRemoteBranches, readRemoteSettings,
     chooseRemoteBranch, getRemoteBranchSnapshot, validateBranchName,
     sanitizeRemoteUrl, commandErrorText, isValidRemoteName, getGitOperationState,
     writeRemoteSettings,
@@ -19,7 +21,7 @@ export function registerRemoteSyncRoutes(app, helpers) {
       const targetBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
       if (!targetBranch || !validateBranchName(path, targetBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
       const remoteUrl = gitExecFile(path, ["remote", "get-url", remote], { timeout: 10000 });
-      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
+      await withRepoLock(path, () => gitExecFileAsync(path, ["fetch", "--prune", remote], { timeout: 120000 }));
       const branches = listRemoteBranches(path, remote);
       const remoteBranch = chooseRemoteBranch(path, remote, targetBranch, branches, requestedRemoteBranch);
       if (!remoteBranch) return c.json({ ok: true, branch: targetBranch, targetBranch, remote, remoteBranch: requestedRemoteBranch, remoteUrl: sanitizeRemoteUrl(remoteUrl), hasUpstream: false, ahead: 0, behind: 0, diverged: false, comparisonStatus: "REMOTE_BRANCH_MISSING", branches, message: "远程分支尚未建立" });
@@ -39,7 +41,7 @@ export function registerRemoteSyncRoutes(app, helpers) {
       const targetBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
       if (!targetBranch || !validateBranchName(path, targetBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
       const remoteUrl = gitExecFile(path, ["remote", "get-url", remote], { timeout: 10000 });
-      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
+      await withRepoLock(path, () => gitExecFileAsync(path, ["fetch", "--prune", remote], { timeout: 120000 }));
       const branches = listRemoteBranches(path, remote);
       const remoteBranch = chooseRemoteBranch(path, remote, targetBranch, branches, requestedBranch);
       if (requestedBranch && !remoteBranch) return c.json({ ok: false, code: "REMOTE_BRANCH_MISSING", remote, remoteBranch: requestedBranch, targetBranch, branches, message: `远程分支 ${remote}/${requestedBranch} 不存在` });
@@ -61,15 +63,18 @@ export function registerRemoteSyncRoutes(app, helpers) {
       const operationState = await getGitOperationState(path);
       if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
       if (gitExecFile(path, ["status", "--porcelain"], { timeout: 10000 })) return c.json({ ok: false, code: "DIRTY", message: "当前工作区有未提交修改，请先存档、暂存或清理后再合并上游更新" });
-      gitExecFile(path, ["fetch", "--prune", remote], { timeout: 120000 });
-      const branches = listRemoteBranches(path, remote);
-      const remoteBranch = chooseRemoteBranch(path, remote, targetBranch, branches, requestedBranch);
-      if (!remoteBranch) return c.json({ ok: false, code: "REMOTE_BRANCH_MISSING", remote, remoteBranch: requestedBranch, targetBranch, branches, message: requestedBranch ? `远程分支 ${remote}/${requestedBranch} 不存在` : `远程 ${remote} 没有可用的默认分支` });
-      const remoteRef = `${remote}/${remoteBranch}`;
-      gitExecFile(path, ["rev-parse", "--verify", `${remoteRef}^{commit}`], { timeout: 10000 });
-      const raw = gitExecFile(path, ["merge", "--no-edit", remoteRef], { timeout: 120000 });
-      if ((await getGitOperationState(path)) === "MERGE_HEAD") return c.json({ ok: false, code: "MERGE_CONFLICT", requiresResolution: true, remote, remoteBranch, targetBranch, sourceRef: remoteRef, message: "合并产生冲突，请先解决冲突" });
-      return c.json({ ok: true, remote, remoteBranch, targetBranch, sourceRef: remoteRef, message: raw.includes("Already up to date") ? "已经是最新" : `已将 ${remoteRef} 合并到本地 ${targetBranch}` });
+      const outcome = await withRepoLock(path, async () => {
+        await gitExecFileAsync(path, ["fetch", "--prune", remote], { timeout: 120000 });
+        const branches = listRemoteBranches(path, remote);
+        const remoteBranch = chooseRemoteBranch(path, remote, targetBranch, branches, requestedBranch);
+        if (!remoteBranch) return { payload: { ok: false, code: "REMOTE_BRANCH_MISSING", remote, remoteBranch: requestedBranch, targetBranch, branches, message: requestedBranch ? `远程分支 ${remote}/${requestedBranch} 不存在` : `远程 ${remote} 没有可用的默认分支` } };
+        const remoteRef = `${remote}/${remoteBranch}`;
+        gitExecFile(path, ["rev-parse", "--verify", `${remoteRef}^{commit}`], { timeout: 10000 });
+        const raw = gitExecFile(path, ["merge", "--no-edit", remoteRef], { timeout: 120000 });
+        if ((await getGitOperationState(path)) === "MERGE_HEAD") return { payload: { ok: false, code: "MERGE_CONFLICT", requiresResolution: true, remote, remoteBranch, targetBranch, sourceRef: remoteRef, message: "合并产生冲突，请先解决冲突" } };
+        return { payload: { ok: true, remote, remoteBranch, targetBranch, sourceRef: remoteRef, message: raw.includes("Already up to date") ? "已经是最新" : `已将 ${remoteRef} 合并到本地 ${targetBranch}` } };
+      });
+      return c.json(outcome.payload);
     } catch (e) {
       const stderr = commandErrorText(e);
       if ((await getGitOperationState(path)) === "MERGE_HEAD") return c.json({ ok: false, code: "MERGE_CONFLICT", requiresResolution: true, remote, message: "合并产生冲突，请先解决冲突" });

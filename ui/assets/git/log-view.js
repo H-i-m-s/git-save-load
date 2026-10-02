@@ -87,6 +87,7 @@ function showCommitTooltip(commit, event) {
     commit.tag ? `🏷️  Tag: ${commit.tag}` : null,
     `✍️  作者: ${commit.author || ''}`,
     `💬 说明: ${commit.message}`,
+    commitStatTooltipLine(commit),
   ].filter(Boolean).join("\n");
   activeCommitTip = tip;
   tip.classList.add("show");
@@ -98,6 +99,102 @@ function showCommitTooltip(commit, event) {
   const capLeft = stat ? stat.getBoundingClientRect().right - 10 : mouseLeft;
   tip.style.left = Math.max(6, Math.min(mouseLeft, capLeft)) + "px";
   tip.style.top = Math.max(6, event.clientY - tip.offsetHeight - 8) + "px";
+}
+
+// ======== 增删统计：列表先渲染，± 数字异步补齐（不在首屏关键路径上） ========
+// 列表端点不带 --numstat（快），统计另发一条请求（慢，无法避免），回来后填进已经
+// 渲染好的行里。宽度用固定的 11ch（等宽字体），占位与补齐共用同一宽度：整列不会
+// 因为补齐而左右抽动。缓存按「仓库路径 + hash」记，翻页时已取过的 hash 不再重复请求。
+const COMMIT_STAT_PENDING_TEXT = "—";
+const _commitStatCache = new Map();    // "<path>|<hash>" -> { added, deleted }
+const _commitStatInflight = new Set(); // 正在请求的 "<path>|<hash>"
+
+function commitStatKey(path, hash) {
+  return String(path || "").replace(/[\\/]+$/, "").toLowerCase() + "|" + String(hash || "");
+}
+
+function commitStatsReady(commit) {
+  return !!commit && typeof commit.added === "number" && typeof commit.deleted === "number";
+}
+
+// 就地写入一行：有数字显示 +N/-M，没有数字显示占位（不显示 0/0，也不显示 ±）。
+function applyCommitStat(el, commit) {
+  if (!el) return;
+  if (commitStatsReady(commit)) {
+    el.style.color = "";
+    el.innerHTML = `<span style="color:#27ae60;font-weight:600">+${commit.added}</span>/<span style="color:#e74c3c;font-weight:600">-${commit.deleted}</span>`;
+    el.dataset.commitStatPending = "";
+  } else {
+    el.style.color = "var(--hana-fg-muted,#6b7280)";
+    el.textContent = COMMIT_STAT_PENDING_TEXT;
+    el.dataset.commitStatPending = "1";
+  }
+}
+
+// hover 详情与列表显示同一份数字（同一个 commit 对象），未到/失败时如实说明。
+function commitStatTooltipLine(commit) {
+  if (commitStatsReady(commit)) return `📊 变更: +${commit.added} / -${commit.deleted}`;
+  if (commit && commit._statUnavailable) return "📊 变更: 统计不可用";
+  return "📊 变更: 统计加载中…";
+}
+
+// 把缓存里已有的统计就地补到当前列表行上：只改 .commit-stat 的文本，不重排节点。
+function applyStatsToRows(path) {
+  const cl = document.getElementById("commitList");
+  if (!cl) return;
+  const commits = cl._commits || [];
+  cl.querySelectorAll("li[data-commit-hash]").forEach(function(li) {
+    const hash = li.dataset.commitHash;
+    const stat = _commitStatCache.get(commitStatKey(path, hash));
+    if (!stat) return;
+    const c = commits.find(function(item) { return item.hash === hash; });
+    if (c) { c.added = stat.added; c.deleted = stat.deleted; c._statUnavailable = false; }
+    applyCommitStat(li.querySelector(".commit-stat"), stat);
+  });
+}
+
+// 请求结束后仍未拿到统计的 hash：标为不可用，让 hover 详情说实话（列表继续留占位）。
+function markUnresolvedStats(path, hashes) {
+  const cl = document.getElementById("commitList");
+  if (!cl) return;
+  const commits = cl._commits || [];
+  for (const hash of hashes) {
+    if (_commitStatCache.has(commitStatKey(path, hash))) continue;
+    const c = commits.find(function(item) { return item.hash === hash; });
+    if (c) c._statUnavailable = true;
+  }
+}
+
+// 每一页各自补齐：只请求本页里还没取过的 hash。失败静默（保持占位），不影响首屏。
+async function fillCommitStats(path, hashes) {
+  const list = (hashes || []).filter(Boolean);
+  if (!path || !list.length) return;
+  const need = [];
+  for (const hash of list) {
+    const key = commitStatKey(path, hash);
+    if (_commitStatCache.has(key) || _commitStatInflight.has(key)) continue;
+    _commitStatInflight.add(key);
+    need.push(hash);
+  }
+  if (!need.length) { applyStatsToRows(path); return; }
+  try {
+    const res = await pluginFetch("api/log-stats?path=" + encodeURIComponent(path) + "&hashes=" + encodeURIComponent(need.join(",")));
+    const data = await res.json();
+    if (data && data.ok && data.stats && typeof data.stats === "object") {
+      for (const hash of need) {
+        const stat = data.stats[hash];
+        if (stat && typeof stat.added === "number" && typeof stat.deleted === "number") {
+          _commitStatCache.set(commitStatKey(path, hash), { added: stat.added, deleted: stat.deleted });
+        }
+      }
+    }
+  } catch (e) {
+    // 统计失败既不该弹错误，也不该让首屏失败：保持占位即可。
+  } finally {
+    for (const hash of need) _commitStatInflight.delete(commitStatKey(path, hash));
+  }
+  applyStatsToRows(path);
+  markUnresolvedStats(path, need);
 }
 
 function renderLog(data, append) {
@@ -133,6 +230,7 @@ function renderLog(data, append) {
 
   for (const c of data.commits) {
     const li = document.createElement("li");
+    li.dataset.commitHash = c.hash;
     const display = showTag && c.tag ? c.tag : c.hash;
 
     // 1. 日期时间（主标识）- 始终显示 "MM-DD HH:MM" 或 "昨天 HH:MM" 或 "MM-DD"
@@ -156,16 +254,12 @@ function renderLog(data, append) {
     msgSpan.style.flex = "1";
     msgSpan._isMsg = true;
 
-    // 3. 增删行数
+    // 3. 增删行数：宽度固定（占位与补齐共用同一宽度，整列不会左右抽动）。
+    //    统计未到时先占位，/api/log-stats 返回后由 applyStatsToRows 就地替换。
     const statSpan = document.createElement("span");
     statSpan.className = "commit-stat";
-    if (c.added || c.deleted) {
-      statSpan.style.cssText = "font-size:10px;white-space:nowrap;min-width:32px;text-align:right;flex-shrink:0";
-      statSpan.innerHTML = `<span style="color:#27ae60;font-weight:600">+${c.added}</span>/<span style="color:#e74c3c;font-weight:600">-${c.deleted}</span>`;
-    } else {
-      statSpan.style.cssText = "font-size:10px;color:var(--hana-fg-muted,#6b7280);min-width:32px;text-align:right;flex-shrink:0";
-      statSpan.textContent = "—";
-    }
+    statSpan.style.cssText = "font-size:10px;white-space:nowrap;width:11ch;box-sizing:border-box;text-align:right;flex-shrink:0";
+    applyCommitStat(statSpan, c);
 
     // 4. hash 缩到辅助位置（小字、淡色、hover 提示）
     const hashSpan = document.createElement("span");
@@ -225,16 +319,8 @@ function renderLog(data, append) {
     cl.appendChild(li);
   }
 
-  // 统一 diff 列宽度
-  const statEls = cl.querySelectorAll('.commit-stat');
-  let maxStatWidth = 32;
-  statEls.forEach(el => {
-    const w = el.scrollWidth;
-    if (w > maxStatWidth) maxStatWidth = w;
-  });
-  statEls.forEach(el => {
-    el.style.width = maxStatWidth + 'px';
-  });
+  // 增删列宽度不再按内容重算：.commit-stat 统一 11ch，占位与补齐一致，
+  // 补齐时不会因为列宽变化把整列推来推去。
 }
 
 // 提交

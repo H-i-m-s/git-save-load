@@ -30,6 +30,8 @@ async function loadLogPage(path, append) {
       return;
     }
     renderLog(data, append);
+    // 列表先渲染，± 统计另发一条请求后台补齐；每页各自请求，已取过的 hash 不重复。
+    fillCommitStats(path, (data.commits || []).map(function(c) { return c.hash; }));
     logPager.path = path;
     logPager.offset = offset + (data.commits || []).length;
     logPager.hasMore = !!data.hasMore;

@@ -10,7 +10,7 @@
 // 有 bash.exe 时，统一经 `bash -lc` 以 POSIX 路径运行；提交签名则用一个小 .cmd 包装器
 // 把 gpg.program 接进 bash。装的是独立 GnuPG（Gpg4win 等）时走原生路径。
 
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
@@ -42,6 +42,30 @@ function runTool(exe, args, env, timeoutMs = 12000) {
       stderr: String(e?.stderr || e?.message || e || "").trim(),
     };
   }
+}
+
+// 异步版：参数与返回形状与 runTool 一致，但不阻塞事件循环。只给会碰网络的 gh 用；
+// gpg / git 的本地探针继续走同步 runTool（见下方说明）。
+function runToolAsync(exe, args, env, timeoutMs = 12000) {
+  return new Promise((resolve) => {
+    execFile(exe, args, {
+      encoding: "utf8",
+      timeout: timeoutMs,
+      windowsHide: true,
+      env: env || process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    }, (e, stdout) => {
+      if (e) {
+        resolve({
+          ok: false,
+          stdout: String(e?.stdout || "").trim(),
+          stderr: String(e?.stderr || e?.message || e || "").trim(),
+        });
+      } else {
+        resolve({ ok: true, stdout: String(stdout || "").trim(), stderr: "" });
+      }
+    });
+  });
 }
 
 const firstVersion = (s) => {
@@ -263,8 +287,11 @@ export function generateKey(dataDir, gitPath, uid) {
 let _deviceFlow = null;
 const activeFlow = () => (_deviceFlow && _deviceFlow.code && !_deviceFlow.closedAt ? _deviceFlow : null);
 
-function ghRun(args, timeoutMs = 20000) {
-  return runTool(resolveGhPath(), args, ghEnvironment(), timeoutMs);
+// gh 的调用（auth status / api user / logout 等）全部会碰网络，一律走异步版：
+// 同步 spawn 会占住事件循环，一次网络等待就能把整个后端冻住。这里刻意不再提供
+// 同步版，免得日后有人拿错。
+async function ghRunAsync(args, timeoutMs = 20000) {
+  return runToolAsync(resolveGhPath(), args, ghEnvironment(), timeoutMs);
 }
 
 function parseAuth(json) {
@@ -280,10 +307,10 @@ function parseAuth(json) {
 }
 
 // 只做本地检测（gh --version / auth status），不发网络请求 —— 状态页要秒回。
-function readGhStatus() {
-  const version = ghRun(["--version"], 12000);
+async function readGhStatus() {
+  const version = await ghRunAsync(["--version"], 12000);
   if (!version.ok) return { installed: false, version: "", loggedIn: false, login: "" };
-  const auth = ghRun(["auth", "status", "--json", "hosts"], 20000);
+  const auth = await ghRunAsync(["auth", "status", "--json", "hosts"], 20000);
   const parsed = auth.ok ? parseAuth(auth.stdout) : { loggedIn: false, login: "" };
   return {
     installed: true,
@@ -294,8 +321,8 @@ function readGhStatus() {
 }
 
 // 账号数字 ID 需要联网。单独一次、短超时、失败返回空串，绝不让它拖住状态页。
-function readGhAccountId() {
-  const r = ghRun(["api", "user", "--jq", ".id"], 8000);
+async function readGhAccountId() {
+  const r = await ghRunAsync(["api", "user", "--jq", ".id"], 8000);
   return r.ok ? r.stdout.trim() : "";
 }
 
@@ -368,12 +395,12 @@ function buildSignUid(gh, accountId) {
 
 // 签名身份：优先用页面上填的名字/邮箱；留空则用当前 gh 账号（含数字 ID 的 noreply 邮箱）推导。
 // 只有在邮箱留空时才去联网查数字 ID，避免不必要的一次请求。
-function resolveSignUid(override) {
+async function resolveSignUid(override) {
   const name = sanitizeIdentityPart(override?.name, "");
   const email = sanitizeIdentityPart(override?.email, "");
   if (name && email) return { name, email };
-  const gh = readGhStatus();
-  const derived = buildSignUid(gh, !email && gh.loggedIn ? readGhAccountId() : "");
+  const gh = await readGhStatus();
+  const derived = buildSignUid(gh, !email && gh.loggedIn ? await readGhAccountId() : "");
   return { name: name || derived.name, email: email || derived.email };
 }
 
@@ -436,7 +463,7 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
   // 一次性状态：页面加载与轮询都读它
   app.get("/settings/status", async (c) => {
     try {
-      const gh = readGhStatus();
+      const gh = await readGhStatus();
       const tools = toolchainStatus();
       const flow = activeFlow();
       return c.json({
@@ -455,9 +482,9 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
   // 账号数字 ID（独立接口，供页面首屏后异步补上；失败不报错，留空即可）
   app.get("/settings/account", async (c) => {
     try {
-      const gh = readGhStatus();
+      const gh = await readGhStatus();
       if (!gh.installed || !gh.loggedIn) return c.json({ ok: true, accountId: "", login: gh.login || "" });
-      return c.json({ ok: true, accountId: readGhAccountId(), login: gh.login });
+      return c.json({ ok: true, accountId: await readGhAccountId(), login: gh.login });
     } catch (e) {
       return c.json({ ok: true, accountId: "" });
     }
@@ -469,7 +496,7 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
       openExternal(DEVICE_URL);
       return c.json({ ok: true, reused: true, code: existing.code, url: existing.url, browserOpened: true });
     }
-    if (!readGhStatus().installed) {
+    if (!(await readGhStatus()).installed) {
       return c.json({ ok: false, message: "未检测到 GitHub CLI（gh），请先安装 gh 再登录。" });
     }
     try {
@@ -482,7 +509,7 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
   });
 
   app.post("/settings/gh-logout", async (c) => {
-    const r = ghRun(["auth", "logout", "--hostname", GH_HOST], 20000);
+    const r = await ghRunAsync(["auth", "logout", "--hostname", GH_HOST], 20000);
     if (r.ok) _deviceFlow = null;
     return c.json({ ok: r.ok, message: r.ok ? "已退出登录（仅删本地凭据，不影响远端令牌）" : r.stderr || "退出失败" });
   });
@@ -533,7 +560,7 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
     if (current.hasKey) return c.json({ ok: true, signing: current, existed: true });
     if (!gpgBackend(gitPath())) return c.json({ ok: false, message: "未检测到 gpg，请先安装 GnuPG（Git for Windows 也自带 gpg）。" });
     const body = await c.req.json().catch(() => ({}));
-    const uid = resolveSignUid(body);
+    const uid = await resolveSignUid(body);
     const res = generateKey(dataDir, gitPath(), uid);
     if (!res.ok) return c.json({ ok: false, message: res.message || "生成密钥失败" });
     writeSignMeta(dataDir, { fingerprint: res.fingerprint, uid: res.uid, enabled: true, createdAt: Date.now() });
@@ -547,7 +574,7 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
     const previous = readSignMeta(dataDir);
     if (!clearKeys(dataDir, backend)) return c.json({ ok: false, message: "旧密钥环无法清除（可能被 gpg-agent 占用），请稍后重试。" });
     const body = await c.req.json().catch(() => ({}));
-    const uid = resolveSignUid(body);
+    const uid = await resolveSignUid(body);
     const res = generateKey(dataDir, gitPath(), uid);
     if (!res.ok) {
       writeSignMeta(dataDir, { ...previous, enabled: !!previous.enabled });
