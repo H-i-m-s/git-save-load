@@ -499,16 +499,27 @@ v1 插件（`plugins/git-save-load`）可继续运行；v2 App 与它互不影�
 
 ## Agent 可调用工具
 
-插件同时提供基础 Git 工具：
+模型可调用的工具共 8 个，分两类。语义化动作：
 
-| 工具 | 作用 |
-| --- | --- |
-| `git_status` | 查看仓库路径、当前分支、已修改文件和未跟踪文件 |
-| `git_commit` | 暂存所有变更并创建提交 |
-| `git_log` | 查看最近提交的 Hash、消息、作者和日期 |
-| `git_reset` | 以 soft、mixed 或 hard 模式回滚到指定提交 |
+| 工具 | 作用 | 权限档 |
+| --- | --- | --- |
+| `git_status` | 查看仓库路径、当前分支、已修改文件和未跟踪文件 | 只读 |
+| `git_commit` | 暂存所有变更并创建提交；隔离签名开启时签名提交，可追加 Co-authored-by 尾注 | 送审 |
+| `git_log` | 查看最近提交的 Hash、消息、作者和日期 | 只读 |
+| `git_reset` | 以 soft、mixed 或 hard 模式回滚到指定提交 | 送审 |
+| `git_push` | 语义化推送；`force` 只接受 `with-lease`（映射 `--force-with-lease`），任何输入都不会产生裸 `--force` | 送审 |
+| `gh_pr` | PR 生命周期：`create` / `list` / `view` / `merge`（merge 不可撤销） | 送审 |
 
-工具默认使用输入中的 `path`；未传路径时使用当前工作目录。历史查询默认返回 20 条，最多 100 条。
+透传类：
+
+| 工具 | 作用 | 权限档 |
+| --- | --- | --- |
+| `git_exec` | 任意 git 子命令透传（args 数组直喂，绝不过 shell） | 送审 |
+| `gh_exec` | 任意 gh 子命令透传（`repo` 转 `-R`） | 送审 |
+
+透传工具会在权限摘要里写清将要执行的确切命令行；命中危险子命令（`push -f/--force`、`reset --hard`、`clean -f`、`branch -D`、`tag -d`、`filter-branch`、`update-ref -d`、`reflog expire`、`gc --prune`，以及 `gh repo delete`、`gh pr merge` 等）时额外标注「危险，可能丢数据」。
+
+工具默认使用输入中的 `path`；未传路径时用配置里的仓库路径，再缺省当前工作目录。历史查询默认返回 20 条，最多 100 条。
 
 ---
 
@@ -585,7 +596,9 @@ git push origin --tags
 ```text
 git-save-load/
 ├── manifest.json          # v2 App 清单（manifestVersion 2）、设置 schema、卡片与功能面板声明
-├── index.js               # defineApp 入口：注册四个 Agent 工具
+├── index.js               # defineApp 入口：注册 8 个 Agent 工具
+├── lib/
+│   └── secret.js          # GitHub 令牌的本地加密存放（DPAPI，后端可插拔）
 ├── assets/
 │   ├── icon.svg           # App 身份图标（manifest.icon）
 │   └── icon.png           # 同一图标的位图版本
@@ -596,7 +609,7 @@ git-save-load/
 │       ├── sdk.js         # @hana/app-sdk/ui 浏览器单例
 │       ├── hana-bridge.js # 主题/挂载位桥接（ESM）
 │       ├── git.css        # 全部样式
-│       └── git/           # 前端 JS 模块（26 个）
+│       └── git/           # 前端 JS 模块（27 个）
 ├── routes/                # 后端路由（Hono 目录形式，前缀 /api/apps/git-save-load/routes/）
 │   ├── git.js             # 公共辅助函数与各模块装配
 │   ├── local-git.js       # 状态、提交、身份和回滚
@@ -605,6 +618,7 @@ git-save-load/
 │   ├── diff-conflicts.js  # diff、版本对比和冲突处理
 │   ├── repository.js      # 仓库路径、信息、初始化和版本
 │   ├── github.js          # GitHub CLI 管理
+│   ├── pr.js              # PR 面板端点（/api/gh/pr-*）
 │   ├── remote-query.js    # 远程列表和角色
 │   ├── remote-sync.js     # 远程状态、fetch、merge、remove
 │   ├── remote-edit.js     # 远程名称和地址编辑
@@ -614,13 +628,22 @@ git-save-load/
 │   ├── config.js          # 配置读写（v2 config + dataDir 遗留文件回退）
 │   └── misc.js            # 兼容接口
 ├── tools/                 # Agent 可调用工具的实现模块
-│   ├── _helpers.js        # Git 路径探测与命令辅助
-│   ├── git_status.js
-│   ├── git_commit.js
-│   ├── git_log.js
-│   └── git_reset.js
+│   ├── _helpers.js        # git / gh 路径探测与命令辅助
+│   ├── git_status.js      # 工作区状态（只读）
+│   ├── git_commit.js      # 暂存并提交（支持隔离签名）
+│   ├── git_log.js         # 提交历史（只读）
+│   ├── git_reset.js       # 回滚
+│   ├── git_exec.js        # 任意 git 子命令透传
+│   ├── gh_exec.js         # 任意 gh 子命令透传
+│   ├── git_push.js        # 语义化推送（force 仅 force-with-lease）
+│   └── gh_pr.js           # PR 生命周期（create/list/view/merge）
+├── scripts/               # 开发脚本（自检 / 出包 / 发版）；打包时整目录排除
+│   ├── selfcheck.mjs
+│   ├── pack.mjs
+│   └── release.ps1
 ├── sdk/                   # 随包分发的 @hana/app-sdk 运行时闭包（离线装载，不依赖 npm）
 ├── docs/
+├── .gitignore
 ├── DESIGN.md
 └── README.md
 ```
@@ -701,6 +724,46 @@ node scripts/validate-app.mjs --dir <HANA_HOME>/apps/git-save-load --smoke --jso
 ```
 
 `--smoke` 需要独立 Electron 运行时（`HANA_APP_ELECTRON` 指向 Electron 二进制）。
+
+### 打包与自检脚本
+
+`scripts/` 下三个开发脚本，都不进安装包（打包时整目录排除）：
+
+| 脚本 | 用途 |
+| --- | --- |
+| `selfcheck.mjs` | 结构自检：manifest 必备字段、entry / icon 存在、entry 与 `routes/` 与 `tools/` 全量 JS 语法、`ui/*.html` 引用的本地资源是否存在、manifest 声明的 route 对应页面是否存在 |
+| `pack.mjs` | 零依赖出包（自带最小 ZIP 写入器，不调外部 zip / tar，不用 npm 库）；出包前先跑 selfcheck |
+| `release.ps1` | 一键发版：前置校验 → selfcheck → 打包 → 创建 GitHub Release |
+
+**结构自检**
+
+```bash
+node scripts/selfcheck.mjs            # 人类可读；不通过时非零退出
+node scripts/selfcheck.mjs --json     # { ok, errors, warnings }
+```
+
+**本地出包**
+
+```bash
+node scripts/pack.mjs                     # 产物落 <app>/dist
+node scripts/pack.mjs --out <dir>         # 自定义输出目录
+node scripts/pack.mjs --publisher <name>  # 指定 entry.json 的 publisher（默认 manifest.id）
+```
+
+产物三个文件：`git-save-load-v<version>.zip`、同名 `.sha256`、`git-save-load-v<version>.entry.json`。zip 内所有条目带顶层 `git-save-load/` 前缀（宿主安装时自动剥壳），条目名一律用正斜杠（宿主解压器 yauzl 拒绝反斜杠条目）。
+
+打包排除项：任意层级的 `.git`、`.github`、`node_modules`、`dist`、`scripts`；按文件名排除 `.DS_Store`、`Thumbs.db`、`desktop.ini`、`._*`、`*.tmp` / `.temp` / `.swp` / `.swo` / `.log` / `.bak`、`*~`；符号链接一律跳过。
+
+**发版**
+
+```powershell
+.\scripts\release.ps1                                  # 用 manifest.json 的版本号发版
+.\scripts\release.ps1 -Notes "- 修复xxx`n- 新增yyy"    # 附带发布说明
+.\scripts\release.ps1 -PackageOnly                     # 只打包不发布
+.\scripts\release.ps1 -SkipCleanCheck                  # 跳过工作区干净检查
+```
+
+前置条件：gh CLI 已安装并登录、工作区干净且已推送、`manifest.json` 的 version 就是要发的版本号（tag 与它强绑定）。它同样会先跑一次 `selfcheck`（`node` 或脚本缺失时只提示跳过，不阻断发版）。
 
 ---
 

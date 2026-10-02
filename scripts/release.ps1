@@ -43,6 +43,19 @@ if ($LASTEXITCODE -ne 0) { throw "gh CLI 未登录，先运行 gh auth login" }
 cmd /c "gh release view $tag --repo $RepoSlug >nul 2>&1"
 if ($LASTEXITCODE -eq 0) { throw "Release $tag 已存在，换版本号或先删除旧 Release" }
 
+# ---------- 2.5 结构自检（scripts/selfcheck.mjs，零依赖） ----------
+# 与 pack.mjs 共用同一道门禁：manifest / entry / 路由 / 工具语法 / ui 资源引用。
+# 缺 node 或缺脚本时只提示并跳过，不阻断发版。
+$selfcheck = Join-Path $PSScriptRoot "selfcheck.mjs"
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  Write-Host "==> 未找到 node，跳过结构自检"
+} elseif (-not (Test-Path $selfcheck)) {
+  Write-Host "==> 未找到 scripts/selfcheck.mjs，跳过结构自检"
+} else {
+  & node $selfcheck
+  if ($LASTEXITCODE -ne 0) { throw "selfcheck 未通过，停止发版（先修好结构问题再发）" }
+}
+
 # ---------- 3. 打包：顶层 git-save-load/ 包裹（宿主安装时自动剥壳） ----------
 $stage = Join-Path $env:TEMP ("gsl-release-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 $pkgDir = Join-Path $stage "git-save-load"
