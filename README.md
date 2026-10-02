@@ -6,7 +6,7 @@
 
 <p>
   <a href="https://github.com/liliMozi/openhanako"><img src="https://img.shields.io/badge/HanaAgent-Plugin-5e6ad2?style=flat-square" alt="HanaAgent Plugin"></a>
-  <a href="https://github.com/H-i-m-s/git-save-load"><img src="https://img.shields.io/badge/version-1.9.0-27a644?style=flat-square" alt="Version 1.9.0"></a>
+  <a href="https://github.com/H-i-m-s/git-save-load"><img src="https://img.shields.io/badge/version-3.0.0-27a644?style=flat-square" alt="Version 3.0.0"></a>
   <a href="https://git-scm.com/"><img src="https://img.shields.io/badge/Git-required-f05032?style=flat-square&logo=git&logoColor=white" alt="Git required"></a>
   <a href="https://cli.github.com/"><img src="https://img.shields.io/badge/GitHub%20CLI-optional-181717?style=flat-square&logo=github" alt="GitHub CLI optional"></a>
 </p>
@@ -64,8 +64,10 @@ Git Save/Load 是一个运行在 HanaAgent 侧栏中的 Widget，用图形界面
 | 远程同步 | 检查本地与远程的 ahead/behind 状态，支持推送、拉取和安全覆盖 |
 | 冲突解决 | 查看冲突文件和冲突块，逐块选择保留本地或远程内容，并执行 `git add` |
 | GitHub | 创建、关联、克隆、列表、搜索、打开、复制、编辑和删除 GitHub 仓库 |
+| PR | 查看、创建、合并 Pull Request，按状态筛选，合并前二次确认 |
+| 提交签名 | 隔离 GPG 密钥环与签名提交，支持查看 / 复制公钥；GitHub 令牌可选加密存放（DPAPI） |
 | 主题 | 自动、浅色、深色、暖纸、青夜、沉思等 14 种主题，以及可选纸质纹理 |
-| Agent 工具 | 提供状态、存档、历史和回滚等可调用工具 |
+| Agent 工具 | 8 个可调用工具：状态、存档、历史、回滚，以及 git / gh 子命令透传、语义化推送与 PR 生命周期 |
 
 ---
 
@@ -381,7 +383,7 @@ gh auth login
 gh auth status
 ```
 
-面板包含五个标签：
+面板包含六个标签：
 
 #### 创建
 
@@ -434,6 +436,15 @@ gh auth status
 - 查看搜索结果
 - 打开仓库
 - 将结果 URL 带入「关联」表单
+
+#### PR
+
+查看、创建和合并当前仓库的 Pull Request：
+
+- 按状态筛选（未合并 / 已关闭 / 全部）并刷新列表
+- 展开单个 PR 查看详情：标题、状态、源分支与目标分支、审查与合并状态、正文
+- 新建 PR：可选目标分支、标题（留空取当前分支 HEAD 提交首行）、正文，以及是否创建为草稿
+- 合并 PR：可选合并方式（merge / squash / rebase）与是否删除源分支；合并不可撤销，先弹页内二次确认
 
 #### 编辑仓库
 
@@ -660,34 +671,21 @@ git-save-load/
 
 ---
 
-## 开发
-
-```bash
-git clone https://github.com/H-i-m-s/git-save-load.git
-cd git-save-load
-```
-
-插件主体没有独立的前端构建步骤，主要修改文件为：
-
-- `assets/git.html`：Card 入口（DOM 结构与模块加载顺序）
-- `assets/git.css`：全部样式
-- `assets/git/*.js`：前端功能模块，加载顺序即拆分前顶层执行顺序，勿随意调整
-- `routes/*.js`：按职责拆分的 Git、GitHub CLI 和配置后端路由
-- `routes/git.js`：页面入口、前端资源服务路由（git-asset）、公共辅助函数和模块装配
-- `tools/*.js`：Agent 可调用工具
-- `manifest.json`：插件元数据与配置
-
-在 HanaAgent 中使用插件开发工具加载本地插件后，修改页面或路由并重新加载插件即可验证。
-
----
-
 ## 当前版本
 
 ```text
-v2.4.0（v2 App 迁移版）
+v3.0.0
 ```
 
-v2.4.0 重点更新：
+v3.0.0 重点更新：
+
+- 新增四个模型工具：`git_exec` / `gh_exec` 子命令透传、`git_push` 语义化推送（force 仅映射 `--force-with-lease`）、`gh_pr` PR 生命周期
+- `git_commit` 支持隔离 GPG 签名提交，并在提交后回收 `gpg-agent`
+- 新增 GitHub 令牌加密存放（Windows DPAPI，后端可插拔，绝不明文回退）；令牌不进宿主设置表
+- GitHub 面板新增「PR」标签页（列表 / 新建 / 合并）
+- 新增 `scripts/` 下的结构自检（`selfcheck.mjs`）与零依赖出包脚本（`pack.mjs`）
+
+v2 App 迁移（2.4.0）：
 
 - 从 HanaAgent v1 插件迁移为 manifestVersion 2 的 App
 - 侧栏 Widget 改为卡片 functionPanel
