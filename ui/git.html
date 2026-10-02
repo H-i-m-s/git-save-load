@@ -216,6 +216,16 @@
         <button type="button" class="hana-seg-btn" data-value="simple">精简</button>
       </div>
     </label>
+    <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">自动刷新
+      <select id="cfgAutoRefresh" onchange="saveSetting('autoRefreshSec',this.value);restartAutoRefresh(this.value)" style="font-size:11px">
+        <option value="0">关闭</option>
+        <option value="2">2 秒</option>
+        <option value="3">3 秒</option>
+        <option value="5">5 秒</option>
+        <option value="10">10 秒</option>
+        <option value="30">30 秒</option>
+      </select>
+    </label>
     <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">主题
       <select id="cfgTheme" onchange="switchTheme(this.value)" style="font-size:11px">
         <option value="auto">自动</option>

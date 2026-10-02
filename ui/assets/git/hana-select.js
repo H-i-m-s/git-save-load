@@ -197,6 +197,10 @@ function initHanaSelects() {
   replaceSelectWithHanaSelect("cfgTheme", {
     onChange: function(v) { switchTheme(v); }
   });
+  // cfgAutoRefresh：存配置 + 按新值重起定时器（"0" = 关闭）
+  replaceSelectWithHanaSelect("cfgAutoRefresh", {
+    onChange: function(v) { saveSetting("autoRefreshSec", v); restartAutoRefresh(v); }
+  });
   // gitignoreSelect（不调用 onChange，依赖原 onchange="applyTemplate()"
   // 但原 onchange 是原生 select 的机制，隐藏后不再 fire。需手动调 applyTemplate）
   replaceSelectWithHanaSelect("gitignoreSelect", {

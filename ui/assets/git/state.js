@@ -191,7 +191,132 @@ function setupBackgroundRefresh() {
     if (now - _lastBackgroundRefreshAt < 30000) return;
     _lastBackgroundRefreshAt = now;
     scheduleBackgroundWarmup(currentPath || getSavedPath(), 0);
+    // 切回窗口时变更文件也应该是最新的：热周边信息的同时补一次轻量状态拉取。
+    // refreshFilesAuto 自带可见性判断/并发守卫/1s 去重/指纹跳过，与上面的定时器共存、
+    // 不会重复发请求（定时器正在飞时它会直接跳过）。
+    refreshFilesAuto();
   };
   document.addEventListener("visibilitychange", refreshIfStale);
   window.addEventListener("focus", refreshIfStale);
+}
+
+// ======== 变更文件「可见时自动轮询」 ========
+// 为什么是轮询：App 进程受 Node Permission Model 限制，fs.watch 对用户仓库目录会抛
+// ERR_ACCESS_DENIED（只授权了 app 目录 / app-data / 宿主 locales），没法事件驱动，
+// 只能定时轻量拉取。这个定时器只干一件事：让「变更文件」卡在无操作时也能自己跟上。
+var AUTO_REFRESH_SEC_VALUES = ["0", "2", "3", "5", "10", "30"];
+var _autoRefreshSec = 5;           // 当前生效周期（秒），0 = 关闭
+var _autoRefreshTimer = null;      // setTimeout 句柄；restartAutoRefresh 唯一负责清干净
+var _filesAutoInFlight = false;    // 上一拍还没回来 → 跳过这一拍，不并发堆请求
+var _filesAutoLastAt = 0;          // 上次发起时间：与 focus 路径 1s 内去重，避免同刻重复发
+var _filesAutoFingerprint = "";    // 上次「渲染」用的指纹；没变就不碰 DOM
+var _filesAutoHead = "";           // 上次「渲染」见到的 HEAD；只有变了才刷提交记录
+var _filesAutoHeadPrimed = false;  // 首次观测只建立基线（首屏已渲染过提交记录，不重复刷）
+var _filesAutoPath = "";           // 上面两个基线是哪个仓库建立的基准
+
+// 未设置 / 非法值一律按 "5"；"0" = 关闭。
+function normalizeAutoRefreshSec(value) {
+  var s = String(value == null ? "" : value).trim();
+  return AUTO_REFRESH_SEC_VALUES.indexOf(s) >= 0 ? parseInt(s, 10) : 5;
+}
+
+// 指纹只取「影响变更文件渲染」的字段：分支名、有无变更、带统计的变更列表、未跟踪列表。
+// 这些一致时 renderStatus 画出来的 li 必然一致，可以安全跳过这次 DOM 重建。
+function filesFingerprint(data) {
+  return JSON.stringify([
+    data.branch,
+    !!data.hasChanges,
+    data.changedWithStats || data.changedFiles || [],
+    data.untrackedFiles || []
+  ]);
+}
+
+// 自动轮询的一拍。静默：不弹 toast、不报「刷新完成」、不调 doRefreshAll、不发 refresh-all 事件。
+function refreshFilesAuto() {
+  // 可见才跑：看不见的面板不该反复读用户磁盘，连请求都不发。
+  if (document.visibilityState && document.visibilityState !== "visible") return;
+  if (_filesAutoInFlight) return;                       // 上一拍还没回，跳过这一拍
+  var now = Date.now();
+  if (now - _filesAutoLastAt < 1000) return;            // 与 focus 路径 1s 内去重
+  var p = currentPath || getSavedPath();
+  if (!p) return;
+  _filesAutoLastAt = now;
+  _filesAutoInFlight = true;
+  pluginFetch("api/status?path=" + encodeURIComponent(p))
+    .then(function(res) { return res.json(); })
+    .then(function(d) {
+      // 失败静默：!ok（会话过期/后端被拒/不是仓库）一律什么都做，保留上一次渲染的内容。
+      // 「⚠ 接口被拒绝」「不是 git 仓库」这类失败态只在手动刷新时才该说，
+      // 绝不能把用户正在看的正常列表盖掉。
+      if (!d || d.ok !== true) return;
+      if (typeof apiFailureInfo === "function" && apiFailureInfo(d)) return;
+
+      // 换了仓库：手动「切换」那条链路已经把这个仓库渲染好了，这里只重建基线，
+      // 既不重画、也不触发提交记录刷新。
+      // 不这样做的后果：新仓库的指纹/HEAD 必然跟老仓库的基线不同，于是首拍会白发一次
+      // 提交记录刷新。在大仓库上那是一次约 2.7s 的增删统计请求，还会把用户刚滚到的
+      // 提交列表拽回顶部。
+      // 首次观测（还没渲染过任何仓库）不走这条，免得「首屏渲染失败后自动轮询也不补渲染」。
+      if (d.path !== _filesAutoPath) {
+        var hadAutoBaseline = (_filesAutoFingerprint !== "" || _filesAutoHeadPrimed);
+        _filesAutoPath = d.path;
+        if (hadAutoBaseline) {
+          _filesAutoFingerprint = filesFingerprint(d);
+          _filesAutoHead = String(d.head || "");
+          _filesAutoHeadPrimed = true;
+          return;
+        }
+      }
+
+      var fp = filesFingerprint(d);
+      if (fp !== _filesAutoFingerprint) {               // 内容没变就不碰 DOM，一个像素都不动
+        _filesAutoFingerprint = fp;
+        renderStatus(d);
+      }
+
+      // head 变化才刷提交记录：提交记录那条会顺带请求增删统计，大仓库上要 ~2s，不能每拍都跑。
+      var head = String(d.head || "");
+      if (!_filesAutoHeadPrimed) {
+        // 首屏刷新已经渲染过提交记录，首次观测只建立基线。
+        _filesAutoHead = head;
+        _filesAutoHeadPrimed = true;
+      } else if (head !== _filesAutoHead) {
+        _filesAutoHead = head;
+        if (Cards && Cards.logCard && typeof Cards.logCard.refresh === "function") {
+          try { Cards.logCard.refresh("auto-refresh"); } catch {}
+        }
+      }
+    })
+    .catch(function() { /* 静默：网络/解析失败不打扰用户 */ })
+    .finally(function() { _filesAutoInFlight = false; });
+}
+
+// 按当前配置重起定时器。设置页改完立即调；旧定时器的清理只在这里收口。
+function restartAutoRefresh(explicitSec) {
+  if (_autoRefreshTimer) { clearTimeout(_autoRefreshTimer); _autoRefreshTimer = null; }
+  if (explicitSec !== undefined && explicitSec !== null) {
+    armAutoRefresh(normalizeAutoRefreshSec(explicitSec));
+    return;
+  }
+  // 无显式值（初始化）：向后端要一次配置，未配置/非法一律 5 秒。
+  pluginFetch("api/config")
+    .then(function(res) { return res.json(); })
+    .then(function(d) {
+      var c = (d && d.ok && d.config) || {};
+      armAutoRefresh(normalizeAutoRefreshSec(c.autoRefreshSec));
+    })
+    .catch(function() { armAutoRefresh(normalizeAutoRefreshSec("")); });
+}
+
+// 起一拍递归的 setTimeout：不用裸 setInterval，每拍结束后按同一周期续排，
+// 句柄始终挂在 _autoRefreshTimer 上，restartAutoRefresh 能干净清掉整条链。
+function armAutoRefresh(sec) {
+  _autoRefreshSec = sec;                                // 记住当前周期（含 0=关闭）
+  if (_autoRefreshTimer) { clearTimeout(_autoRefreshTimer); _autoRefreshTimer = null; }
+  if (!sec || sec <= 0) return;                          // "0" = 关闭，不起定时器
+  _autoRefreshTimer = setTimeout(function() {
+    _autoRefreshTimer = null;
+    refreshFilesAuto();
+    armAutoRefresh(sec);                                 // 递归排下一拍
+  }, sec * 1000);
 }

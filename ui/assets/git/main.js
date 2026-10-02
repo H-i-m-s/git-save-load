@@ -59,6 +59,8 @@
   // older Card instance that may point at a different repository.
   refresh(true);
   setupBackgroundRefresh();
+  // 可见时自动轮询「变更文件」：按配置 autoRefreshSec 起定时器（未配置按 5 秒，"0" 关闭）。
+  restartAutoRefresh();
 
   loadSettingsUI();
   loadNextVersion();

@@ -294,6 +294,16 @@ async function ghRunAsync(args, timeoutMs = 20000) {
   return runToolAsync(resolveGhPath(), args, ghEnvironment(), timeoutMs);
 }
 
+// 解析 `gh auth status --json hosts` 的输出。
+//
+// 两个实测出来的关键事实（win32 / gh 2.96）：
+// 1. 网络不通时 gh **退出码是 0**、吐出的还是合法 JSON，只是那条目 host 的 state 从
+//    "success" 变成 "error"（error 字段里带着真实原因）。所以“验不成”和“压根没账号”
+//    在退出码和 JSON 合法性上完全一样，只能看 state。
+// 2. 注入的 GH_TOKEN 被 GitHub 拒时会同时出现两条：一条 active 的 state:error
+//    （tokenSource:GH_TOKEN，401 Bad credentials），加一条 inactive 的 state:success
+//    （旧 keyring 账号）。只找“有没有 success”会把这种情况读成“已登录”。
+// 结论：以“当前生效（active）的那条”为准，而不是搜 success。
 function parseAuth(json) {
   let hosts = {};
   try {
@@ -301,22 +311,58 @@ function parseAuth(json) {
   } catch {
     hosts = {};
   }
-  const accounts = Object.values(hosts).flat().filter((a) => a && a.state === "success");
-  const account = accounts.find((a) => a.active) || accounts[0] || null;
-  return { loggedIn: !!account, login: account?.login || "", host: account?.host || GH_HOST };
+  const all = Object.values(hosts).flat().filter((a) => a && a.state);
+  const active = all.find((a) => a.active) || null;
+  let account = null;
+  let verifyError = "";
+  if (active) {
+    if (active.state === "success") account = active;
+    else verifyError = String(active.error || "");
+  } else {
+    account = all.find((a) => a.state === "success") || null;
+  }
+  return {
+    loggedIn: !!account,
+    login: account?.login || active?.login || "",
+    host: account?.host || active?.host || GH_HOST,
+    // verifyFailed 为真时，“未登录”这个结论不成立：那是没能验证，不是没有账号。
+    verifyFailed: !account && !!verifyError,
+    verifyError,
+  };
 }
 
 // 只做本地检测（gh --version / auth status），不发网络请求 —— 状态页要秒回。
 async function readGhStatus() {
   const version = await ghRunAsync(["--version"], 12000);
-  if (!version.ok) return { installed: false, version: "", loggedIn: false, login: "" };
+  if (!version.ok) return { installed: false, version: "", loggedIn: false, login: "", verifyFailed: false, verifyError: "" };
+
+  const started = Date.now();
   const auth = await ghRunAsync(["auth", "status", "--json", "hosts"], 20000);
-  const parsed = auth.ok ? parseAuth(auth.stdout) : { loggedIn: false, login: "" };
+  const elapsed = Date.now() - started;
+  let parsed;
+  if (auth.ok) {
+    parsed = parseAuth(auth.stdout);
+  } else {
+    // 超时/起不来：这也是“没验成”，不是“没登录”。注意 gh 把“没账号”也报成非零退出，
+    // 所以这里只能就事论事地说“没能确认”。
+    parsed = { loggedIn: false, login: "", verifyFailed: true, verifyError: String(auth.stderr || auth.message || "").trim() || "查询超时或启动失败" };
+  }
+
+  // 一次网络抽风不该被说成“未登录”：明确报错且回得快（< 5s，像是瞬时的连接失败）
+  // 就重试一次再下定论。已经卡满超时那种不重试，重试只会把等待翻倍。
+  if (parsed.verifyFailed && elapsed < 5000) {
+    const retry = await ghRunAsync(["auth", "status", "--json", "hosts"], 8000);
+    const reparsed = retry.ok ? parseAuth(retry.stdout) : null;
+    if (reparsed && !reparsed.verifyFailed) parsed = reparsed;
+  }
+
   return {
     installed: true,
     version: firstVersion(version.stdout),
     loggedIn: parsed.loggedIn,
     login: parsed.login,
+    verifyFailed: !!parsed.verifyFailed,
+    verifyError: parsed.verifyFailed ? parsed.verifyError || "" : "",
   };
 }
 

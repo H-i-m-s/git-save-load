@@ -182,13 +182,25 @@ async function copyText(value) {
 
 // ---------------------------------------------------------------- 渲染
 
+// gh 校验失败时给个短原因。完整原文放在 title 里，短句这里只需让人一眼看懂方向。
+function verifyFailureText(err) {
+  const s = String(err || "");
+  if (/bad credentials|401|403|invalid|expired|revoked/i.test(s)) return "凭据失效";
+  if (/no connection|dial tcp|no such host|proxyconnect|timeout|i\/o timeout|EOF|TLS|network|certificate/i.test(s)) return "网络不通";
+  return "校验失败";
+}
+
 function renderAccount() {
   const { installed, loggedIn, login } = state.gh;
+  const verifyFailed = !!(state.gh && state.gh.verifyFailed);
+  const verifyError = (state.gh && state.gh.verifyError) || "";
   const device = state.device;
   const waiting = !!device.active;
 
   ui.acctId.textContent = state.accountId || login || (state.loading ? "…" : "—");
 
+  // “未能确认”和“未登录”必须分开说：gh 网络不通时退出码是 0，但 state 是 error，
+  // 以前这会被读成“未登录”，于是刷新几下就看见登录状态来回跳。
   ui.authHint.textContent = state.loading
     ? "检测中…"
     : state.error
@@ -199,7 +211,11 @@ function renderAccount() {
           ? `已登录 · ${login || "（账号未报告）"}`
           : waiting
             ? "等待授权中…"
-            : "未登录";
+            : verifyFailed
+              ? `未能确认 · ${verifyFailureText(verifyError)}`
+              : "未登录";
+  // 完整原因（gh 原文）挂 tooltip，不占版面但可追溯。
+  ui.authHint.title = verifyFailed ? verifyError : "";
 
   ui.authAction.textContent = "";
   if (pending === "login" || pending === "logout") {
@@ -210,6 +226,9 @@ function renderAccount() {
     ui.authAction.append(makeButton("登录", { disabled: true, title: "需先安装 GitHub CLI（gh）" }));
   } else if (waiting) {
     ui.authAction.append(makeButton("重新获取代码", { variant: "ghost", onClick: requestLogin }));
+  } else if (verifyFailed) {
+    // 没能确认时不该引导去登录（可能本来就登着，只是没验成），先重查。
+    ui.authAction.append(makeButton("重新检测", { variant: "ghost", onClick: refresh }));
   } else {
     ui.authAction.append(makeButton("登录", { onClick: requestLogin }));
   }

@@ -7,8 +7,8 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
     const path = repoPath(c.req.query("path"));
 
     try {
-      // 只跑渲染这个接口真正需要的三条只读 git 调用，并行执行（异步不阻塞事件循环），
-      // 总耗时从串行累加降为最慢单项。branch/status 失败 = 不是仓库；diff 失败静默降级。
+      // 只跑渲染这个接口真正需要的几条只读 git 调用，并行执行（异步不阻塞事件循环），
+      // 总耗时从串行累加降为最慢单项。branch/status 失败 = 不是仓库；diff/head 失败静默降级。
       //
       // 这里以前还顺带跑一条 `git log --numstat -n 5` 产出 recentCommits，但前端从未
       // 消费该字段（全仓库 grep 只在本文件命中），而它在大仓库上极贵：
@@ -17,6 +17,10 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
       const branchP = gitExecFileAsync(path, ["branch", "--show-current"]);
       const statusP = gitExecFileAsync(path, ["-c", "core.quotepath=false", "status", "--short"]);
       const diffP = gitExecFileAsync(path, ["-c", "core.quotepath=false", "diff", "--numstat"]).catch(() => "");
+      // HEAD 短哈希：前端靠它判断"是否发生了新提交"（外部提交也要让提交记录跟上）。
+      // 约 46-67 ms，与上面三条并行，所以 /api/status 的墙钟基本不变；
+      // 空仓库/无提交/无 HEAD 时 rev-parse 会失败，这里静默降级为空串。
+      const headP = gitExecFileAsync(path, ["rev-parse", "--short", "HEAD"]).catch(() => "");
       let branch;
       let statusShort;
       try {
@@ -25,6 +29,7 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
         return c.json({ ok: false, isRepo: false, path, message: e.message });
       }
       const diffRaw = await diffP;
+      const headRaw = await headP;
 
       let changed = [];
       let untracked = [];
@@ -66,6 +71,7 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
         untrackedFiles: untracked,
         changedCount: changed.length,
         untrackedCount: untracked.length,
+        head: String(headRaw).trim(),
       });
     } catch (e) {
       return c.json({ ok: false, isRepo: false, path, message: e.message });

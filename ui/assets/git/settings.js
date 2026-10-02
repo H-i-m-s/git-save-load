@@ -67,6 +67,8 @@ async function loadSettingsUI() {
     // 新分段控件：从后端拉来的值用于点亮初始状态
     setHanaSegActive("segDiffMode", c.defaultDiffMode || "detail");
     setHanaSegActive("segGhOpen", c.ghOpenMode || "internal");
+    // 自动刷新周期：未配置时前端按 "5" 显示并生效（"0" 是非空字符串、是真的值，不会被当成假值丢掉）。
+    set("cfgAutoRefresh", c.autoRefreshSec || "5");
     var textureEl = document.getElementById("cfgTexture");
     if (textureEl) textureEl.checked = (c.paperTexture === "on");
   } catch {}

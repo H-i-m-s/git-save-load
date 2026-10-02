@@ -77,6 +77,10 @@ function renderStatus(data) {
   updateRepoPathDisplay(data.path);
 
   const fl = document.getElementById("fileList");
+  // 重建前先记住滚动位置：如果有自动轮询在用户翻看时重建列表，不这样做会把它拽回顶部。
+  // 滚动容器是 #fileCard（inline overflow:auto + max-height），不是 #fileList（.file-list 自身无 overflow）。
+  const fileCardScrollHost = document.getElementById("fileCard");
+  const prevFileListScrollTop = fileCardScrollHost ? fileCardScrollHost.scrollTop : 0;
   fl.innerHTML = "";
 
   const items = [];
@@ -120,6 +124,8 @@ function renderStatus(data) {
 
   // 提交按钮状态
   document.getElementById("btnCommit").disabled = !data.hasChanges;
+  // 列表重建完成后再恢复滚动位置（内容变短时浏览器会自动夹到可滚动上限）。
+  if (fileCardScrollHost) fileCardScrollHost.scrollTop = prevFileListScrollTop;
 }
 
 // 格式化提交时间
