@@ -21,7 +21,7 @@ import process from "node:process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** 任意层级的整目录排除项。与 scripts/release.ps1 的 $exclude 保持一致：
+/** 任意层级的整目录排除项。release.ps1 出包时也调本脚本，所以这里是唯一的排除清单：
  *  开发脚本、测试与 CI 配置不进包，安装位的 App 用不到它们。 */
 const SKIP_DIRS = new Set([".git", ".github", "node_modules", "dist", "scripts", "tests"]);
 /** 常见临时/系统文件（按文件名匹配）。 */

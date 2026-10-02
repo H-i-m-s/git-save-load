@@ -7,10 +7,14 @@ Git Save/Load 一键发版脚本
   .\scripts\release.ps1 -Notes "- 修复xxx`n- 新增yyy"    # 附带发布说明（支持多行）
   .\scripts\release.ps1 -PackageOnly                     # 只打包不发布（输出 zip 与 sha256）
 
-前置条件:
-  - gh CLI 已安装并登录（gh auth login）
+前置条件（发布）:
+  - Node 与 gh CLI 已安装，gh 已登录（gh auth login）
   - 工作区干净：改动已提交并推送
   - manifest.json 的 version 就是本次要发的版本号（tag 与它强绑定）
+
+出包统一交给 scripts/pack.mjs，产物落 <repo>\dist：
+  <id>-v<version>.zip / .zip.sha256 / .entry.json
+-PackageOnly 只做这一步，不需要 gh、不需要网络、不要求工作区干净。
 #>
 param(
   [string]$Notes = "",
@@ -30,6 +34,34 @@ $version = $manifest.version
 $tag = "v$version"
 Write-Host "==> 发布版本: $tag"
 
+# ---------- 出包：统一交给 scripts/pack.mjs ----------
+# 与手动出包（node scripts/pack.mjs）走同一条路，产物落 <repo>\dist。
+# pack.mjs 内部会先跑 scripts/selfcheck.mjs，失败即以非零码退出，这里不再重复跑自检。
+function Invoke-Pack {
+  $packScript = Join-Path $PSScriptRoot "pack.mjs"
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw "未找到 node，无法出包（scripts/pack.mjs 需要 Node）" }
+  if (-not (Test-Path $packScript)) { throw "未找到 scripts/pack.mjs，无法出包" }
+  # node 的输出去 host 通道（Write-Host），避免被当成函数返回值的一部分：
+  # 若直接写 & node $packScript，它的 stdout 会混进 return 的结果里。
+  & node $packScript 2>&1 | Write-Host
+  if ($LASTEXITCODE -ne 0) { throw "scripts/pack.mjs 出包失败（exit $LASTEXITCODE）" }
+  $zipPath = Join-Path $repoRoot ("dist\{0}-{1}.zip" -f $manifest.id, $tag)
+  if (-not (Test-Path $zipPath)) { throw "pack.mjs 未产出预期文件：$zipPath" }
+  return $zipPath
+}
+
+# ---------- 1.5 -PackageOnly：只本地出包，不发布 ----------
+# 纯本地操作，所以排在网络与 gh 校验之前：没登录、没网络、工作区脏也能出包。
+if ($PackageOnly) {
+  $localZip = Invoke-Pack
+  Write-Host ""
+  Write-Host "==> -PackageOnly：到此为止，未发布。"
+  Write-Host "    zip:    $localZip"
+  Write-Host "    sha256: $localZip.sha256  （校验值侧车文件）"
+  Write-Host "    entry:  $(Join-Path $repoRoot ('dist\{0}-{1}.entry.json' -f $manifest.id, $tag))  （市场条目）"
+  return
+}
+
 # ---------- 2. 前置校验 ----------
 if (-not $SkipCleanCheck) {
   $dirty = & git -C $repoRoot status --porcelain
@@ -43,47 +75,9 @@ if ($LASTEXITCODE -ne 0) { throw "gh CLI 未登录，先运行 gh auth login" }
 cmd /c "gh release view $tag --repo $RepoSlug >nul 2>&1"
 if ($LASTEXITCODE -eq 0) { throw "Release $tag 已存在，换版本号或先删除旧 Release" }
 
-# ---------- 2.5 结构自检（scripts/selfcheck.mjs，零依赖） ----------
-# 与 pack.mjs 共用同一道门禁：manifest / entry / 路由 / 工具语法 / ui 资源引用。
-# 缺 node 或缺脚本时只提示并跳过，不阻断发版。
-$selfcheck = Join-Path $PSScriptRoot "selfcheck.mjs"
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  Write-Host "==> 未找到 node，跳过结构自检"
-} elseif (-not (Test-Path $selfcheck)) {
-  Write-Host "==> 未找到 scripts/selfcheck.mjs，跳过结构自检"
-} else {
-  & node $selfcheck
-  if ($LASTEXITCODE -ne 0) { throw "selfcheck 未通过，停止发版（先修好结构问题再发）" }
-}
-
-# ---------- 3. 打包：顶层 git-save-load/ 包裹（宿主安装时自动剥壳） ----------
-$stage = Join-Path $env:TEMP ("gsl-release-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
-$pkgDir = Join-Path $stage "git-save-load"
-New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
-$exclude = @(".git", ".github", "scripts", "tests")
-Get-ChildItem $repoRoot -Force | Where-Object { $exclude -notcontains $_.Name } | ForEach-Object {
-  Copy-Item $_.FullName $pkgDir -Recurse -Force
-}
-$asset = Join-Path $env:TEMP "git-save-load-$tag.zip"
-if (Test-Path $asset) { Remove-Item $asset -Force }
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-Add-Type -AssemblyName System.IO.Compression
-# 不用 CreateFromDirectory：部分 .NET 版本会把条目名写成反斜杠，宿主的 yauzl 解压器直接拒绝。
-# 手动逐条添加，显式用正斜杠拼条目名。
-$zip = [System.IO.Compression.ZipFile]::Open($asset, [System.IO.Compression.ZipArchiveMode]::Create)
-try {
-  $allFiles = Get-ChildItem $pkgDir -Recurse -File -Force
-  foreach ($f in $allFiles) {
-    $rel = $f.FullName.Substring($pkgDir.Length).TrimStart("\", "/").Replace("\", "/")
-    $entryName = "git-save-load/" + $rel
-    $entry = $zip.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
-    $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
-    $entryStream = $entry.Open()
-    $entryStream.Write($bytes, 0, $bytes.Length)
-    $entryStream.Close()
-  }
-} finally { $zip.Dispose() }
-Remove-Item $stage -Recurse -Force
+# ---------- 3. 打包：调 scripts/pack.mjs，产物落 dist（顶层 <id>/ 包裹，正斜杠条目） ----------
+# 自检由 pack.mjs 内部执行（scripts/selfcheck.mjs），这里不再重复跑一遍。
+$asset = Invoke-Pack
 
 # ---------- 4. 校验 zip：条目必须是正斜杠（yauzl 拒绝反斜杠条目），manifest 版本一致 ----------
 $zip = [System.IO.Compression.ZipFile]::OpenRead($asset)
