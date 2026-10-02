@@ -97,11 +97,6 @@ try {
 $sha256 = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLower()
 Write-Host "==> sha256: $sha256"
 
-if ($PackageOnly) {
-  Write-Host "==> -PackageOnly：到此为止，未发布。"
-  return
-}
-
 # ---------- 5. 创建 GitHub Release 并上传 ----------
 $notesFile = Join-Path $env:TEMP "gsl-notes-$tag.md"
 $notesText = "## Git Save/Load $tag`n`n$Notes`n`n---`n`n安装：下载附件 zip 拖入 HanaAgent 设置 → 插件；提交到官方插件目录后可直接在市场更新。`n"
