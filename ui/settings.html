@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Git Save/Load 设置</title>
+  <script>
+    /* 宿主把当前主题经 iframe URL 下发：hana-css（当前主题完整 CSS）与
+       auto 模式的 hana-palette-{light,dark}-css。挂上它，页面才随宿主主题一起变。
+       没有参数时（离线预览）退回 settings.css 的默认值。 */
+    (function () {
+      try {
+        var p = new URLSearchParams(location.search);
+        var href = p.get("hana-css");
+        var appearance = p.get("hana-theme-appearance");
+        if (appearance) {
+          var themed = p.get("hana-palette-" + appearance + "-css");
+          if (themed) href = themed;
+        }
+        if (!href) return;
+        var link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = href;
+        link.setAttribute("data-host-theme", "1");
+        document.head.insertBefore(link, document.head.firstChild);
+      } catch (e) {
+        /* 主题不可用不影响设置功能 */
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="./assets/settings.css">
+</head>
+<body>
+  <main class="gs" id="gs" aria-busy="true">
+    <header class="gs-head">
+      <div class="gs-head__row">
+        <h1>Git Save/Load</h1>
+        <button class="gs-btn gs-btn--ghost gs-btn--sm" id="btn-refresh" type="button">重新检测</button>
+      </div>
+      <p class="gs-sub">账号、工具链与提交签名。仓库、暂存、推送、主题等常用设置仍在侧栏卡片里改。</p>
+    </header>
+
+    <!-- 1 · 账号与 GitHub 认证 -->
+    <section class="gs-card" id="sec-account">
+      <h2 class="gs-card__title">账号与 GitHub 认证</h2>
+
+      <div class="gs-row">
+        <div class="gs-row__label"><span>账号 ID</span></div>
+        <div class="gs-row__control"><span class="gs-mono" id="acct-id">—</span></div>
+      </div>
+
+      <div class="gs-row">
+        <div class="gs-row__label">
+          <span>gh 认证</span>
+          <span class="gs-row__hint" id="auth-hint">检测中…</span>
+        </div>
+        <div class="gs-row__control" id="auth-action"></div>
+      </div>
+
+      <div class="gs-code" id="code-row" hidden>
+        <span class="gs-code__label">一次性代码</span>
+        <button class="gs-code__chip" id="device-code" type="button" title="点击复制">
+          <span class="gs-code__text" id="device-code-text">————-————</span>
+          <span class="gs-code__tip" id="device-code-tip">复制</span>
+        </button>
+        <button class="gs-btn gs-btn--ghost gs-btn--sm" id="open-device" type="button">打开授权页</button>
+      </div>
+      <p class="gs-row__hint" id="login-steps" hidden>
+        浏览器打开授权页 → 输入上面的代码 → 点 Authorize，完成后本页会自动变为已登录。
+      </p>
+    </section>
+
+    <!-- 2 · 命令行工具 -->
+    <section class="gs-card" id="sec-tools">
+      <h2 class="gs-card__title">命令行工具</h2>
+      <p class="gs-card__desc">检测系统 PATH 与常见安装位置；缺失时在这里提示，不会随 App 打包。</p>
+
+      <div class="gs-tool">
+        <span class="gs-tool__name gs-mono">git</span>
+        <span class="gs-tool__ver" id="git-ver">—</span>
+        <span class="gs-badge" id="git-badge" data-state="off">—</span>
+      </div>
+      <div class="gs-tool">
+        <span class="gs-tool__name gs-mono">gh</span>
+        <span class="gs-tool__ver" id="gh-ver">—</span>
+        <span class="gs-badge" id="gh-badge" data-state="off">—</span>
+      </div>
+      <div class="gs-tool">
+        <span class="gs-tool__name gs-mono">gpg</span>
+        <span class="gs-tool__ver" id="gpg-ver">—</span>
+        <span class="gs-badge" id="gpg-badge" data-state="off">—</span>
+      </div>
+    </section>
+
+    <!-- 3 · 隔离 GPG 签名身份 -->
+    <section class="gs-card" id="sec-sign">
+      <h2 class="gs-card__title">隔离 GPG 签名身份</h2>
+      <p class="gs-card__desc">密钥只落在本 App 的数据目录，不碰系统或个人 GPG 环。</p>
+
+      <div class="gs-row">
+        <div class="gs-row__label"><span>公钥</span></div>
+        <div class="gs-row__control"><span class="gs-badge" id="sign-badge" data-state="off">未生成</span></div>
+      </div>
+      <div class="gs-row">
+        <div class="gs-row__label"><span>密钥 ID</span></div>
+        <div class="gs-row__control"><span class="gs-mono" id="sign-fpr">—</span></div>
+      </div>
+      <div class="gs-row">
+        <div class="gs-row__label"><span>身份（UID）</span></div>
+        <div class="gs-row__control"><span class="gs-mono" id="sign-uid">—</span></div>
+      </div>
+      <div class="gs-row">
+        <div class="gs-row__label">
+          <span>提交时签名</span>
+          <span class="gs-row__hint">开启后，「存档」创建的提交会带上这把密钥的签名。</span>
+        </div>
+        <div class="gs-row__control">
+          <label class="gs-switch" id="sign-switch-wrap">
+            <input type="checkbox" id="sign-switch" />
+            <span class="gs-switch__track" aria-hidden="true"><span class="gs-switch__thumb"></span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="gs-actions" id="sign-actions"></div>
+    </section>
+
+    <!-- 确认条（iframe 内 window.confirm 被禁，用页内确认） -->
+    <section class="gs-confirm" id="confirm-bar" hidden role="alertdialog" aria-live="assertive">
+      <span class="gs-confirm__text" id="confirm-text"></span>
+      <div class="gs-confirm__actions">
+        <button class="gs-btn gs-btn--ghost gs-btn--sm" id="confirm-cancel" type="button">取消</button>
+        <button class="gs-btn gs-btn--danger gs-btn--sm" id="confirm-ok" type="button">确认</button>
+      </div>
+    </section>
+
+    <p class="gs-note" id="gs-note" hidden></p>
+  </main>
+  <script type="module" src="./assets/settings.js"></script>
+</body>
+</html>

@@ -65,7 +65,7 @@ function ghConfigDir() {
   return home ? join(home, ".config", "gh") : "";
 }
 
-function ghEnvironment() {
+export function ghEnvironment() {
   const env = { ...process.env };
   if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
   // 补上 gh 的登录配置目录，否则 App 进程里的 gh 一律认为"未登录"。
@@ -82,7 +82,7 @@ function ghEnvironment() {
 // 定位 gh 可执行文件。插件进程的 PATH 可能不包含 GitHub CLI 安装目录
 // （例如仅安装了 GitHub Desktop 或 PATH 被修改过），因此探测常见安装位置并缓存。
 let _cachedGhPath = null;
-function resolveGhPath() {
+export function resolveGhPath() {
   if (_cachedGhPath) return _cachedGhPath;
   const localAppData = localAppDataDir();
   const home = userHomeDir();

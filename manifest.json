@@ -18,6 +18,7 @@
   "contributes": {
     "settings": {
       "title": "Git Save/Load 设置",
+      "ui": { "route": "/settings.html" },
       "schema": {
         "properties": {
           "repoPath": {

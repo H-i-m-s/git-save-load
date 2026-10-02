@@ -2,7 +2,7 @@
 import { writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
-export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, commandErrorText, tmpFile }) {
+export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, gitExecFileWithEnv, commandErrorText, tmpFile, getCommitSigning }) {
   app.get("/api/status", async (c) => {
     const path = repoPath(c.req.query("path"));
 
@@ -121,6 +121,12 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
     }
 
     let msgFile = null;
+    // 隔离签名：设置页打开「提交时签名」且密钥可用时，给这次提交带上 -c 参数与 GNUPGHOME。
+    // 关闭/无密钥/无 gpg 时 signing 为空，提交行为与原来完全一致。
+    const signing = typeof getCommitSigning === "function" ? getCommitSigning() : { args: [], env: {} };
+    const commitWithEnv = typeof gitExecFileWithEnv === "function"
+      ? (args, extraEnv) => gitExecFileWithEnv(path, args, extraEnv)
+      : (args) => gitExecFile(path, args);
     try {
       gitExecFile(path, ["add", "."]);
 
@@ -129,7 +135,7 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
         // 用完 unlink，避免污染 .git/COMMIT_EDITMSG
         msgFile = tmpFile("git-sl-msg", ".txt");
         writeFileSync(msgFile, message, "utf8");
-        gitExecFile(path, ["commit", "-F", msgFile]);
+        commitWithEnv([...(signing.args || []), "commit", "-F", msgFile], signing.env || {});
       } catch (e) {
         // execFileSync 抛错时 git 的真实输出在 stderr/stdout，不在 e.message 里，
         // 必须用 commandErrorText 拼接后才能匹配 "nothing to commit"。

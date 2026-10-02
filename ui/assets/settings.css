@@ -1,0 +1,245 @@
+/* ==========================================================================
+   Git Save/Load · 设置页样式（Hana 设置窗里的自定义页）
+   --------------------------------------------------------------------------
+   设计约定（与 github-cli 面板同一契约）：
+   · 主题取值链 --hana-*（custom 主题） → 旧主题名 → 暖色默认值；
+     配合 HTML 里注入的 hana-css，在任意宿主主题下跟随。
+   · 层级：一张卡只有一个实心主操作；危险操作走描边。
+   · 正文/次要文字/描边都按“任意底色上可读”取值，深色主题同样成立。
+   ========================================================================== */
+
+:root {
+  --gs-gap: 16px;
+
+  --gs-bg: var(--hana-bg, var(--bg, #faf7f2));
+  --gs-surface: var(--hana-bg-card, var(--bg-card, #ffffff));
+  --gs-soft: color-mix(in srgb, var(--gs-ink) 7%, transparent);
+  --gs-ink: var(--hana-text, var(--text, #2f2a24));
+  --gs-sub: var(--hana-text-light, var(--text-light, #6f6659));
+  --gs-muted: var(--hana-text-muted, var(--text-muted, #8d8274));
+  --gs-accent: var(--hana-accent, var(--accent, #c2703d));
+  --gs-tint: var(--hana-accent-light, var(--accent-light, rgba(194, 112, 61, 0.08)));
+  --gs-line: color-mix(in srgb, var(--hana-border, var(--border, rgba(0, 0, 0, 0.12))) 78%, var(--gs-surface));
+  --gs-danger: var(--hana-danger, var(--danger, #b8544a));
+  --gs-green: var(--hana-green, var(--green, #3d9a63));
+  --gs-mono: var(--hana-font-mono, var(--font-mono, ui-monospace, "Cascadia Mono", Consolas, monospace));
+
+  --gs-radius-base: var(--hana-corner-radius-scale, var(--corner-radius-scale, 1));
+  --gs-radius: calc(12px * var(--gs-radius-base));
+  --gs-radius-sm: calc(8px * var(--gs-radius-base));
+
+  --gs-danger-tint: color-mix(in srgb, var(--gs-danger) 12%, transparent);
+  --gs-danger-line: color-mix(in srgb, var(--gs-danger) 42%, transparent);
+  --gs-green-tint: color-mix(in srgb, var(--gs-green) 15%, transparent);
+  --gs-accent-ring: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+}
+
+/* .gs-switch 等设了 display，会盖掉 HTML 的 hidden 属性，显式兜底 */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: transparent;
+  color: var(--gs-ink);
+  font-family: var(--hana-font-ui, var(--font-ui, system-ui, -apple-system, "Segoe UI", sans-serif));
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.gs {
+  box-sizing: border-box;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 6px 6px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gs-gap);
+}
+
+/* ---------- 头部 ---------- */
+.gs-head { display: flex; flex-direction: column; gap: 4px; }
+.gs-head__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.gs-head h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: 0.01em; }
+.gs-sub { margin: 0; color: var(--gs-muted); font-size: 12.5px; line-height: 1.5; }
+
+/* ---------- 卡片 ---------- */
+.gs-card {
+  background: var(--gs-surface);
+  border: 1px solid var(--gs-line);
+  border-radius: var(--gs-radius);
+  padding: 14px 16px 6px;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--gs-ink) 5%, transparent);
+}
+.gs-card__title { margin: 0 0 2px; font-size: 14px; font-weight: 650; }
+.gs-card__desc { margin: 0 0 4px; color: var(--gs-muted); font-size: 12px; line-height: 1.5; }
+
+/* ---------- 行 ---------- */
+.gs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 0;
+  border-top: 1px solid var(--gs-line);
+}
+.gs-card__title + .gs-row,
+.gs-card__desc + .gs-row,
+.gs-card__desc + .gs-tool { border-top: 0; }
+.gs-row__label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gs-row__label > span:first-child { font-weight: 550; }
+.gs-row__hint { color: var(--gs-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.gs-row__control { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.gs-mono { font-family: var(--gs-mono); font-size: 12px; word-break: break-all; }
+
+/* ---------- 命令行工具行 ---------- */
+.gs-tool {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid var(--gs-line);
+}
+.gs-tool__name { flex: 0 0 auto; font-weight: 600; font-size: 13px; min-width: 42px; }
+.gs-tool__ver { flex: 1 1 auto; color: var(--gs-sub); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+/* ---------- 徽标 ---------- */
+.gs-badge {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 550;
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: var(--gs-sub);
+  background: var(--gs-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gs-badge[data-state="ok"] { color: var(--gs-green); background: var(--gs-green-tint); }
+.gs-badge[data-state="off"] { color: var(--gs-muted); background: var(--gs-soft); }
+
+/* ---------- 按钮 ---------- */
+.gs-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: var(--gs-radius-sm);
+  padding: 6px 15px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+  background: var(--gs-accent);
+  color: #fff;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  white-space: nowrap;
+}
+.gs-btn:hover { filter: brightness(1.07); }
+.gs-btn:active { filter: brightness(0.97); }
+.gs-btn:focus-visible { outline: 2px solid var(--gs-accent-ring); outline-offset: 2px; }
+.gs-btn:disabled { opacity: 0.5; cursor: default; filter: none; }
+
+.gs-btn--ghost { background: transparent; color: var(--gs-sub); border-color: var(--gs-line); }
+.gs-btn--ghost:hover { background: var(--gs-soft); filter: none; }
+
+.gs-btn--danger { background: transparent; color: var(--gs-danger); border-color: var(--gs-danger-line); }
+.gs-btn--danger:hover { background: var(--gs-danger-tint); filter: none; }
+.gs-btn--danger-solid { background: var(--gs-danger); color: #fff; }
+.gs-btn--sm { padding: 5px 11px; font-size: 12.5px; }
+
+/* ---------- 底部操作区 ---------- */
+.gs-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 14px 0 12px;
+  border-top: 1px solid var(--gs-line);
+  min-height: 20px;
+}
+
+/* ---------- 开关 ---------- */
+.gs-switch { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+.gs-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.gs-switch__track {
+  position: relative;
+  width: 36px; height: 20px;
+  background: color-mix(in srgb, var(--gs-ink) 22%, transparent);
+  border-radius: 999px;
+  transition: background 0.18s ease;
+}
+.gs-switch__thumb {
+  position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.18s ease;
+}
+.gs-switch input:checked + .gs-switch__track { background: var(--gs-accent); }
+.gs-switch input:checked + .gs-switch__track .gs-switch__thumb { transform: translateX(16px); }
+.gs-switch input:focus-visible + .gs-switch__track { box-shadow: 0 0 0 3px var(--gs-accent-ring); }
+.gs-switch input:disabled + .gs-switch__track { opacity: 0.5; cursor: default; }
+
+/* ---------- 设备码条 ---------- */
+.gs-code { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 2px 0 12px; }
+.gs-code__label { font-size: 12.5px; color: var(--gs-muted); }
+.gs-code__chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1px dashed var(--gs-accent);
+  background: var(--gs-tint);
+  color: var(--gs-ink);
+  border-radius: var(--gs-radius-sm);
+  padding: 5px 10px;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.15s ease;
+}
+.gs-code__chip:hover { background: var(--gs-accent-ring); }
+.gs-code__text { font-family: var(--gs-mono); font-size: 14px; font-weight: 600; letter-spacing: 0.08em; }
+.gs-code__tip { font-size: 11.5px; color: var(--gs-accent); }
+.gs-code__chip[data-copied="1"] .gs-code__tip { color: var(--gs-green); }
+
+/* ---------- 确认条 ---------- */
+.gs-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--gs-surface);
+  border: 1px solid var(--gs-danger-line);
+  border-left: 3px solid var(--gs-danger);
+  border-radius: var(--gs-radius);
+  padding: 12px 14px;
+  box-shadow: 0 3px 10px var(--gs-danger-tint);
+}
+.gs-confirm__text { font-size: 13px; flex: 1 1 auto; }
+.gs-confirm__actions { display: flex; gap: 8px; flex: 0 0 auto; }
+
+/* ---------- 提示 ---------- */
+.gs-note { margin: 0; font-size: 12.5px; color: var(--gs-muted); }
+.gs-note[data-kind="err"] { color: var(--gs-danger); }
+.gs-note[data-kind="ok"] { color: var(--gs-green); }
+.gs-note[data-kind="warn"] { color: #d98b2b; }
+
+/* ---------- 忙碌 ---------- */
+.gs-busy { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gs-sub); }
+.gs-spinner {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--gs-ink) 15%, transparent);
+  border-top-color: var(--gs-accent);
+  animation: gs-spin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes gs-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gs-spinner { animation: none; }
+}
+
+@media (max-width: 460px) {
+  .gs-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .gs-row__control { justify-content: flex-start; }
+}

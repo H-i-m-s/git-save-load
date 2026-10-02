@@ -24,6 +24,7 @@ import { registerBranchRoutes } from "./branch.js";
 import { registerRemotePushRoutes } from "./remote-push.js";
 import { registerStashRoutes } from "./stash.js";
 import { registerMiscRoutes } from "./misc.js";
+import { registerSettingsPageRoutes, resolveCommitSigning } from "./settings-page.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_DIR = join(__dirname, "..");
@@ -501,7 +502,7 @@ export default function (app, ctx) {
   }
 
   // ======== 模块注册 ========
-  registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, commandErrorText, tmpFile });
+  registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, gitExecFileWithEnv, commandErrorText, tmpFile, getCommitSigning: () => resolveCommitSigning(dataDir, resolveGitPath()) });
   registerHistoryRoutes(app, { repoPath, gitExecFile });
   registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecFileWithEnv, commandErrorText, getGitOperationState: gitOperationState, tmpFile, readTextFile });
   registerDiffConflictRoutes(app, { repoPath, gitExecFile, readTextFile, writeTextFile });
@@ -596,5 +597,6 @@ export default function (app, ctx) {
     parseNameStatus,
   });
   registerStashRoutes(app, { repoPath, gitExecFile, commandErrorText });
+  registerSettingsPageRoutes(app, { dataDir, resolveGitPath });
   registerMiscRoutes(app, { pluginDir: PLUGIN_DIR });
 }
