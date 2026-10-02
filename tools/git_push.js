@@ -1,3 +1,17 @@
+// SPDX-License-Identifier: MPL-2.0
+//
+// 本文件包含衍生自 GitHana 的部分代码（setUpstream 等参数与 push 参数组装）：
+//   GitHana: https://github.com/Nyasers/GitHana
+//   Copyright (c) 2026 Nyasers，以 Mozilla Public License v. 2.0 授权。
+// 本文件已由 git-save-load 修改，修改后的版本同样以 MPL-2.0 发布。完整声明见根目录 NOTICE。
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// This Source Code Form is "Incompatible With Secondary Licenses", as
+// defined by the Mozilla Public License, v. 2.0.
+//
 // git-save-load / tools / git_push.js
 // 语义化推送：把本地分支推到远端。force 只映射 --force-with-lease，绝不使用裸 --force。
 

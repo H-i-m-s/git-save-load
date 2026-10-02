@@ -1,0 +1,39 @@
+Git Save/Load — 第三方代码声明
+Copyright (c) 2026 H-i-M-s
+
+本 App 整体以 Mozilla Public License v. 2.0（MPL-2.0）授权，许可证全文见同目录 LICENSE。
+MPL-2.0 以文件为单位生效：下列被覆盖的文件必须保留其许可与版权声明，并继续以 MPL-2.0
+发布（含本仓库对它们的修改）；本仓库其余文件为本项目原创。
+
+
+## 衍生自 GitHana 的文件
+
+GitHana 以 MPL-2.0 授权，版权归 Copyright (c) 2026 Nyasers 所有，
+源码地址：https://github.com/Nyasers/GitHana
+
+大部分内容为 GitHana 同名文件的衍生（已修改）：
+  lib/secret.js
+  scripts/pack.mjs
+
+包含部分衍生代码（已修改）：
+  scripts/selfcheck.mjs
+  tools/gh_exec.js
+  tools/gh_pr.js
+  tools/git_exec.js
+  tools/git_push.js
+
+以上文件的修改后版本同为 MPL-2.0，其 Source Code Form 可从本仓库获取：
+https://github.com/H-i-M-s/git-save-load
+
+
+## 许可通知
+
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+This Source Code Form is "Incompatible With Secondary Licenses", as
+defined by the Mozilla Public License, v. 2.0.
+
+Source code for this distribution is available at:
+https://github.com/H-i-M-s/git-save-load
