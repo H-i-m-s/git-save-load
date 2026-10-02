@@ -194,6 +194,7 @@ function renderAccount() {
   const { installed, loggedIn, login } = state.gh;
   const verifyFailed = !!(state.gh && state.gh.verifyFailed);
   const verifyError = (state.gh && state.gh.verifyError) || "";
+  const probeFailed = !!(state.gh && state.gh.probeFailed);
   const device = state.device;
   const waiting = !!device.active;
 
@@ -201,12 +202,15 @@ function renderAccount() {
 
   // “未能确认”和“未登录”必须分开说：gh 网络不通时退出码是 0，但 state 是 error，
   // 以前这会被读成“未登录”，于是刷新几下就看见登录状态来回跳。
+  // “探测失败”和“未检测到 gh”同理，也不能混。
   ui.authHint.textContent = state.loading
     ? "检测中…"
     : state.error
       ? "检测失败"
       : !installed
-        ? "未检测到 gh"
+        ? probeFailed
+          ? "gh 探测失败"
+          : "未检测到 gh"
         : loggedIn
           ? `已登录 · ${login || "（账号未报告）"}`
           : waiting
@@ -215,7 +219,7 @@ function renderAccount() {
               ? `未能确认 · ${verifyFailureText(verifyError)}`
               : "未登录";
   // 完整原因（gh 原文）挂 tooltip，不占版面但可追溯。
-  ui.authHint.title = verifyFailed ? verifyError : "";
+  ui.authHint.title = verifyFailed ? verifyError : probeFailed ? (state.gh && state.gh.probeError) || "" : "";
 
   ui.authAction.textContent = "";
   if (pending === "login" || pending === "logout") {
@@ -223,7 +227,9 @@ function renderAccount() {
   } else if (loggedIn) {
     ui.authAction.append(makeButton("退出登录", { variant: "danger", onClick: requestLogout }));
   } else if (!installed) {
-    ui.authAction.append(makeButton("登录", { disabled: true, title: "需先安装 GitHub CLI（gh）" }));
+    // 探测失败不等于没装：这种情况不该引导去安装/登录，先重查。
+    if (probeFailed) ui.authAction.append(makeButton("重新检测", { variant: "ghost", onClick: refresh }));
+    else ui.authAction.append(makeButton("登录", { disabled: true, title: "需先安装 GitHub CLI（gh）" }));
   } else if (waiting) {
     ui.authAction.append(makeButton("重新获取代码", { variant: "ghost", onClick: requestLogin }));
   } else if (verifyFailed) {
@@ -248,8 +254,14 @@ function renderTools() {
   }
   setBadge(ui.gitBadge, state.git.installed, "可用", "未安装");
   ui.gitVer.textContent = state.git.installed ? state.git.version || "版本未知" : "—";
-  setBadge(ui.ghBadge, state.gh.installed, "可用", "未安装");
-  ui.ghVer.textContent = state.gh.installed ? state.gh.version || "版本未知" : "—";
+  // gh 探测失败时不要把“没探成”说成“未安装”（同一个诚性问题）。
+  if (state.gh && state.gh.probeFailed) {
+    setBadge(ui.ghBadge, false, "", "未知");
+    ui.ghVer.textContent = "—";
+  } else {
+    setBadge(ui.ghBadge, state.gh.installed, "可用", "未安装");
+    ui.ghVer.textContent = state.gh.installed ? state.gh.version || "版本未知" : "—";
+  }
   setBadge(ui.gpgBadge, state.gpg.installed, "可用", "未安装");
   ui.gpgVer.textContent = state.gpg.installed ? state.gpg.version || "版本未知" : "—";
 }

@@ -3,7 +3,7 @@
 // 只做「不依赖任何外部工具也能判定」的那部分，给 CI 一个实际门槛：
 //   1) manifest.json 能解析、必备字段齐全（manifestVersion/id/name/version/entry/icon）
 //   2) entry 与 icon 指向的文件存在
-//   3) entry、routes/、tools/ 下所有 .js 能被 Node 解析（node --check）
+//   3) entry、routes/、tools/、lib/ 下所有 .js 能被 Node 解析（node --check）
 //   4) ui/settings.html 与 ui/git.html 存在，且它们引用的本地 ./assets/... 都存在
 //   5) manifest 声明的设置页 / 卡片 route（settings.ui.route、cards[].route、
 //      cards[].functionPanel.route）对应的 ui 页面必须存在
@@ -56,7 +56,7 @@ if (manifest) {
   }
 }
 
-// ── 2) entry 与 routes/ 与 tools/ 下所有 .js 的语法 ─────────────────────────
+// ── 2) entry 与 routes/ 与 tools/ 与 lib/ 下所有 .js 的语法 ────────────────────
 function collectJs(dir, out = []) {
   if (!existsSync(dir)) return out;
   for (const name of readdirSync(dir)) {
@@ -85,6 +85,11 @@ if (listDirOrWarn(join(ROOT, "routes"), "routes")) {
 }
 if (listDirOrWarn(join(ROOT, "tools"), "tools")) {
   for (const f of collectJs(join(ROOT, "tools"))) addJs(f);
+}
+// lib/ 装着 git 与 gh 共用的逻辑（secret / repo-lock / user-proxy），
+// 一条语法错就能把整个后端带下水，必须进闸。
+if (listDirOrWarn(join(ROOT, "lib"), "lib")) {
+  for (const f of collectJs(join(ROOT, "lib"))) addJs(f);
 }
 
 /** 用 node --check 校验一段源码的语法。

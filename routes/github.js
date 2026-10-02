@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { getCachedToken } from "../lib/secret.js";
 import { withRepoLock } from "../lib/repo-lock.js";
+import { getUserProxy } from "../lib/user-proxy.js";
 
 // Hana v2 的 App 跑在独立子进程里，宿主只传 PATH / HOME / TMPDIR / LANG 四个
 // 环境变量，所以 process.env 里没有 APPDATA、LOCALAPPDATA、USERPROFILE。
@@ -69,7 +70,11 @@ function ghConfigDir() {
 }
 
 export function ghEnvironment() {
-  const env = { ...process.env };
+  // 用户级代理：与 git 用同一个来源（见 lib/user-proxy.js 顶部说明），免得出现
+  // "git 走代理、gh 直连"这种不对称。注册表里有值时覆盖进程环境里的同名值，
+  // 与 gitEnv() 的合并顺序一致。注册表里没有、进程环境里有（例如终端里手动设过）
+  // 也不丢：它就在下面 process.env 里原样留着。
+  const env = { ...process.env, ...getUserProxy() };
   if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
   // App 自持的加密令牌（若已配置并已解进缓存）：按次注入 GH_TOKEN，gh 优先用它。
   // 未配置时保持原状，继续走 gh 自己的系统 keyring / 登录态。

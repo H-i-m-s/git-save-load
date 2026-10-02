@@ -334,7 +334,26 @@ function parseAuth(json) {
 // 只做本地检测（gh --version / auth status），不发网络请求 —— 状态页要秒回。
 async function readGhStatus() {
   const version = await ghRunAsync(["--version"], 12000);
-  if (!version.ok) return { installed: false, version: "", loggedIn: false, login: "", verifyFailed: false, verifyError: "" };
+  if (!version.ok) {
+    // 区分"没装"和"没探成"：只有明确的"找不到可执行文件"才是真的没装。
+    // 超时 / 权限 / 被杀这些是"没探成"，把它说成"未检测到 gh"会把一次抖动
+    // 演成"你没装"（和 auth 那边把"没验成"说成"未登录"是同一个毛病）。
+    const text = String(version.stderr || version.stdout || "");
+    // 只认操作系统级的"找不到这个文件"。这条链路从不经 shell（execFile 直接 CreateProcess），
+    // 所以不用管 shell 的"不是内部或外部命令"那类文案；把它算进来反而会把
+    // "gh.exe 是个跑不起来的坏程序"误判成"你没装"。
+    const notFound = /ENOENT|ENOTDIR|cannot find the file/i.test(text);
+    return {
+      installed: false,
+      probeFailed: !notFound,
+      probeError: notFound ? "" : text,
+      version: "",
+      loggedIn: false,
+      login: "",
+      verifyFailed: false,
+      verifyError: "",
+    };
+  }
 
   const started = Date.now();
   const auth = await ghRunAsync(["auth", "status", "--json", "hosts"], 20000);
@@ -358,6 +377,8 @@ async function readGhStatus() {
 
   return {
     installed: true,
+    probeFailed: false,
+    probeError: "",
     version: firstVersion(version.stdout),
     loggedIn: parsed.loggedIn,
     login: parsed.login,
@@ -542,8 +563,14 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
       openExternal(DEVICE_URL);
       return c.json({ ok: true, reused: true, code: existing.code, url: existing.url, browserOpened: true });
     }
-    if (!(await readGhStatus()).installed) {
-      return c.json({ ok: false, message: "未检测到 GitHub CLI（gh），请先安装 gh 再登录。" });
+    const ghNow = await readGhStatus();
+    if (!ghNow.installed) {
+      return c.json({
+        ok: false,
+        message: ghNow.probeFailed
+          ? "未能确认 GitHub CLI（gh）是否可用（探测失败），稍后重试。"
+          : "未检测到 GitHub CLI（gh），请先安装 gh 再登录。",
+      });
     }
     try {
       const flow = await startDeviceFlow();

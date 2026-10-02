@@ -26,6 +26,7 @@ import { registerStashRoutes } from "./stash.js";
 import { registerMiscRoutes } from "./misc.js";
 import { registerSettingsPageRoutes, resolveCommitSigning } from "./settings-page.js";
 import { registerPrRoutes } from "./pr.js";
+import { getUserProxy } from "../lib/user-proxy.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_DIR = join(__dirname, "..");
@@ -68,34 +69,8 @@ async function getGitOperationState(cwd, pathExists = safeExists) {
   return "";
 }
 
-// 缓存用户级代理环境变量，避免每次 git 调用都查询 Windows 注册表。
-// 读注册表用 reg.exe（Windows 自带，一次约 30 ms）。这里不要用 powershell.exe：
-// 即使带 -NoProfile，冷启一次也要约 1 s；而本函数是在应用进程启动后的第一次 git
-// 调用里同步执行的，两次 powershell 探测会让那次请求凭空慢 2 s 以上——受影响的
-// 正是面板首屏渲染「变更文件」的 GET /api/status。
-let _cachedUserProxy = null;
-function getUserProxy() {
-  if (_cachedUserProxy) return _cachedUserProxy;
-  _cachedUserProxy = {};
-  try {
-    // 只取用户作用域（HKCU\Environment），与旧实现 GetEnvironmentVariable(...,'User') 同义。
-    // reg.exe 每行形如：  HTTPS_PROXY    REG_SZ    http://127.0.0.1:7890
-    const out = execFileSync("reg.exe", ["query", "HKCU\\Environment"], {
-      encoding: "utf8",
-      timeout: 10000,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    for (const line of String(out).split(/\r?\n/)) {
-      const m = line.match(/^\s*(HTTPS_PROXY|HTTP_PROXY)\s+REG_(?:SZ|EXPAND_SZ)\s+(\S.*?)\s*$/i);
-      if (!m) continue;
-      const value = m[2].trim();
-      if (value) _cachedUserProxy[m[1].toUpperCase()] = value;
-    }
-  } catch {}
-  return _cachedUserProxy;
-}
-
+// 用户级代理环境变量已抽到 lib/user-proxy.js：git 与 gh 必须用同一个来源，
+// 否则会出现"git 走代理、gh 直连"这种不对称（注册表读取与缓存都在那边）。
 // 执行 git 命令的辅助函数
 function gitEnv() {
   const env = { ...process.env, ...getUserProxy() };
