@@ -90,12 +90,13 @@ function showCommitTooltip(commit, event) {
   ].filter(Boolean).join("\n");
   activeCommitTip = tip;
   tip.classList.add("show");
-  // 横向锚点固定在「增删」列，不跟着鼠标左右跑：悬停 hash / tag 时，
-  // 浮层也落在和悬停增删列一样的位置，不会贴着屏幕右缘探出去。
-  // 纵向仍在鼠标上方（同一行内位置一致）。
-  const anchor = event && event.currentTarget ? event.currentTarget.querySelector(".commit-stat") : null;
-  const anchorLeft = anchor ? anchor.getBoundingClientRect().left : (event ? event.clientX : 6);
-  tip.style.left = Math.max(6, anchorLeft - 10) + "px";
+  // 横向照旧跟随鼠标；只在鼠标走到「增删」列右侧（hash / tag 列）时收住，
+  // 上限取增删列右缘那个位置——于是 hash / tag 上的浮层停在和增删列一样的地方，
+  // 不再贴着屏幕右缘探出去；日期 / 说明 / 增删三列的行为与以前完全一致。
+  const mouseLeft = event.clientX - 10;
+  const stat = event && event.currentTarget ? event.currentTarget.querySelector(".commit-stat") : null;
+  const capLeft = stat ? stat.getBoundingClientRect().right - 10 : mouseLeft;
+  tip.style.left = Math.max(6, Math.min(mouseLeft, capLeft)) + "px";
   tip.style.top = Math.max(6, event.clientY - tip.offsetHeight - 8) + "px";
 }
 
@@ -186,8 +187,8 @@ function renderLog(data, append) {
     tagBadge.textContent = c.tag || "—";
 
     // 提示块统一挂到 body，避免 fixed 浮层仍受提交行 hover 关系影响。
-    // 整行都可触发（含 hash / tag 列）；横向位置固定锚在「增删」列（见 showCommitTooltip），
-    // 所以鼠标贴到右侧列时，浮层也落在同一个位置，不会追着光标探出屏幕。
+    // 整行都可触发（含 hash / tag 列）；横向跟随鼠标，但在「增删」列右侧收住，
+    // 细节见 showCommitTooltip。
     li.onmouseenter = function(e) {
       if (!commitTooltipLocked) showCommitTooltip(c, e);
     };
