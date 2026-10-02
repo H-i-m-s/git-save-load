@@ -17,12 +17,13 @@ async function readLegacyConfig(ctx) {
   }
 }
 
-const CONFIG_KEYS = new Set(["repoPath", "stashMode", "pushMode", "pullMode", "defaultDiffMode", "theme", "paperTexture", "remoteSettings"]);
+const CONFIG_KEYS = new Set(["repoPath", "stashMode", "pushMode", "pullMode", "defaultDiffMode", "theme", "paperTexture", "ghOpenMode", "remoteSettings"]);
 const CONFIG_ENUMS = {
   stashMode: new Set(["normal", "untracked", "all"]),
   pushMode: new Set(["normal", "force-with-lease", "force"]),
   pullMode: new Set(["merge", "rebase", "ff-only"]),
   defaultDiffMode: new Set(["detail", "simple"]),
+  ghOpenMode: new Set(["internal", "external"]),
   theme: new Set(["auto", "light", "dark", "warm-paper", "new-warm-paper", "midnight", "midnight-contrast", "high-contrast", "grass-aroma", "contemplation", "absolutely", "delve", "deep-think", "coral"]),
   paperTexture: new Set(["on", "off"]),
 };

@@ -546,6 +546,7 @@ v1 插件（`plugins/git-save-load`）可继续运行；v2 App 与它互不影�
 | `theme` | 14 种主题 | `auto` | 主题选择 |
 | `paperTexture` | `on` / `off` | `off` | 纸质纹理 |
 | `ghOpenMode` | `internal` / `external` | `internal` | GitHub 链接打开方式 |
+| `remoteSettings` | 对象 | `{}` | 按仓库保存的远程角色（默认推送目标 / 默认获取来源） |
 
 ---
 
@@ -652,9 +653,14 @@ git-save-load/
 │   ├── selfcheck.mjs
 │   ├── pack.mjs
 │   └── release.ps1
+├── tests/                 # 自动化测试（受限模式运行）；打包时整目录排除
+│   ├── run.mjs            # 一键 runner
+│   ├── cases/             # 5 个用例
+│   └── lib/               # 断言骨架、夹具、宿主桩
 ├── sdk/                   # 随包分发的 @hana/app-sdk 运行时闭包（离线装载，不依赖 npm）
 ├── docs/
 ├── .gitignore
+├── LICENSE
 ├── DESIGN.md
 └── README.md
 ```
@@ -723,6 +729,21 @@ node scripts/validate-app.mjs --dir <HANA_HOME>/apps/git-save-load --smoke --jso
 
 `--smoke` 需要独立 Electron 运行时（`HANA_APP_ELECTRON` 指向 Electron 二进制）。
 
+### 测试
+
+`tests/` 下有 5 个用例，一条命令跑完：
+
+```bash
+node tests/run.mjs            # 全部用例
+node tests/run.mjs 03 05      # 只跑指定编号的用例
+```
+
+runner 会为每个用例 spawn 一个**受限模式**子进程（`--permission`，只开放 App 目录与临时目录的读写，另加 `--allow-child-process`），尽量贴近 App 的真实运行环境。用例自建夹具（临时 git 仓库、临时 dataDir），跑完清理，不触碰你的真实仓库与 App 数据目录。
+
+覆盖范围：结构自检、入口装配（8 个工具 + 路由端点）、`POST /api/config` 白名单回归、`git_exec` / `git_push` 行为（含 force 语义）、令牌加密存取与解密失败语义。失败会逐条定位到用例名与断言点，并以非零码退出。用例清单见 [`tests/README.md`](./tests/README.md)。
+
+测试与 `scripts/` 一样**不进安装包**。
+
 ### 打包与自检脚本
 
 `scripts/` 下三个开发脚本，都不进安装包（打包时整目录排除）：
@@ -750,7 +771,7 @@ node scripts/pack.mjs --publisher <name>  # 指定 entry.json 的 publisher（�
 
 产物三个文件：`git-save-load-v<version>.zip`、同名 `.sha256`、`git-save-load-v<version>.entry.json`。zip 内所有条目带顶层 `git-save-load/` 前缀（宿主安装时自动剥壳），条目名一律用正斜杠（宿主解压器 yauzl 拒绝反斜杠条目）。
 
-打包排除项：任意层级的 `.git`、`.github`、`node_modules`、`dist`、`scripts`；按文件名排除 `.DS_Store`、`Thumbs.db`、`desktop.ini`、`._*`、`*.tmp` / `.temp` / `.swp` / `.swo` / `.log` / `.bak`、`*~`；符号链接一律跳过。
+打包排除项：任意层级的 `.git`、`.github`、`node_modules`、`dist`、`scripts`、`tests`；按文件名排除 `.DS_Store`、`Thumbs.db`、`desktop.ini`、`._*`、`*.tmp` / `.temp` / `.swp` / `.swo` / `.log` / `.bak`、`*~`；符号链接一律跳过。
 
 **发版**
 
@@ -773,4 +794,8 @@ node scripts/pack.mjs --publisher <name>  # 指定 entry.json 的 publisher（�
 
 ## 许可证
 
-当前仓库目录中未发现 `LICENSE` 文件。发布前请补充明确的许可证文件，并将此处说明与实际许可证保持一致。
+[Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/)（MPL-2.0），全文见仓库根目录的 [`LICENSE`](./LICENSE)。
+
+Copyright (c) 2026 H-i-m-s
+
+MPL-2.0 是文件级的弱著佐权：可以把本项目与闭源代码组合、用于商业用途；但被 MPL 覆盖的源文件若被修改并再分发，该文件的源码需继续以 MPL-2.0 公开。

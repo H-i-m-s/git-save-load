@@ -60,7 +60,7 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 $stage = Join-Path $env:TEMP ("gsl-release-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 $pkgDir = Join-Path $stage "git-save-load"
 New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
-$exclude = @(".git", ".github", "scripts")
+$exclude = @(".git", ".github", "scripts", "tests")
 Get-ChildItem $repoRoot -Force | Where-Object { $exclude -notcontains $_.Name } | ForEach-Object {
   Copy-Item $_.FullName $pkgDir -Recurse -Force
 }

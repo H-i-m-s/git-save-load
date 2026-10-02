@@ -90,7 +90,12 @@ function showCommitTooltip(commit, event) {
   ].filter(Boolean).join("\n");
   activeCommitTip = tip;
   tip.classList.add("show");
-  tip.style.left = Math.max(6, event.clientX - 10) + "px";
+  // 横向锚点固定在「增删」列，不跟着鼠标左右跑：悬停 hash / tag 时，
+  // 浮层也落在和悬停增删列一样的位置，不会贴着屏幕右缘探出去。
+  // 纵向仍在鼠标上方（同一行内位置一致）。
+  const anchor = event && event.currentTarget ? event.currentTarget.querySelector(".commit-stat") : null;
+  const anchorLeft = anchor ? anchor.getBoundingClientRect().left : (event ? event.clientX : 6);
+  tip.style.left = Math.max(6, anchorLeft - 10) + "px";
   tip.style.top = Math.max(6, event.clientY - tip.offsetHeight - 8) + "px";
 }
 
@@ -181,13 +186,15 @@ function renderLog(data, append) {
     tagBadge.textContent = c.tag || "—";
 
     // 提示块统一挂到 body，避免 fixed 浮层仍受提交行 hover 关系影响。
+    // 整行都可触发（含 hash / tag 列）；横向位置固定锚在「增删」列（见 showCommitTooltip），
+    // 所以鼠标贴到右侧列时，浮层也落在同一个位置，不会追着光标探出屏幕。
     li.onmouseenter = function(e) {
       if (!commitTooltipLocked) showCommitTooltip(c, e);
     };
     li.onmouseleave = function() {
-      if (!commitTooltipInteractive) {
-        scheduleActiveCommitTipHide(commitTooltipEl);
-      }
+      // 锁定（Shift）或正在与浮层交互时不收。
+      if (commitTooltipInteractive) return;
+      if (activeCommitTip) scheduleActiveCommitTipHide(activeCommitTip);
     };
 
     // 对比选择按钮

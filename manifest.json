@@ -84,6 +84,13 @@
             "enum": ["on", "off"],
             "description": "纸质纹理"
           },
+          "ghOpenMode": {
+            "type": "string",
+            "title": "GitHub 链接打开方式",
+            "default": "internal",
+            "enum": ["internal", "external"],
+            "description": "点击 GitHub 链接时在面板内打开还是系统浏览器打开"
+          },
           "remoteSettings": {
             "type": "object",
             "title": "远程仓库设置",
