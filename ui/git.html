@@ -272,6 +272,7 @@
       <button class="gh-tab" data-tab="clone" onclick="switchGhTab('clone')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">克隆</button>
       <button class="gh-tab" data-tab="list" onclick="switchGhTab('list')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">列表</button>
       <button class="gh-tab" data-tab="search" onclick="switchGhTab('search')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">搜索</button>
+      <button class="gh-tab" data-tab="pr" onclick="switchGhTab('pr')" style="padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;font-size:10px;background:var(--hana-surface,#fff);color:var(--hana-fg-muted,#6b7280);cursor:pointer">PR</button>
     </div>
 
 
@@ -347,6 +348,34 @@
     </div>
     <div id="ghSearchStatus" style="font-size:11px;color:var(--hana-fg-muted,#6b7280);padding:4px 0;display:none"></div>
     <div id="ghSearchResult" style="max-height:210px;overflow-y:auto"></div>
+  </div>
+
+  <!-- Pull Request -->
+  <div class="gh-tab-content" id="ghTabPr" style="display:none">
+    <div style="display:flex;align-items:center;gap:4px;margin-bottom:6px">
+      <div class="hana-seg" id="segGhPrState" style="float:none;flex:1;min-width:0">
+        <button type="button" class="hana-seg-btn active" data-value="open" onclick="setPrState('open')">未合并</button>
+        <button type="button" class="hana-seg-btn" data-value="closed" onclick="setPrState('closed')">已关闭</button>
+        <button type="button" class="hana-seg-btn" data-value="all" onclick="setPrState('all')">全部</button>
+      </div>
+      <button type="button" onclick="loadPrList(true)" title="刷新 PR 列表" style="padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:11px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg-muted,#6b7280)">↻</button>
+      <button type="button" id="ghPrCreateToggleBtn" onclick="togglePrCreateForm()" style="padding:5px 10px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer;white-space:nowrap">＋ 新建 PR</button>
+    </div>
+    <div id="ghPrCreateForm" style="display:none;border:1px solid var(--hana-border,#e2e5ea);border-radius:8px;padding:8px;margin-bottom:8px;background:var(--hana-bg-muted,#f6f7f7)">
+      <div style="font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:5px">新建 Pull Request（源分支 = 当前分支）</div>
+      <input type="text" id="ghPrBase" placeholder="目标分支（留空则用仓库默认分支）" autocomplete="off" style="width:100%;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
+      <input type="text" id="ghPrTitle" placeholder="标题（留空则取最近一条提交的首行）" autocomplete="off" style="width:100%;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box;margin-top:4px">
+      <textarea id="ghPrBody" rows="3" placeholder="正文（可选，支持 Markdown）" style="width:100%;padding:5px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box;margin-top:4px;resize:vertical;font-family:inherit"></textarea>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--hana-fg-muted,#6b7280);cursor:pointer"><input type="checkbox" id="ghPrDraft" style="margin:0"> 创建为草稿（draft）</label>
+      <div style="display:flex;gap:6px;margin-top:7px;justify-content:flex-end">
+        <button type="button" onclick="togglePrCreateForm()" style="padding:5px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-surface,#fff);cursor:pointer;color:var(--hana-fg,#1a1d24)">取消</button>
+        <button type="button" id="ghPrCreateBtn" onclick="submitPrCreate()" style="padding:5px 14px;border:0;border-radius:6px;font-size:12px;font-weight:500;background:var(--hana-accent,#4a8cff);color:#fff;cursor:pointer">创建</button>
+      </div>
+      <div id="ghPrCreateResult" style="font-size:11px;margin-top:6px;word-break:break-word;white-space:pre-line"></div>
+    </div>
+    <div id="ghPrStatus" style="font-size:11px;color:var(--hana-fg-muted,#6b7280);padding:2px 0;display:none"></div>
+    <div id="ghPrList" style="max-height:240px;overflow-y:auto"><div style="padding:8px;text-align:center;font-size:12px;color:var(--hana-fg-muted,#6b7280)">切换到此标签后加载…</div></div>
+    <div id="ghPrDetail" style="display:none;margin-top:8px;border-top:1px solid var(--hana-border,#e2e5ea);padding-top:8px"></div>
   </div>
 </div><!-- end ghBody -->
   </div>
@@ -690,6 +719,7 @@
 <script src="assets/git/remotes.js"></script>
 <script src="assets/git/gh-connect.js"></script>
 <script src="assets/git/gh-repos.js"></script>
+<script src="assets/git/gh-pr.js"></script>
 <script src="assets/git/branch-canvas.js"></script>
 <script src="assets/git/ctx-menu.js"></script>
 <script src="assets/git/hana-select.js"></script>

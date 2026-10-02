@@ -25,6 +25,7 @@ import { registerRemotePushRoutes } from "./remote-push.js";
 import { registerStashRoutes } from "./stash.js";
 import { registerMiscRoutes } from "./misc.js";
 import { registerSettingsPageRoutes, resolveCommitSigning } from "./settings-page.js";
+import { registerPrRoutes } from "./pr.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_DIR = join(__dirname, "..");
@@ -532,6 +533,9 @@ export default function (app, ctx) {
     writeTextFile,
     pathExists,
   });
+  // PR 面板端点。gh 的 spawn 由 routes/pr.js 直接复用 github.js 的
+  // resolveGhPath/ghEnvironment，这里只喂它本作用域已有的依赖。
+  registerPrRoutes(app, { ctx, gitExecFile, commandErrorText, readRepoPath });
   registerRemoteEditRoutes(app, {
     ctx,
     repoPath,

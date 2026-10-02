@@ -187,6 +187,7 @@ html, body {
 .gs-input::placeholder { color: var(--gs-muted); }
 .gs-input:focus-visible { border-color: var(--gs-accent); box-shadow: 0 0 0 3px var(--gs-accent-ring); }
 .gs-input:disabled { opacity: 0.55; }
+.gs-input--token { width: 220px; max-width: 100%; }
 
 /* ---------- 公钥查看 ---------- */
 .gs-pubkey {

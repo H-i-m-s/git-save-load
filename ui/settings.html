@@ -70,6 +70,37 @@
       </p>
     </section>
 
+    <!-- 2 · GitHub 令牌（加密存放） -->
+    <section class="gs-card" id="sec-token">
+      <h2 class="gs-card__title">GitHub 令牌（加密存放）</h2>
+      <p class="gs-card__desc">令牌只以密文落在本 App 数据目录（Windows 用 DPAPI 按当前用户加密）；配置后 gh 命令按次注入，不动你系统里的 gh 登录态。</p>
+
+      <div class="gs-row">
+        <div class="gs-row__label">
+          <span>令牌</span>
+          <span class="gs-row__hint">粘贴个人访问令牌（PAT）。已存令牌不会回显，留空保存即清除。</span>
+        </div>
+        <div class="gs-row__control">
+          <input class="gs-input gs-input--token" id="token-input" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_… 或 github_pat_…" />
+          <button class="gs-btn" id="token-save" type="button">保存</button>
+          <button class="gs-btn gs-btn--danger" id="token-clear" type="button">清除</button>
+        </div>
+      </div>
+
+      <div class="gs-row">
+        <div class="gs-row__label"><span>状态</span></div>
+        <div class="gs-row__control"><span class="gs-badge" id="token-state" data-state="off">未配置</span></div>
+      </div>
+      <div class="gs-row">
+        <div class="gs-row__label"><span>保护方式</span></div>
+        <div class="gs-row__control"><span class="gs-mono" id="token-protection">—</span></div>
+      </div>
+      <div class="gs-row">
+        <div class="gs-row__label"><span>存放位置</span></div>
+        <div class="gs-row__control"><span class="gs-mono" id="token-location">—</span></div>
+      </div>
+    </section>
+
     <!-- 2 · 命令行工具 -->
     <section class="gs-card" id="sec-tools">
       <h2 class="gs-card__title">命令行工具</h2>

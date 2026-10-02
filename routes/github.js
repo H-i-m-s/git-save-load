@@ -4,6 +4,8 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { getCachedToken } from "../lib/secret.js";
+
 // Hana v2 的 App 跑在独立子进程里，宿主只传 PATH / HOME / TMPDIR / LANG 四个
 // 环境变量，所以 process.env 里没有 APPDATA、LOCALAPPDATA、USERPROFILE。
 // gh 靠 %APPDATA%\GitHub CLI 找自己的登录配置，路径拿不到就会报
@@ -68,6 +70,10 @@ function ghConfigDir() {
 export function ghEnvironment() {
   const env = { ...process.env };
   if (!env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE;
+  // App 自持的加密令牌（若已配置并已解进缓存）：按次注入 GH_TOKEN，gh 优先用它。
+  // 未配置时保持原状，继续走 gh 自己的系统 keyring / 登录态。
+  const token = getCachedToken();
+  if (token) env.GH_TOKEN = token;
   // 补上 gh 的登录配置目录，否则 App 进程里的 gh 一律认为"未登录"。
   // 这里不能用 existsSync 校验：App 受 Node 权限模型限制，安装目录/dataDir
   // 之外的路径 existsSync 会直接抛（被 safeExists 吞成 false）。注册表已经

@@ -16,6 +16,8 @@ const API = {
   signRotate: "/settings/signing/rotate",
   signToggle: "/settings/signing/toggle",
   pubkey: "/settings/signing/pubkey",
+  token: "/settings/token",
+  tokenClear: "/settings/token/clear",
 };
 const POLL_WAIT_MS = 3000;
 const CODE_COPIED_RESET_MS = 1800;
@@ -50,6 +52,12 @@ const ui = {
   signName: el("sign-name"),
   signEmail: el("sign-email"),
   pubkeyView: el("pubkey-view"),
+  tokenInput: el("token-input"),
+  tokenSave: el("token-save"),
+  tokenClear: el("token-clear"),
+  tokenState: el("token-state"),
+  tokenProtection: el("token-protection"),
+  tokenLocation: el("token-location"),
   confirmBar: el("confirm-bar"),
   confirmText: el("confirm-text"),
   confirmOk: el("confirm-ok"),
@@ -57,7 +65,7 @@ const ui = {
   note: el("gs-note"),
 };
 
-let state = { loading: true, error: "", accountId: "", git: {}, gh: {}, gpg: {}, signing: {}, device: {} };
+let state = { loading: true, error: "", accountId: "", git: {}, gh: {}, gpg: {}, signing: {}, device: {}, token: {} };
 let pending = null; // "login" | "logout" | "generate" | "rotate" | null
 let confirmRequest = null; // { message, onOk }
 let pollTimer = null;
@@ -271,11 +279,32 @@ function renderConfirm() {
   if (active) ui.confirmText.textContent = confirmRequest.message;
 }
 
+function renderToken() {
+  const busy = pending === "token";
+  const info = state.token || {};
+  if (state.loading) {
+    ui.tokenState.dataset.state = "off";
+    ui.tokenState.textContent = "…";
+    ui.tokenProtection.textContent = "…";
+    ui.tokenLocation.textContent = "…";
+  } else {
+    setBadge(ui.tokenState, !!info.configured, "已配置", "未配置");
+    ui.tokenProtection.textContent = info.backendAvailable === false
+      ? "本平台无可用加密后端"
+      : (info.protection || "—");
+    ui.tokenLocation.textContent = info.location || "—";
+  }
+  ui.tokenInput.disabled = busy;
+  ui.tokenSave.disabled = busy;
+  ui.tokenClear.disabled = busy || !info.configured;
+}
+
 function render() {
   ui.root.setAttribute("aria-busy", state.loading ? "true" : "false");
   renderAccount();
   renderTools();
   renderSigning();
+  renderToken();
   renderConfirm();
 }
 
@@ -308,6 +337,7 @@ async function refresh() {
     render();
     setNote(`${state.error}。点右上角「重新检测」重试。`, "err");
   }
+  loadTokenInfo();
 }
 
 // 账号数字 ID 是联网查询，放到首屏之后异步补，失败就留空，不影响其它部分。
@@ -322,6 +352,17 @@ async function loadAccountId() {
   } catch {
     /* 拿不到就算了，状态页其它内容照常 */
   }
+}
+
+// 令牌状态摘要（不联网，只读本地记录）：独立请求，失败不波及其它部分。
+async function loadTokenInfo() {
+  try {
+    const { data } = await withTimeout(api(API.token), ACCOUNT_TIMEOUT_MS, "令牌状态请求");
+    if (data?.ok) state.token = data;
+  } catch {
+    /* 读不到就保持默认值 */
+  }
+  renderToken();
 }
 
 // ---------------------------------------------------------------- 动作
@@ -401,6 +442,55 @@ ui.signSwitch.addEventListener("change", async () => {
   }
   setNote(enabled ? "已开启：后续「存档」会签名。" : "已关闭提交签名。", enabled ? "ok" : "");
   refresh();
+});
+
+// ---------------------------------------------------------------- GitHub 令牌
+
+async function saveToken() {
+  const token = ui.tokenInput.value.trim();
+  if (!token) { setNote("请先粘贴 GitHub 令牌再保存（留空保存 = 清除）。", "warn"); return; }
+  pending = "token";
+  setNote("正在加密保存令牌…");
+  render();
+  try {
+    const { data } = await withTimeout(apiPost(API.token, { token }), STATUS_TIMEOUT_MS, "保存令牌");
+    if (!data?.ok) setNote(`保存失败：${data?.message || "未知错误"}`, "err");
+    else {
+      ui.tokenInput.value = "";
+      state.token = data.token || state.token;
+      setNote(`令牌已加密保存（${data.protection || "加密后端"}），后续 gh 命令会按次注入。`, "ok");
+    }
+  } catch (error) {
+    setNote(`保存失败：${error?.message ?? error}`, "err");
+  }
+  pending = null;
+  render();
+  loadTokenInfo();
+}
+
+const confirmTokenClear = () =>
+  askConfirm("确认清除已保存的 GitHub 令牌？清除后 gh 命令会回到用你自己的登录态。", doTokenClear);
+
+async function doTokenClear() {
+  clearConfirm();
+  pending = "token";
+  render();
+  try {
+    const { data } = await apiPost(API.tokenClear);
+    if (!data?.ok) setNote(`清除失败：${data?.message || "未知错误"}`, "err");
+    else { state.token = data.token || {}; setNote("令牌已清除。", "ok"); }
+  } catch (error) {
+    setNote(`清除失败：${error?.message ?? error}`, "err");
+  }
+  pending = null;
+  render();
+  loadTokenInfo();
+}
+
+ui.tokenSave.addEventListener("click", saveToken);
+ui.tokenClear.addEventListener("click", confirmTokenClear);
+ui.tokenInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") { event.preventDefault(); saveToken(); }
 });
 
 async function copyPubkey() {

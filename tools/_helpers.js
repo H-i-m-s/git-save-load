@@ -53,19 +53,101 @@ export function resolveGitPath() {
 
 /**
  * 执行 git 命令（数组传参，不经过 shell）。
+ * opts.env 存在时在 process.env 之上叠加（提交签名需要注入隔离 GNUPGHOME）。
  */
 export function gitExec(cwd, args, opts = {}) {
   const timeout = opts.timeout || 60000;
   // maxBuffer 预留 10MB：大仓库单次提交可能包含数千文件，git log --numstat
   // 输出可超 Node 默认的 1MB，不足时报 ENOBUFS（实测 project 仓库触发过）。
-  return execFileSync(resolveGitPath(), args, {
+  const options = {
     cwd,
     encoding: "utf8",
     timeout,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: opts.maxBuffer || 10 * 1024 * 1024,
-  }).trim();
+  };
+  if (opts.env) options.env = { ...process.env, ...opts.env };
+  return execFileSync(resolveGitPath(), args, options).trim();
+}
+
+/**
+ * 通用子进程执行（数组传参，不经过 shell），失败不抛异常，返回归一化结果。
+ * 供透传工具（git_exec / gh_exec / git_push）读取 stderr 并可读化错误。
+ * @returns {{ ok: boolean, code: number|null, errCode: string|null, stdout: string, stderr: string }}
+ */
+export function execCapture(bin, args, opts = {}) {
+  const timeout = opts.timeout || 60000;
+  const options = {
+    encoding: "utf8",
+    timeout,
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: opts.maxBuffer || 10 * 1024 * 1024,
+  };
+  if (opts.cwd) options.cwd = opts.cwd;
+  if (opts.env) options.env = opts.env;
+  try {
+    const stdout = execFileSync(bin, args, options);
+    return { ok: true, code: 0, errCode: null, stdout: String(stdout || "").trim(), stderr: "" };
+  } catch (err) {
+    return {
+      ok: false,
+      code: typeof err?.status === "number" ? err.status : null,
+      errCode: err?.code || null,
+      stdout: String(err?.stdout || "").trim(),
+      stderr: String(err?.stderr || err?.message || "").trim(),
+    };
+  }
+}
+
+/** git 版 execCapture：定位 git 后执行，opts.env 叠加在 process.env 之上。 */
+export function gitExecCapture(cwd, args, opts = {}) {
+  const env = opts.env ? { ...process.env, ...opts.env } : undefined;
+  return execCapture(resolveGitPath(), args, { ...opts, cwd, env });
+}
+
+/**
+ * 归一化超时秒数：非法/缺省回落 fallbackSec，取值夹在 [1, maxSec]。
+ */
+export function normalizeTimeoutSec(value, fallbackSec = 60, maxSec = 600) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallbackSec;
+  return Math.min(Math.max(1, Math.floor(n)), maxSec);
+}
+
+// 本 App 在宿主里的 id（manifest.id），用于从 HANA_HOME 反推数据目录。
+const APP_ID = "git-save-load";
+
+/** 读环境变量：AppHost 下读不存在的键会抛错，统一吞成空串。 */
+function safeEnv(name) {
+  try {
+    const v = process.env[name];
+    return typeof v === "string" && v ? v : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * 解析 App 数据目录（隔离 GPG 密钥环 / signing.json 所在）。
+ * 优先用 ctx.dataDir（宿主/集成方注入时）；否则由 HANA_HOME 反推
+ * <HANA_HOME>/app-data/<appId>（v2 隔离进程下该目录可写）。定位不到返回 ""。
+ */
+export function resolveDataDir(ctx = {}) {
+  const explicit = ctx && typeof ctx.dataDir === "string" ? ctx.dataDir.trim() : "";
+  if (explicit) return explicit;
+  const home = safeEnv("HANA_HOME");
+  if (!home) return "";
+  return join(home, "app-data", APP_ID);
+}
+
+/** Windows 绝对路径 → MSYS POSIX 路径（C:\a\b → /c/a/b）；非 Windows 路径原样返回。 */
+export function toPosixPath(p) {
+  let s = String(p || "").replace(/\\/g, "/");
+  const m = s.match(/^([A-Za-z]):\/(.*)$/);
+  if (m) s = `/${m[1].toLowerCase()}/${m[2]}`;
+  return s;
 }
 
 /**

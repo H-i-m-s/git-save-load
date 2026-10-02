@@ -15,6 +15,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node
 import { join } from "node:path";
 
 import { resolveGhPath, ghEnvironment } from "./github.js";
+import { saveSecret, clearSecret, secretInfo } from "../lib/secret.js";
 
 const GH_HOST = "github.com";
 const DEVICE_URL = "https://github.com/login/device";
@@ -487,6 +488,44 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
   });
 
   app.post("/settings/open-device", async (c) => c.json({ ok: openExternal(DEVICE_URL) }));
+
+  // ======== GitHub 令牌（App 自持加密存放） ========
+  // 令牌不落明文，接口也绝不回显明文，只回状态摘要。
+
+  // 状态摘要：configured / protection / location / backendAvailable / readable
+  app.get("/settings/token", async (c) => {
+    try {
+      return c.json({ ok: true, ...secretInfo(dataDir) });
+    } catch (e) {
+      return c.json({ ok: false, message: String(e?.message || e) });
+    }
+  });
+
+  // 保存令牌（body.token 为空串视为清除）
+  app.post("/settings/token", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const token = String(body.token ?? "");
+      if (!token) {
+        await clearSecret({ dataDir });
+        return c.json({ ok: true, cleared: true, token: secretInfo(dataDir) });
+      }
+      const saved = await saveSecret({ dataDir, token });
+      return c.json({ ok: true, protection: saved.protection, token: secretInfo(dataDir) });
+    } catch (e) {
+      return c.json({ ok: false, message: String(e?.message || e) });
+    }
+  });
+
+  // 清除令牌
+  app.post("/settings/token/clear", async (c) => {
+    try {
+      await clearSecret({ dataDir });
+      return c.json({ ok: true, cleared: true, token: secretInfo(dataDir) });
+    } catch (e) {
+      return c.json({ ok: false, message: String(e?.message || e) });
+    }
+  });
 
   // 生成隔离签名密钥（已有则原样返回）
   app.post("/settings/signing/generate", async (c) => {

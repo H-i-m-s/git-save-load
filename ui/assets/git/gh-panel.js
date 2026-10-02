@@ -96,7 +96,7 @@ function showGhHelp(e) {
 }
 
 function switchGhTab(tab) {
-  const validTabs = ["create", "connect", "clone", "list", "search"];
+  const validTabs = ["create", "connect", "clone", "list", "search", "pr"];
   if (!validTabs.includes(tab)) tab = "create";
   saveGhTab(tab);
   ensureGhOpen();
@@ -113,6 +113,7 @@ function switchGhTab(tab) {
   updateGhBodyHeight();
   if (tab === "connect") { loadGhConnectRepos(false); loadLocalRemotes(); }
   if (tab === "list") loadGhList(false);
+  if (tab === "pr" && typeof loadPrList === "function") loadPrList(false);
 }
 
 // 重新贴合 ghBody 高度。逻辑：只有在打开状态才设，避免收起时无关赋值
