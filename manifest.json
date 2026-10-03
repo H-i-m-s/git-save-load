@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "git-save-load",
   "name": "Git Save/Load",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "entry": "index.js",
   "icon": "assets/icon.svg",
   "description": "Git 存档与读档。一键存档、版本历史浏览、分支管理、GitHub 仓库与 PR 管理、带二次确认的远程覆盖推送；为模型提供 git / gh 工具（含子命令透传与 PR 生命周期），并支持隔离 GPG 签名提交与加密存放的 GitHub 令牌。",

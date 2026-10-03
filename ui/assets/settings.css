@@ -37,6 +37,14 @@
 /* .gs-switch 等设了 display，会盖掉 HTML 的 hidden 属性，显式兜底 */
 [hidden] { display: none !important; }
 
+/* 滚动条：宿主在 win32 上特意不接管（保留系统原生），插件页自己收细成中性半透明。
+   色值跟宿主样式里那套同一个路子（rgba(128,128,128,.32) + transparent），
+   中性灰在深浅两种底色上都成立，不必跟着主题换色。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.32) transparent;
+}
+
 html, body {
   margin: 0;
   min-height: 100%;
@@ -48,11 +56,17 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 盒子链与远程访问设置页完全一致：body 只出横向 12px，列的宽度就是卡片宽度。
+   这样在任何容器宽度下两个页面的卡片外宽严格相等：min(640px, 可用宽 - 24)。 */
+body { padding: 0 12px; }
+
 .gs {
   box-sizing: border-box;
-  max-width: 760px;
+  /* 这里就是卡片外宽（远程访问同款 640px）。横向内边距归 0，
+     不再靠 +12px 去抵消自身内边距——那套算法只有在容器足够宽时才跟远程访问对上。 */
+  max-width: 640px;
   margin: 0 auto;
-  padding: 6px 6px 30px;
+  padding: 6px 0 30px;
   display: flex;
   flex-direction: column;
   gap: var(--gs-gap);
