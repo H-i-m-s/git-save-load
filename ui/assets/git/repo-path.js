@@ -109,17 +109,9 @@ async function renderRepoHistory() {
       '<button data-del="' + i + '" class="hist-del" title="从历史中移除">×</button>' +
     '</div>';
   }).join("");
-  // 并行获取每条仓库的元信息，填补 origin 行（布局高度早已预留，不跳）。
-  // 用批量接口一次拉齐（服务端异步并行），避免逐条请求串行排队；
-  // 已缓存的路径直接命中，不发请求。
-  await fetchRepoInfoBatch(history);
-  await Promise.all(history.map(async (p) => {
-    const info = await fetchRepoInfo(p);
-    const slot = el.querySelector('.hist-row[data-path="' + CSS.escape(p) + '"] .hist-slot');
-    if (!slot) return;
-    const { html } = formatRepoDisplay(p, info);
-    slot.innerHTML = html;
-  }));
+  // 交互先绑：列表一画出来就能点、能双击切换。origin 元信息在下面那段批量请求里，
+  // 首屏没有缓存时要跑服务端 git 探测（20 条历史能见到秒级），把绑定放在它后面就会
+  // 变成「列表看得见、点着没反应」——也就是要等加载完才能切过去。
   el.onclick = function(e) {
     var row = e.target.closest("div.hist-row");
     if (!row) return;
@@ -154,6 +146,17 @@ async function renderRepoHistory() {
     _highlightedPath = p;
     savePath();
   };
+  // 并行获取每条仓库的元信息，填补 origin 行（布局高度早已预留，不跳）。
+  // 用批量接口一次拉齐（服务端异步并行），避免逐条请求串行排队；
+  // 已缓存的路径直接命中，不发请求。这一步只影响 origin 文字，不挡交互。
+  await fetchRepoInfoBatch(history);
+  await Promise.all(history.map(async (p) => {
+    const info = await fetchRepoInfo(p);
+    const slot = el.querySelector('.hist-row[data-path="' + CSS.escape(p) + '"] .hist-slot');
+    if (!slot) return;
+    const { html } = formatRepoDisplay(p, info);
+    slot.innerHTML = html;
+  }));
 }
 
 // 仅刷新历史列表的高亮态（避免重新拉仓库元信息）
