@@ -769,7 +769,7 @@ node scripts/pack.mjs --out <dir>         # 自定义输出目录
 node scripts/pack.mjs --publisher <name>  # 指定 entry.json 的 publisher（默认 manifest.id）
 ```
 
-产物三个文件：`git-save-load-v<version>.zip`、同名 `.sha256`、`git-save-load-v<version>.entry.json`。zip 内所有条目带顶层 `git-save-load/` 前缀（宿主安装时自动剥壳），条目名一律用正斜杠（宿主解压器 yauzl 拒绝反斜杠条目）。
+产物三个文件：`git-save-load-v<version>.zip`、同名 `.sha256`、`git-save-load-v<version>.entry.json`。zip 内条目平铺在包根（`manifest.json`、`index.js` 直接在最外层，不套 `git-save-load/` 目录，因为宿主的校验器只在包根找 `manifest.json`）；zip 由安装器解到 apps 下的 `<id>/`。条目名一律用正斜杠（宿主解压器 yauzl 拒绝反斜杠条目）。
 
 打包排除项：任意层级的 `.git`、`.github`、`node_modules`、`dist`、`scripts`、`tests`；按文件名排除 `.DS_Store`、`Thumbs.db`、`desktop.ini`、`._*`、`*.tmp` / `.temp` / `.swp` / `.swo` / `.log` / `.bak`、`*~`；符号链接一律跳过。
 
