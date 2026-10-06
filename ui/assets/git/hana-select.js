@@ -47,7 +47,10 @@ function replaceSelectWithHanaSelect(selectId, opts) {
     return "";
   }
   function refresh() {
-    label.textContent = getLabel(state.currentValue);
+    var currentLabel = getLabel(state.currentValue);
+    label.textContent = currentLabel;
+    // 触发器宽度受限时文字会省略号截断，用原生 tooltip 保留完整值
+    trigger.title = currentLabel;
     var cEls = panel.children;
     for (var i = 0; i < cEls.length; i++) {
       var cls = cEls[i].classList;

@@ -133,6 +133,8 @@ select:disabled{opacity:.5;cursor:not-allowed}
   font-size:11px;
   padding:4px 8px;cursor:pointer;user-select:none;
   min-width:80px;
+  max-width:100%;
+  box-sizing:border-box;
   transition:border-color .15s ease,box-shadow .15s ease;
   outline:none;
 }

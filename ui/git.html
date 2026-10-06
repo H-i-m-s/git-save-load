@@ -674,8 +674,8 @@
     <input type="text" id="ghEditName" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
     <div style="font-size:12px;color:var(--hana-fg-muted,#6b7280);margin:12px 0 4px 0">描述</div>
     <input type="text" id="ghEditDesc" placeholder="仓库描述" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);outline:none;box-sizing:border-box">
-    <div style="display:flex;gap:12px;margin-top:12px">
-      <div style="flex:1">
+    <div style="display:flex;gap:12px;margin-top:12px;min-width:0">
+      <div style="flex:1;min-width:0">
         <div style="font-size:12px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px">开源协议</div>
         <select id="ghEditLicense" style="width:100%;padding:7px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);box-sizing:border-box">
           <option value="">不修改</option>
@@ -688,7 +688,7 @@
           <option value="Unlicense">The Unlicense</option>
         </select>
       </div>
-      <div style="flex:1">
+      <div style="flex:1;min-width:0">
         <div style="font-size:12px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px">可见性</div>
         <select id="ghEditVisibility" style="width:100%;padding:7px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:6px;font-size:12px;background:var(--hana-bg,#f5f6f8);color:var(--hana-fg,#1a1d24);box-sizing:border-box">
           <option value="public">公开</option>
