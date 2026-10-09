@@ -653,7 +653,10 @@ git-save-load/
 │   ├── config.json        # 唯一按插件改的文件（打包排除表、发布者、仓库、分支）
 │   ├── selfcheck.mjs      # 结构自检（每个插件各写各的）
 │   ├── pack.mjs           # 零依赖出包（读 config.json）
-│   ├── publish.mjs        # 发布引擎：预检 / 写入版本号 / 出包 / 发 Release / 投稿
+│   ├── publish.mjs        # 发布引擎：命令行、配置与清单、七阶段流程
+│   ├── console.mjs        # 终端输出与带着原因退出（所有模块共用）
+│   ├── exec.mjs           # 调 git / gh，失败分类与退避重试
+│   ├── market.mjs         # 市场的规矩与投稿动作（MARKET 常量在这里）
 │   ├── ship.ps1           # 发布窗口（publish.mjs 的界面壳）
 │   ├── 发布.cmd           # 双击这个
 │   ├── 投稿规范.md         # 市场规矩、提交格式、网络错误怎么处理
@@ -760,7 +763,10 @@ runner 会为每个用例 spawn 一个**受限模式**子进程（`--permission`
 | `config.json` | 唯一要按插件改的文件：打包排除表、`selfcheck` 模式、发布者、仓库、默认分支 |
 | `selfcheck.mjs` | 结构自检：manifest 必备字段、entry / icon 存在、`routes/` 与 `tools/` 与 `lib/` 全量 JS 语法、`ui/*.html` 引用的本地资源是否存在、manifest 声明的 route 对应页面是否存在 |
 | `pack.mjs` | 零依赖出包（自带最小 ZIP 写入器，不调外部 zip / tar，不用 npm 库）；出包前先跑 selfcheck |
-| `publish.mjs` | 发布引擎：预检 → 写入版本号 → 出包 → 提交并打 tag → 发 Release → 向市场提 PR。三种模式（`pack` / `release` / `publish`）都幂等，可单独重跑 |
+| `publish.mjs` | 编排：命令行参数、配置与清单、七阶段流程（预检 → 写入版本号 → 出包 → 提交并打 tag → 发 Release → 向市场提 PR）。三种模式（`pack` / `release` / `publish`）都幂等，可单独重跑 |
+| `console.mjs` | 终端输出与带着「为什么 + 怎么办」退出；所有模块共用这一层 |
+| `exec.mjs` | 调 git / gh，给失败分类（网络 / 限速 / 认证 / 事实），按类退避重试；唯一 fork 子进程的地方 |
+| `market.mjs` | 市场规矩（`MARKET` 常量：附件命名、512 KiB 上限、tag 字符集、批准记录格式）与投稿动作 |
 | `ship.ps1` + `发布.cmd` | 发布窗口。双击 `发布.cmd`，选模式、填版本号和更新日志，按按钮 |
 | `投稿规范.md` | 市场规矩（附件命名、512 KiB 上限、tag 字符集）、提交格式、网络错误分类与处理、断点续跑 |
 | `自测.md` | 选填。写好后会自动抄进市场 PR 正文的「自测报告」一节 |
