@@ -649,10 +649,16 @@ git-save-load/
 │   ├── gh_exec.js         # 任意 gh 子命令透传
 │   ├── git_push.js        # 语义化推送（force 仅 force-with-lease）
 │   └── gh_pr.js           # PR 生命周期（create/list/view/merge）
-├── scripts/               # 开发脚本（自检 / 出包 / 发版）；打包时整目录排除
-│   ├── selfcheck.mjs
-│   ├── pack.mjs
-│   └── release.ps1
+├── dev/                   # 开发工具（自检 / 出包 / 发版 / 投稿）；打包时整目录排除
+│   ├── config.json        # 唯一按插件改的文件（打包排除表、发布者、仓库、分支）
+│   ├── selfcheck.mjs      # 结构自检（每个插件各写各的）
+│   ├── pack.mjs           # 零依赖出包（读 config.json）
+│   ├── publish.mjs        # 发布引擎：预检 / 写入版本号 / 出包 / 发 Release / 投稿
+│   ├── ship.ps1           # 发布窗口（publish.mjs 的界面壳）
+│   ├── 发布.cmd           # 双击这个
+│   ├── 投稿规范.md         # 市场规矩、提交格式、网络错误怎么处理
+│   ├── 自测.md            # 选填；写了就自动抄进市场 PR 正文
+│   └── pr-assets/         # 给市场 PR 看的截图（出包时排除）
 ├── tests/                 # 自动化测试（受限模式运行）；打包时整目录排除
 │   ├── run.mjs            # 一键 runner
 │   ├── cases/             # 5 个用例
@@ -742,54 +748,79 @@ runner 会为每个用例 spawn 一个**受限模式**子进程（`--permission`
 
 覆盖范围：结构自检、入口装配（8 个工具 + 路由端点）、`POST /api/config` 白名单回归、`git_exec` / `git_push` 行为（含 force 语义）、令牌加密存取与解密失败语义。失败会逐条定位到用例名与断言点，并以非零码退出。用例清单见 [`tests/README.md`](./tests/README.md)。
 
-测试与 `scripts/` 一样**不进安装包**。
+测试与 `dev/` 一样**不进安装包**。
 
-### 打包与自检脚本
+### 开发工具（dev/）
 
-`scripts/` 下三个开发脚本，都不进安装包（打包时整目录排除）：
+`dev/` 下的一切都**不进安装包**（打包时整目录排除）。插件相关的东西全部从 `dev/config.json` 读，
+代码里不硬编码；换到别的插件时整目录复制过去，只改 `config.json`。
 
-| 脚本 | 用途 |
+| 文件 | 用途 |
 | --- | --- |
-| `selfcheck.mjs` | 结构自检：manifest 必备字段、entry / icon 存在、entry 与 `routes/` 与 `tools/` 全量 JS 语法、`ui/*.html` 引用的本地资源是否存在、manifest 声明的 route 对应页面是否存在 |
+| `config.json` | 唯一要按插件改的文件：打包排除表、`selfcheck` 模式、发布者、仓库、默认分支 |
+| `selfcheck.mjs` | 结构自检：manifest 必备字段、entry / icon 存在、`routes/` 与 `tools/` 与 `lib/` 全量 JS 语法、`ui/*.html` 引用的本地资源是否存在、manifest 声明的 route 对应页面是否存在 |
 | `pack.mjs` | 零依赖出包（自带最小 ZIP 写入器，不调外部 zip / tar，不用 npm 库）；出包前先跑 selfcheck |
-| `release.ps1` | 出包与发版：默认只出包（调 `pack.mjs`，产物落 `dist`）；加 `-Publish` 才走发布门禁并创建 GitHub Release |
+| `publish.mjs` | 发布引擎：预检 → 写入版本号 → 出包 → 提交并打 tag → 发 Release → 向市场提 PR。三种模式（`pack` / `release` / `publish`）都幂等，可单独重跑 |
+| `ship.ps1` + `发布.cmd` | 发布窗口。双击 `发布.cmd`，选模式、填版本号和更新日志，按按钮 |
+| `投稿规范.md` | 市场规矩（附件命名、512 KiB 上限、tag 字符集）、提交格式、网络错误分类与处理、断点续跑 |
+| `自测.md` | 选填。写好后会自动抄进市场 PR 正文的「自测报告」一节 |
+| `pr-assets/` | 给市场 PR 看的截图；提 PR 时按文件名顺序以图片链接列进正文 |
 
 **结构自检**
 
 ```bash
-node scripts/selfcheck.mjs            # 人类可读；不通过时非零退出
-node scripts/selfcheck.mjs --json     # { ok, errors, warnings }
+node dev/selfcheck.mjs            # 人类可读；不通过时非零退出
+node dev/selfcheck.mjs --json     # { ok, errors, warnings }
 ```
 
 **本地出包**
 
 ```bash
-node scripts/pack.mjs                     # 产物落 <app>/dist
-node scripts/pack.mjs --out <dir>         # 自定义输出目录
-node scripts/pack.mjs --publisher <name>  # 指定 entry.json 的 publisher（默认 manifest.id）
+node dev/pack.mjs                     # 产物落 config.json 里 pack.out 指定的目录（默认 dist）
+node dev/pack.mjs --out <dir>         # 自定义输出目录
+node dev/pack.mjs --publisher <name>  # 覆盖 publisher（必须与市场登记值一致）
+node dev/pack.mjs --no-selfcheck      # 跳过自检
 ```
 
-产物三个文件：`git-save-load-v<version>.zip`、同名 `.sha256`、`git-save-load-v<version>.entry.json`。zip 内条目平铺在包根（`manifest.json`、`index.js` 直接在最外层，不套 `git-save-load/` 目录，因为宿主的校验器只在包根找 `manifest.json`）；zip 由安装器解到 apps 下的 `<id>/`。条目名一律用正斜杠（宿主解压器 yauzl 拒绝反斜杠条目）。
+产物：`<id>-v<version>.zip`、同名 `.sha256`、`app-<id>-<version>.entry.json`。
+zip 内条目平铺在包根（`manifest.json`、`index.js` 直接在最外层，不套 `<id>/` 目录，因为宿主的校验器只在包根找 `manifest.json`）；
+zip 由安装器解到 apps 下的 `<id>/`。条目名一律用正斜杠（宿主解压器 yauzl 拒绝反斜杠条目）。
 
-打包排除项：任意层级的 `.git`、`.github`、`node_modules`、`dist`、`scripts`、`tests`；按文件名排除 `.DS_Store`、`Thumbs.db`、`desktop.ini`、`._*`、`*.tmp` / `.temp` / `.swp` / `.swo` / `.log` / `.bak`、`*~`；符号链接一律跳过。
+排除项写在 `config.json` 的 `pack` 段里：`excludeDirs`（任意层级的目录名）、`excludeNames`、
+`excludePrefixes`、`excludeExtensions`、`excludeSuffixes`；符号链接一律跳过。
 
-**出包与发版**
+### 出包 / 发版 / 投稿
 
-默认只出包：
+双击：
+
+```text
+dev\发布.cmd
+```
+
+或者命令行：
 
 ```powershell
-.\scripts\release.ps1                                   # 只出包（默认）：跑完 dist 就有三件产物，不联网
+node dev/publish.mjs --mode=pack                                  # 只打包
+node dev/publish.mjs --mode=release --version=3.2.1 --notes="- 修复xxx"
+node dev/publish.mjs --mode=publish --version=3.2.1 --notes-file=notes.md
+node dev/publish.mjs --mode=publish --version=3.2.1 --dry-run     # 干跑：什么都不改，只检查
+node dev/publish.mjs --mode=publish --version=3.2.1 --verify      # 投稿前用市场同步器复核自己这条
 ```
 
-要发布到 GitHub Release，加 `-Publish`：
+| 模式 | 做什么 | 出网 | 改你的仓库 |
+| --- | --- | --- | --- |
+| `pack` | 写版本号 + 出包到 `dist/` | 否 | 只改 `manifest.json` 的 version |
+| `release` | pack + 提交打 tag 推送 + 建 GitHub Release | 是 | 一次提交 + 一个 tag |
+| `publish` | release + 向市场仓库开登记 PR | 是 | 同上，另在你 fork 上落一个提交 |
 
-```powershell
-.\scripts\release.ps1 -Publish                           # 出包并发布
-.\scripts\release.ps1 -Publish -Notes "- 修复xxx`n- 新增yyy"   # 附带发布说明
-.\scripts\release.ps1 -Publish -SkipCleanCheck            # 发布时跳过工作区干净检查
-```
+阶段顺序固定：配置 → 预检 → 写入版本号 → 出包 → 提交并打 tag → 发 Release → 投稿。
+版本号必须排在出包前面，因为两个产物的文件名里都带着它。
 
-不带 `-Publish` 时是纯本地操作：不查工作区、不联网、不碰 gh。加 `-Publish` 才会在出包之后走发布门禁：工作区干净、本地提交已推送到 `origin/master`、gh 已登录、该 tag 的 Release 不存在（防同版本发两次不同内容）、`manifest.json` 的 version 与 tag 强绑定。任一没过就停在发布之前，已出好的包不受影响。`-PackageOnly` 是历史写法，等同于默认行为。
+**每一步都幂等**：Release 已存在且附件一致就跳过；市场 `approvals.json` 里已经是这个 tag + sha256 就跳过提 PR；
+分支已存在就直接更新到新提交。中途失败原样重跑同一个模式即可，不会重复发布。
+
+**投稿全程走 GitHub API**，在你的 fork 上直接落一个提交，**本地不留市场仓库的副本**。
+改哪两个文件、改成什么、PR 正文长什么样，见 [`dev/投稿规范.md`](./dev/投稿规范.md)。
 
 ---
 
