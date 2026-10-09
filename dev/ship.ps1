@@ -110,6 +110,11 @@ $txtVersion.Size = New-Object System.Drawing.Size(140, 24)
 $txtVersion.Text = Get-NextVersion
 $form.Controls.Add($txtVersion)
 
+# 只打包时这一栏照样会写进 manifest.json（只是不提交），所以这句话只在那种模式下露出来。
+$lblVersionHint = Add-Label "会写进 manifest.json，本次不提交" 270 140 340
+$lblVersionHint.ForeColor = [System.Drawing.Color]::FromArgb(90, 90, 100)
+$lblVersionHint.Visible = $false
+
 $lblNotes = Add-Label "这次改了什么（会同时写进 Release 说明和 PR 正文）" 16 170 520
 $txtNotes = New-Object System.Windows.Forms.TextBox
 $txtNotes.Location = New-Object System.Drawing.Point(20, 192)
@@ -186,6 +191,7 @@ $form.Controls.Add($btnClose)
 # ── 模式切换 ─────────────────────────────────────────────────────────────────
 # 版本号在三种模式下都要能用：它决定 zip 和条目附件的文件名。
 # 真正只有发布才用得到的是「这次改了什么」那段文字。
+# 只打包时版本号照样会写进 manifest.json（只是不提交），所以那一栏的标签要跟着模式换。
 function Sync-Mode {
   $isPack = $rbPack.Checked
   $txtNotes.Enabled = -not $isPack
@@ -193,14 +199,18 @@ function Sync-Mode {
   $chkVerify.Enabled = $rbPublish.Checked
 
   if ($isPack) {
-    $btnRun.Text = "打包"
+    $verLabel.Text = "打包用的版本"
+  } else {
     $verLabel.Text = "要发的版本"
+  }
+  $lblVersionHint.Visible = $isPack
+
+  if ($isPack) {
+    $btnRun.Text = "打包"
   } elseif ($rbRelease.Checked) {
     $btnRun.Text = "发布 Release"
-    $verLabel.Text = "要发的版本"
   } else {
     $btnRun.Text = "发布并投稿"
-    $verLabel.Text = "要发的版本"
   }
 }
 
