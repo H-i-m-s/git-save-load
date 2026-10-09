@@ -1,6 +1,6 @@
 ﻿#requires -Version 5.1
 <#
-dev/ship.ps1 — Git Save/Load 的发布窗口。
+dev/ship.ps1 — 发布窗口。标题取 manifest.json 的 name，不写死插件名。
 
 它本身不干活，只是 dev/publish.mjs 的一层壳：收三样东西（做什么、发几号、这次改了什么），
 把参数交给 publish.mjs，把它的输出实时刷到窗口里。
@@ -18,6 +18,21 @@ param([switch]$NoUI)
 
 $ErrorActionPreference = "Stop"
 
+$devDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$appRoot = Split-Path -Parent $devDir
+$publishScript = Join-Path $devDir "publish.mjs"
+$manifestPath = Join-Path $appRoot "manifest.json"
+
+# 标题跟着插件走，不写死：整个 dev/ 是要整目录复制到别的插件去的。
+# 放在 trap 之前算好，这样连 trap 弹的那个框也带着正确的名字。
+$appTitle = "发布"
+try {
+  $mName = [regex]::Match(
+    [System.IO.File]::ReadAllText($manifestPath, (New-Object System.Text.UTF8Encoding($false))),
+    '"name"\s*:\s*"([^"]+)"')
+  if ($mName.Success) { $appTitle = $mName.Groups[1].Value + " 发布" }
+} catch { }
+
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
@@ -25,17 +40,12 @@ Add-Type -AssemblyName System.Drawing
 trap {
   [System.Windows.Forms.MessageBox]::Show(
     ($_.Exception.Message + "`n`n" + $_.InvocationInfo.PositionMessage),
-    "Git Save/Load 发布", "OK", "Error") | Out-Null
+    $appTitle, "OK", "Error") | Out-Null
   exit 1
 }
 
-$devDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$appRoot = Split-Path -Parent $devDir
-$publishScript = Join-Path $devDir "publish.mjs"
-$manifestPath = Join-Path $appRoot "manifest.json"
-
 if (-not (Test-Path $publishScript)) {
-  [System.Windows.Forms.MessageBox]::Show("找不到 dev/publish.mjs，dev 目录可能不完整。", "Git Save/Load 发布", "OK", "Error") | Out-Null
+  [System.Windows.Forms.MessageBox]::Show("找不到 dev/publish.mjs，dev 目录可能不完整。", $appTitle, "OK", "Error") | Out-Null
   exit 1
 }
 
@@ -63,7 +73,7 @@ $fontUI = New-Object System.Drawing.Font("Microsoft YaHei UI", 9)
 $fontMono = New-Object System.Drawing.Font("Consolas", 9)
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Git Save/Load 发布"
+$form.Text = $appTitle
 $form.ClientSize = New-Object System.Drawing.Size(624, 596)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
@@ -266,7 +276,7 @@ $btnRun.add_Click({
 
   $node = Get-Command node -ErrorAction SilentlyContinue
   if (-not $node) {
-    [System.Windows.Forms.MessageBox]::Show("找不到 node，无法出包。", "Git Save/Load 发布", "OK", "Error") | Out-Null
+    [System.Windows.Forms.MessageBox]::Show("找不到 node，无法出包。", $appTitle, "OK", "Error") | Out-Null
     return
   }
 
@@ -277,13 +287,13 @@ $btnRun.add_Click({
   if ($wantsVersion) {
     $v = $txtVersion.Text.Trim()
     if ($v -notmatch '^\d+\.\d+\.\d+') {
-      [System.Windows.Forms.MessageBox]::Show("版本号要写成 3.2.1 这样。", "Git Save/Load 发布", "OK", "Warn") | Out-Null
+      [System.Windows.Forms.MessageBox]::Show("版本号要写成 3.2.1 这样。", $appTitle, "OK", "Warn") | Out-Null
       return
     }
     if ([string]::IsNullOrWhiteSpace($txtNotes.Text)) {
       $ans = [System.Windows.Forms.MessageBox]::Show(
         "还没写「这次改了什么」。Release 说明和 PR 正文都会缺这块，确定继续吗？",
-        "Git Save/Load 发布", "YesNo", "Question")
+        $appTitle, "YesNo", "Question")
       if ($ans -ne "Yes") { return }
     }
     $cliArgs += "--version=$v"
@@ -353,7 +363,7 @@ $btnOpenDir.add_Click({ Start-Process explorer.exe $devDir })
 
 $btnClose.add_Click({
   if ($script:proc) {
-    $ans = [System.Windows.Forms.MessageBox]::Show("还在跑，现在关掉会中断它。确定关吗？", "Git Save/Load 发布", "YesNo", "Warn")
+    $ans = [System.Windows.Forms.MessageBox]::Show("还在跑，现在关掉会中断它。确定关吗？", $appTitle, "YesNo", "Warn")
     if ($ans -ne "Yes") { return }
   }
   $form.Close()

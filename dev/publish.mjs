@@ -395,7 +395,6 @@ function releaseStage(config, ctx, args) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  step(`Git Save/Load 发布 · 模式 ${args.mode}${args.dryRun ? " · 干跑" : ""}`);
   const config = loadConfig();
   const manifest = parseManifest(readManifestText());
 
@@ -409,6 +408,10 @@ function main() {
     screenshots: [],
   };
   if (!ctx.id) throw die("manifest.json 缺 id");
+
+  // 标题跟着插件走，不写死：整个 dev/ 是要整目录复制到别的插件去的。
+  step(`${ctx.name} 发布 · 模式 ${args.mode}${args.dryRun ? " · 干跑" : ""}`);
+
   ctx.version = String(ctx.version).trim().replace(/^v/, "");
   ctx.effectiveVersion = manifest.version;
   if (!/^\d+\.\d+\.\d+/.test(ctx.version)) throw die(`版本号看起来不合法：${ctx.version}`, "用形如 3.2.1 的写法");
