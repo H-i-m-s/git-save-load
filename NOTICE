@@ -13,10 +13,10 @@ GitHana 以 MPL-2.0 授权，版权归 Copyright (c) 2026 Nyasers 所有，
 
 大部分内容为 GitHana 同名文件的衍生（已修改）：
   lib/secret.js
-  scripts/pack.mjs
+  release/pack.mjs
 
 包含部分衍生代码（已修改）：
-  scripts/selfcheck.mjs
+  release/selfcheck.mjs
   tools/gh_exec.js
   tools/gh_pr.js
   tools/git_exec.js
