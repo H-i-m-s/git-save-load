@@ -187,6 +187,13 @@ export function marketStage(config, ctx, args) {
   const fork = forkOf(config.publisher);
   const branch = branchOf(ctx.id);
 
+  // 材料不齐就开成 draft：带「（待补）」的正式 PR 是在敲别人的门，先把门敲轻一点。
+  // 补齐后在网页上点一下 Ready for review 即可，不用关掉重开。
+  const missing = [];
+  if (!(ctx.screenshots || []).length) missing.push("release/pr-assets/ 里还没有截图");
+  if (!ctx.selfTest) missing.push("release/自测.md 还是空的");
+  const draft = missing.length > 0;
+
   const baseSha = upstreamHeadSha();
   const baseCommit = ghApiJson(`repos/${fork}/git/commits/${baseSha}`);
   const baseTreeSha = baseCommit?.tree?.sha;
@@ -207,6 +214,7 @@ export function marketStage(config, ctx, args) {
   if (args.dryRun) {
     info(`[干跑] 会${edit.addedEnrollment ? "新增名录" : edit.changedEnrollment ? "修改名录" : "不动名录"}、${edit.changedApproval ? "更新批准" : "不动批准"}`);
     info(`[干跑] 会写到 ${fork} 的 ${branch}，PR 提到 ${MARKET.upstream}`);
+    info(`[干跑] PR 会开成 ${draft ? `draft（材料还缺：${missing.join("；")}）` : "正式（材料齐）"}`);
     return;
   }
 
@@ -223,18 +231,20 @@ export function marketStage(config, ctx, args) {
   const message = `${edit.addedEnrollment || edit.changedEnrollment ? "enroll" : "approve"}: app/${ctx.id} ${ctx.tag}`;
   const body = buildPrBody(config, ctx, changeNote);
 
+  if (draft) warn(`PR 会开成 draft，材料还缺：${missing.join("；")}`);
+
   pushMarketCommit(fork, branch, baseSha, baseTreeSha, files, message);
   info(`已提交到 ${fork}:${branch}`);
 
   const title = message;
   const pr = ghApiJson(`repos/${MARKET.upstream}/pulls`, {
     method: "POST",
-    body: { title, head: `${config.publisher}:${branch}`, base: MARKET.upstreamBranch, body },
+    body: { title, head: `${config.publisher}:${branch}`, base: MARKET.upstreamBranch, body, ...(draft ? { draft: true } : {}) },
     acceptNonZero: true,
   });
   if (pr?.html_url) {
     ctx.prUrl = pr.html_url;
-    info(`PR 已创建：${pr.html_url}`);
+    info(draft ? `PR 已创建（draft，材料补齐后点 Ready for review）：${pr.html_url}` : `PR 已创建：${pr.html_url}`);
     return;
   }
 

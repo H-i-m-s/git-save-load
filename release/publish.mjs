@@ -31,6 +31,7 @@
 //   release/exec.mjs      调 git / gh，失败分类与退避重试
 //   release/market.mjs    市场的规矩与投稿动作
 
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -229,8 +230,17 @@ function preflight(config, ctx, args) {
     }
     const localTag = gitQuiet(["rev-parse", "-q", "--verify", `refs/tags/${ctx.tag}`]);
     if (localTag.status === 0) throw die(`本地已经有 tag ${ctx.tag}`, "换一个版本号，或先删掉这个 tag");
-    const remoteTags = gitQuiet(["ls-remote", "--tags", "origin", `refs/tags/${ctx.tag}`]).stdout.trim();
-    if (remoteTags) throw die(`远端已经有 tag ${ctx.tag}`, "换一个版本号");
+
+    // 远端有没有这个 tag，必须问清楚才能往下走。这里不能把“查不到”当成“没有”：
+    // 网络抖一下就放行，会带着一个推不上去的 tag 和提交继续发版。
+    // 用带重试的 git（不是 gitQuiet）：先给网络三次机会，仍不通就中止。
+    // 没有 origin 的纯本地仓库是另一回事，那种情况跳过。
+    if (run("git", ["remote", "get-url", "origin"]).status === 0) {
+      const remote = git(["ls-remote", "--tags", "origin", `refs/tags/${ctx.tag}`]);
+      if (remote.stdout.trim()) throw die(`远端已经有 tag ${ctx.tag}`, "换一个版本号");
+    } else {
+      warn("这个仓库没有 origin 远端，跳过远端 tag 检查");
+    }
 
     const allTags = gitQuiet(["tag", "--list"]).stdout.split("\n").map((t) => t.trim()).filter(Boolean);
     const highest = allTags.map((t) => t.replace(/^v/, "")).filter((v) => /^\d/.test(v)).sort(compareVersions).pop();
@@ -306,10 +316,24 @@ function packStage(config, ctx) {
 
   const entry = JSON.parse(readFileSync(ctx.entryPath, "utf8"));
   ctx.entry = entry;
-  ctx.sha256 = entry.archive.sha256;
-  ctx.zipSize = entry.archive.size;
 
-  if (!MARKET.sha256Pattern.test(ctx.sha256)) throw die(`entry 里的 sha256 不合法：${ctx.sha256}`);
+  // 事实只认当场从包里算出来的。entry 里那份、dist 里那个 .sha256 副文件，都只是小票；
+  // 小票与包对不上时必须停下，别把错的 sha256 登记进市场（那要整个 PR 重来）。
+  const zipBytes = readFileSync(ctx.zipPath);
+  const zipSha256 = createHash("sha256").update(zipBytes).digest("hex");
+  if (entry.archive.sha256 !== zipSha256) {
+    throw die(
+      `entry 里写的 sha256 和 zip 现算的对不上\n      entry：${entry.archive.sha256}\n      现算：${zipSha256}`,
+      "包在出包之后被改动过，原样重跑一次；还不行就是 pack.mjs 的问题",
+    );
+  }
+  if (entry.archive.size !== zipBytes.length) {
+    throw die(`entry 里写的字节数与 zip 实际不符：entry ${entry.archive.size}，实际 ${zipBytes.length}`);
+  }
+  ctx.sha256 = zipSha256;
+  ctx.zipSize = zipBytes.length;
+
+  if (!MARKET.sha256Pattern.test(ctx.sha256)) throw die(`算出来的 sha256 不合法：${ctx.sha256}`);
   if (entry.publisher !== config.publisher) {
     throw die(`entry 的 publisher 是 ${entry.publisher}，config 里是 ${config.publisher}`, "两者必须一致，市场按 publisher 校验身份");
   }
