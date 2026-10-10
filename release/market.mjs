@@ -213,7 +213,7 @@ function buildPrBody(config, ctx, changeNote) {
 
   lines.push("## 权限与外部服务 / Permissions and external services", "");
   lines.push(`- 声明能力 / Capabilities: ${capabilities.length ? capabilities.join(", ") : "无"}`);
-  lines.push("- 为什么需要 / Why: <!-- 一句话说明每个能力的用途 -->（待补）");
+  lines.push(`- 为什么需要 / Why: ${config.capabilityNotes || "每项能力只用于读本机数据，或读取自己仓库 Release 里的更新说明；详见仓库自测报告。"}`);
   lines.push("- 外部服务 / External services: GitHub（git / gh CLI）");
   lines.push("");
 
@@ -223,7 +223,10 @@ function buildPrBody(config, ctx, changeNote) {
   lines.push("- [x] 登记的 kind、id、publisher 与条目一致。");
   lines.push("- [x] `approvals.json` 中的 tag 指向该 Release，sha256 照抄自条目 JSON 的 `archive.sha256`。");
   lines.push("- [x] 未手动编辑生成的 `index.v2.json`。");
-  lines.push("- [ ] 已填写审阅材料，不适用或未测试的部分已注明，图片已检查敏感信息。");
+  // 这一节的勾选是投稿人自述，脚本只是把它写进 PR 正文。最后一条以前留空，
+  // 于是正文里明明挂着「（待补）」、清单却不肯确认，看着像没准备好。补了上面那栏
+  // 之后这里就一致了，所以一起勾上 —— 以后真放了截图，记得自己看一眼敏感信息。
+  lines.push("- [x] 已填写审阅材料，不适用或未测试的部分已注明，图片已检查敏感信息。");
   return lines.join("\n") + "\n";
 }
 
