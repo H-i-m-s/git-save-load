@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import process from "node:process";
 import { step, info, warn, die } from "./console.mjs";
-import { ghApi, ghApiJson, run, runRetry } from "./exec.mjs";
+import { ghApi, ghApiJson, run, runRetry, classify, sleepSync } from "./exec.mjs";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 市场规矩：对所有插件都一样，不放进 config.json。
@@ -45,6 +45,51 @@ function upstreamHeadSha() {
   const result = ghApi(`repos/${MARKET.upstream}/git/ref/heads/${MARKET.upstreamBranch}`, { jq: ".object.sha" });
   const sha = result.status === 0 ? result.stdout.trim() : "";
   if (!/^[0-9a-f]{40}$/.test(sha)) throw die(`读不到 ${MARKET.upstream} 的 ${MARKET.upstreamBranch} 最新提交`);
+  return sha;
+}
+
+/**
+ * 让 fork 的主分支追上正本，返回它现在的 sha。
+ *
+ * GitHub 只允许 fork 的 ref 指向「从 fork 自己可达」的提交。fork 落后于正本时，在 fork 上
+ * 拿正本 HEAD 当父提交建出来的 commit 会被拒收 —— PATCH refs/heads/... 直接 404。
+ * 实测四个对照：fork 自己的 main ✓、分支当前值 ✓、正本 main ✗、以正本 HEAD 为父的新 commit ✗。
+ * 所以落提交之前，先把 fork 的主分支同步过来，用它当父提交。
+ *
+ * 已经是最新时 GitHub 返回 409，那是正常分支，不是失败。
+ */
+function syncForkToUpstream(fork, expectedSha) {
+  const branch = MARKET.upstreamBranch;
+  const endpoint = `repos/${fork}/merge-upstream`;
+
+  let result = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    result = ghApi(endpoint, { method: "POST", body: { branch }, acceptNonZero: true });
+    if (result.status === 0) break;
+    if (attempt === 3 || classify(result.stderr + result.stdout) !== "transient") break;
+    warn(`同步 ${fork} 的 ${branch} 遇到网络类失败，${[1, 4][attempt - 1]} 秒后重试`);
+    sleepSync([1000, 4000][attempt - 1]);
+  }
+
+  if (result.status !== 0) {
+    const text = `${result.stdout || ""}\n${result.stderr || ""}`;
+    if (!/HTTP 409|\bnot behind\b|up to date/i.test(text)) {
+      // 正本里带着 .github/workflows/，所以这一步需要 workflow 权限；缺了会被明确拒绝。
+      const hint = /workflow/i.test(text)
+        ? "gh 的 token 缺 workflow 权限（正本里有 .github/workflows/）。跑一次 `gh auth refresh -s workflow` 再来"
+        : "确认这个 fork 还在、且与正本同源";
+      const detail = text.trim().split("\n").slice(0, 3).join("\n      ");
+      throw die(`同步 ${fork} 的 ${branch} 失败\n      ${detail}`, hint);
+    }
+    info(`fork 的 ${branch} 已经是最新，无需同步`);
+  }
+
+  const head = ghApi(`repos/${fork}/git/ref/heads/${branch}`, { jq: ".object.sha" });
+  const sha = head.status === 0 ? head.stdout.trim() : "";
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw die(`同步之后仍然读不到 ${fork} 的 ${branch}`, "确认这个 fork 的状态");
+  if (expectedSha && sha !== expectedSha) {
+    warn(`fork 的 ${branch}（${sha.slice(0, 8)}）与正本（${expectedSha.slice(0, 8)}）不一致，以 fork 的为准落提交`);
+  }
   return sha;
 }
 
@@ -194,14 +239,10 @@ export function marketStage(config, ctx, args) {
   if (!ctx.selfTest) missing.push("release/自测.md 还是空的");
   const draft = missing.length > 0;
 
-  const baseSha = upstreamHeadSha();
-  const baseCommit = ghApiJson(`repos/${fork}/git/commits/${baseSha}`);
-  const baseTreeSha = baseCommit?.tree?.sha;
-  if (!baseTreeSha) throw die(`在 ${fork} 上找不到提交 ${baseSha.slice(0, 8)}`, "确认 fork 还在、且和正本同源");
-  info(`基线 ${MARKET.upstream}@${baseSha.slice(0, 8)} → fork ${fork}`);
-
-  const registryText = readUpstreamFile(MARKET.registryFile, baseSha);
-  const approvalsText = readUpstreamFile(MARKET.approvalsFile, baseSha);
+  // 读正本的内容：权威在正本，与 fork 落不落后无关。
+  const upSha = upstreamHeadSha();
+  const registryText = readUpstreamFile(MARKET.registryFile, upSha);
+  const approvalsText = readUpstreamFile(MARKET.approvalsFile, upSha);
   const edit = planMarketEdit(registryText, approvalsText, ctx, config);
 
   if (!edit.changed) {
@@ -213,10 +254,18 @@ export function marketStage(config, ctx, args) {
 
   if (args.dryRun) {
     info(`[干跑] 会${edit.addedEnrollment ? "新增名录" : edit.changedEnrollment ? "修改名录" : "不动名录"}、${edit.changedApproval ? "更新批准" : "不动批准"}`);
-    info(`[干跑] 会写到 ${fork} 的 ${branch}，PR 提到 ${MARKET.upstream}`);
+    info(`[干跑] 会先把 ${fork} 的 ${MARKET.upstreamBranch} 追上正本 ${upSha.slice(0, 8)}，再写到 ${branch}，PR 提到 ${MARKET.upstream}`);
     info(`[干跑] PR 会开成 ${draft ? `draft（材料还缺：${missing.join("；")}）` : "正式（材料齐）"}`);
     return;
   }
+
+  // fork 的 ref 只接受「从 fork 自己可达」的提交；落后时拿正本 HEAD 当父提交会被 GitHub 拒收。
+  // 先把 fork 的主分支同步到正本，再拿它当底座 —— 这样 PR 正好也开在最新底座上。
+  const baseSha = syncForkToUpstream(fork, upSha);
+  const baseCommit = ghApiJson(`repos/${fork}/git/commits/${baseSha}`);
+  const baseTreeSha = baseCommit?.tree?.sha;
+  if (!baseTreeSha) throw die(`在 ${fork} 上找不到提交 ${baseSha.slice(0, 8)}`, "确认 fork 还在、且和正本同源");
+  info(`基线 ${MARKET.upstream}@${upSha.slice(0, 8)} → fork@${baseSha.slice(0, 8)}`);
 
   const files = [
     { path: MARKET.registryFile, content: JSON.stringify(edit.registry, null, 2) + "\n" },

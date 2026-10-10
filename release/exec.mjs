@@ -86,8 +86,8 @@ export function sleepSync(ms) {
 // ─────────────────────────────────────────────────────────────────────────────
 // git / gh
 // ─────────────────────────────────────────────────────────────────────────────
-export const git = (args, opts = {}) => runRetry("git", args, { ...opts, label: `git ${args[0]}` });
-export const gh = (args, opts = {}) => runRetry("gh", args, { ...opts, label: `gh ${args[0]}` });
+export const git = (args, opts = {}) => runRetry("git", args, { ...opts, label: opts.label || `git ${args[0]}` });
+export const gh = (args, opts = {}) => runRetry("gh", args, { ...opts, label: opts.label || `gh ${args[0]}` });
 
 export const gitQuiet = (args) => run("git", args);
 
@@ -102,17 +102,36 @@ export function ghApi(endpoint, opts = {}) {
     args.push("--input", "-");
     input = JSON.stringify(opts.body);
   }
-  const result = gh(args, { input, acceptNonZero: opts.acceptNonZero });
+  // label 带上方法和 endpoint：错的时候才知道是哪一个请求挂了。
+  // 不带的话所有调用都只报「gh api 失败」，一个 404 能把人查半天。
+  const result = gh(args, {
+    input,
+    acceptNonZero: opts.acceptNonZero,
+    label: opts.label || `gh api ${opts.method || "GET"} ${endpoint}`,
+  });
   return result;
 }
 
 export function ghApiJson(endpoint, opts = {}) {
-  const result = ghApi(endpoint, opts);
-  if (result.status !== 0) return null;
-  try {
-    return JSON.parse(result.stdout);
-  } catch {
-    return null;
+  // 失败一律返回 null，而不是抛。调用点全都写成 `if (!x?.sha) die("具体哪一步失败了")`，
+  // 这里先抛的话，那些更准确的错误永远轮不到。
+  // （原来的注释写的就是「失败返回 null」，是实现跟注释不一致，实测踩到了。）
+  //
+  // 但 acceptNonZero 会让 runRetry 直接返回、不重试，于是网络拖一次就全废 —— 而投稿要
+  // 连着发五六个写请求。所以这里自己按 transient 退避重试（建悬空对象是幂等的）。
+  for (let attempt = 1; ; attempt += 1) {
+    const result = ghApi(endpoint, { ...opts, acceptNonZero: true });
+    if (result.status === 0) {
+      try {
+        return JSON.parse(result.stdout);
+      } catch {
+        return null;
+      }
+    }
+    if (attempt >= 3 || classify(result.stderr + result.stdout) !== "transient") return null;
+    const label = opts.label || `gh api ${opts.method || "GET"} ${endpoint}`;
+    warn(`${label} 第 ${attempt} 次失败（网络类），${[1, 4][attempt - 1]} 秒后重试`);
+    sleepSync([1000, 4000][attempt - 1]);
   }
 }
 

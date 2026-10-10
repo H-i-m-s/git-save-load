@@ -228,16 +228,30 @@ function preflight(config, ctx, args) {
     if (!MARKET.tagPattern.test(ctx.tag)) {
       throw die(`tag ${ctx.tag} 含不允许的字符`, "tag 只能用字母、数字、. _ + -，且以字母或数字开头");
     }
-    const localTag = gitQuiet(["rev-parse", "-q", "--verify", `refs/tags/${ctx.tag}`]);
-    if (localTag.status === 0) throw die(`本地已经有 tag ${ctx.tag}`, "换一个版本号，或先删掉这个 tag");
+    // 已经打过这个 tag 怎么办？
+    // 这里只提醒，不拦。理由是「同一个 tag」不等于「同一份包」：改动 release/ 这类不进包的
+    // 文件也会动 HEAD，拿提交相不相等当判据会误伤合法的重跑。
+    // 真正的硬约束在 releaseStage：发 Release 前拿远端附件的 sha256 跟本地现算的比，对不上就停。
+    const head = gitQuiet(["rev-parse", "HEAD"]).stdout.trim();
+    const noteExistingTag = (where, sha) => {
+      if (!sha) return;
+      const at = sha === head ? "指向当前提交" : `指向 ${sha.slice(0, 8)}，而当前 HEAD 是 ${head.slice(0, 8)}`;
+      warn(`${where}已有 tag ${ctx.tag}（${at}）—— 按“重跑这一版”处理，包是不是同一份由后面的 sha256 比对决定`);
+    };
 
-    // 远端有没有这个 tag，必须问清楚才能往下走。这里不能把“查不到”当成“没有”：
+    const localTag = gitQuiet(["rev-parse", "-q", "--verify", `refs/tags/${ctx.tag}`]);
+    if (localTag.status === 0) noteExistingTag("本地", gitQuiet(["rev-list", "-n", "1", ctx.tag]).stdout.trim());
+
+    // 远端有没有这个 tag，必须问清楚，不能把“查不到”当成“没有”：
     // 网络抖一下就放行，会带着一个推不上去的 tag 和提交继续发版。
     // 用带重试的 git（不是 gitQuiet）：先给网络三次机会，仍不通就中止。
     // 没有 origin 的纯本地仓库是另一回事，那种情况跳过。
     if (run("git", ["remote", "get-url", "origin"]).status === 0) {
       const remote = git(["ls-remote", "--tags", "origin", `refs/tags/${ctx.tag}`]);
-      if (remote.stdout.trim()) throw die(`远端已经有 tag ${ctx.tag}`, "换一个版本号");
+      const lines = remote.stdout.trim().split("\n").filter(Boolean);
+      // annotated tag 会多一行 <sha> refs/tags/x^{}（解引用后的提交），优先取它
+      const pick = lines.find((l) => l.endsWith("^{}")) || lines.find((l) => l.endsWith(`refs/tags/${ctx.tag}`));
+      noteExistingTag("远端", pick ? pick.split(/\s+/)[0] : "");
     } else {
       warn("这个仓库没有 origin 远端，跳过远端 tag 检查");
     }
@@ -369,8 +383,15 @@ function commitAndTag(config, ctx, args) {
     info("manifest.json 没有变化，跳过提交");
   }
 
-  git(["tag", ctx.tag]);
-  info(`打 tag ${ctx.tag}`);
+  // tag 可能已经打过了：上一次发到一半（Release 发了、投稿没做成）重跑时会走到这里。
+  // 不用 -f 去覆盖：git tag 默认就拒绝覆盖，顺着它来。这个 tag 已经对外存在，
+  // 一旦它指向的提交和现在这批代码不同，-f 会把它悄悄挪走，那比报错麻烦得多。
+  if (gitQuiet(["rev-parse", "-q", "--verify", `refs/tags/${ctx.tag}`]).status === 0) {
+    info(`tag ${ctx.tag} 已存在，跳过打 tag`);
+  } else {
+    git(["tag", ctx.tag]);
+    info(`打 tag ${ctx.tag}`);
+  }
 
   git(["push", "origin", config.defaultBranch]);
   git(["push", "origin", ctx.tag]);
@@ -382,18 +403,34 @@ function releaseStage(config, ctx, args) {
   step("发布 Release");
 
   if (ctx.existingRelease?.exists) {
-    const names = new Set(ctx.existingRelease.assets.map((a) => a.name));
-    if (names.has(ctx.entryName) && names.has(`${ctx.id}-v${ctx.version}.zip`)) {
-      const remoteEntry = ctx.existingRelease.assets.find((a) => a.name === ctx.entryName);
-      const localBytes = statSync(ctx.entryPath).size;
-      if (remoteEntry.size !== localBytes) {
-        throw die(`远端 Release ${ctx.tag} 上的条目和本地刚出的不是同一份（远端 ${remoteEntry.size} 字节，本地 ${localBytes} 字节）`, "删掉远端那个 Release 重发，或者换一个版本号");
-      }
-      info(`Release ${ctx.tag} 已存在且附件一致，跳过`);
-      ctx.releaseSkipped = true;
-      return;
+    const byName = new Map(ctx.existingRelease.assets.map((a) => [a.name, a]));
+    const remoteZip = byName.get(`${ctx.id}-v${ctx.version}.zip`);
+    const remoteEntry = byName.get(ctx.entryName);
+    if (!remoteZip || !remoteEntry) {
+      throw die(`远端已有 Release ${ctx.tag}，但附件对不上`, "先删掉那个 Release，或者换一个版本号");
     }
-    throw die(`远端已有 Release ${ctx.tag}，但附件对不上`, "先删掉那个 Release，或者换一个版本号");
+
+    // digest 是 GitHub 存着的 "sha256:<hex>"，拿出来跟本地现算的那个比 —— 这样「重跑」是
+    // 真的幂等：同一份包才跳过，包不一样就停。老版本 gh 或老 Release 可能没这个字段，
+    // 那种情况退回只比字节数（比只看文件名强，但不如 digest）。
+    const remoteZipSha = String(remoteZip.digest || "").replace(/^sha256:/, "");
+    if (remoteZipSha && remoteZipSha !== ctx.sha256) {
+      throw die(
+        `远端 Release ${ctx.tag} 上的 zip 和本地刚出的不是同一份\n      远端 ${remoteZipSha}\n      本地 ${ctx.sha256}`,
+        "删掉远端那个 Release 重发，或者换一个版本号",
+      );
+    }
+    const localEntryBytes = statSync(ctx.entryPath).size;
+    if (remoteEntry.size !== localEntryBytes) {
+      throw die(
+        `远端 Release ${ctx.tag} 上的条目和本地刚出的不是同一份（远端 ${remoteEntry.size} 字节，本地 ${localEntryBytes} 字节）`,
+        "删掉远端那个 Release 重发，或者换一个版本号",
+      );
+    }
+
+    info(`Release ${ctx.tag} 已存在，附件与本地一致，跳过`);
+    ctx.releaseSkipped = true;
+    return;
   }
 
   if (args.dryRun) {
