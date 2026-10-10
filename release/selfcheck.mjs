@@ -24,7 +24,7 @@
 //
 // 用法：
 //   node scripts/selfcheck.mjs          # 人类可读文本，失败以非零码退出
-//   node scripts/selfcheck.mjs --json   # 结构化输出 { ok, errors, warnings }
+//   node scripts/selfcheck.mjs --json   # 结构化输出 { ok, errors, warnings, files }
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -211,7 +211,7 @@ if (manifest) {
 const ok = errors.length === 0;
 
 if (JSON_MODE) {
-  console.log(JSON.stringify({ ok, errors, warnings }, null, 2));
+  console.log(JSON.stringify({ ok, errors, warnings, files: jsFiles.length }, null, 2));
 } else {
   for (const w of warnings) console.log(`  warn: ${w}`);
   for (const e of errors) console.error(`  FAIL: ${e}`);

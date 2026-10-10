@@ -33,8 +33,8 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { tmpdir, homedir, platform, arch, release as osRelease, version as osVersion } from "node:os";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { say, step, info, warn, die } from "./console.mjs";
@@ -43,6 +43,76 @@ import { MARKET, marketStage, verifyStage } from "./market.mjs";
 
 const RELEASE_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(RELEASE_DIR, "..");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 自测报告：模板与事实
+// ─────────────────────────────────────────────────────────────────────────────
+/** pr-assets/ 里的图，按文件名排序。目录不在就是空。 */
+function listScreenshots(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => /\.(png|jpe?g|gif|webp)$/i.test(f))
+    .sort();
+}
+
+/** 从 zip 末尾的 EOCD 读条目数；读不到返回 null。 */
+function readZipEntryCount(zipPath) {
+  const buf = readFileSync(zipPath);
+  const floor = Math.max(0, buf.length - 66000);
+  for (let i = buf.length - 22; i >= floor; i -= 1) {
+    if (buf.readUInt32LE(i) === 0x06054b50) return buf.readUInt16LE(i + 10);
+  }
+  return null;
+}
+
+/** Hana 自己的版本。它在 HANA_HOME（或用户目录的 .hanako）下的 last-update-version 里。 */
+function readHanaVersion() {
+  const home = process.env.HANA_HOME || join(homedir(), ".hanako");
+  try {
+    return readFileSync(join(home, "last-update-version"), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+/** 一句话描述当前系统，给自测报告用。 */
+function describeOs() {
+  const name = osVersion(); // 例如 Windows 11 Pro
+  const build = osRelease(); // 例如 10.0.26200
+  const kind = platform() === "win32" ? "NT" : platform();
+  return `${name} ${arch()}（${kind} ${build}）`;
+}
+
+/** 渲染自测报告模板时能自动填的值。要加新占位符，在这里加一项。 */
+function collectFacts(config, ctx) {
+  const n = (v) => (v === null || v === undefined ? "" : String(v));
+  return {
+    version: n(ctx.effectiveVersion || ctx.version),
+    tag: n(ctx.tag),
+    repo: n(config.releaseRepo),
+    releaseUrl: `https://github.com/${config.releaseRepo}/releases/tag/${ctx.tag}`,
+    date: new Date().toISOString().slice(0, 10),
+    hanaVersion: n(readHanaVersion()),
+    os: describeOs(),
+    sha256: n(ctx.sha256),
+    sha256short: n(ctx.sha256 ? ctx.sha256.slice(0, 16) : ""),
+    zipEntries: n(ctx.zipEntries),
+    zipKiB: n(ctx.zipSize ? (ctx.zipSize / 1024).toFixed(1) : ""),
+    tests: n(ctx.selfcheck?.tests),
+    jsfiles: n(ctx.selfcheck?.files),
+  };
+}
+
+/** 把 {{key}} 换成 facts 里的值。不认识的键原样留着，并报给调用方。 */
+function renderTemplate(text, facts) {
+  const unknown = new Set();
+  const out = String(text || "").replace(/\{\{(\w+)\}\}/g, (whole, key) => {
+    if (Object.prototype.hasOwnProperty.call(facts, key)) return String(facts[key] ?? "");
+    unknown.add(key);
+    return whole;
+  });
+  return { text: out, unknown: [...unknown] };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 配置与清单
@@ -184,6 +254,26 @@ function requireGhAuth(config) {
   }
 }
 
+/**
+ * 重跑同一版时，tag 不会动，刚补的截图并不在它指向的提交里 —— 而 PR 正文用的是
+ * raw.githubusercontent 的钉 tag 链接，引用不在 tag 里的图就是一个 404 的破图。
+ * 宁可这次不带图，也不发一份带破图的正文。放在预检里，干跑也能提前看到。
+ */
+function dropScreenshotsNotInTag(ctx) {
+  if (!ctx.tagExisted || !ctx.screenshots.length) return;
+  const inTag = new Set(
+    gitQuiet(["ls-tree", "-r", "--name-only", ctx.tag, "--", "release/pr-assets"])
+      .stdout.split("\n")
+      .map((l) => l.trim().split("/").pop())
+      .filter(Boolean),
+  );
+  const absent = ctx.screenshots.filter((s) => !inTag.has(s));
+  if (!absent.length) return;
+  warn(`这几张截图不在 tag ${ctx.tag} 里，PR 正文会跳过它们（引用过去是破图）：${absent.join("、")}`);
+  info(`要让图跟着上，把版本号提一个（比如 ${bumpPatch(ctx.version)}）重发一版`);
+  ctx.screenshots = ctx.screenshots.filter((s) => inTag.has(s));
+}
+
 /** S2 预检：只读，不改任何东西。 */
 function preflight(config, ctx, args) {
   step("预检");
@@ -241,6 +331,7 @@ function preflight(config, ctx, args) {
 
     const localTag = gitQuiet(["rev-parse", "-q", "--verify", `refs/tags/${ctx.tag}`]);
     if (localTag.status === 0) noteExistingTag("本地", gitQuiet(["rev-list", "-n", "1", ctx.tag]).stdout.trim());
+    ctx.tagExisted = localTag.status === 0;
 
     // 远端有没有这个 tag，必须问清楚，不能把“查不到”当成“没有”：
     // 网络抖一下就放行，会带着一个推不上去的 tag 和提交继续发版。
@@ -255,6 +346,8 @@ function preflight(config, ctx, args) {
     } else {
       warn("这个仓库没有 origin 远端，跳过远端 tag 检查");
     }
+
+    dropScreenshotsNotInTag(ctx);
 
     const allTags = gitQuiet(["tag", "--list"]).stdout.split("\n").map((t) => t.trim()).filter(Boolean);
     const highest = allTags.map((t) => t.replace(/^v/, "")).filter((v) => /^\d/.test(v)).sort(compareVersions).pop();
@@ -319,7 +412,9 @@ function packStage(config, ctx) {
   step("出包");
   // 用 run 不用 runRetry：pack.mjs 是纯本地的，失败就是本地失败，重试只会再跑一遍自检、
   // 白等几秒，还会把「自检没过」这种已经确定的事伪装成网络抖动。重试层留给 git / gh。
-  const result = run(process.execPath, [join(RELEASE_DIR, "pack.mjs")]);
+  //
+  // 要 pack.mjs 额外吐一行 selfcheck 的数字：自测报告要用，正好同一趟自检不重跑。
+  const result = run(process.execPath, [join(RELEASE_DIR, "pack.mjs")], { env: { RELEASE_PACK_REPORT: "1" } });
   process.stdout.write(result.stdout.endsWith("\n") ? result.stdout : `${result.stdout}\n`);
   if (result.stderr.trim()) process.stdout.write(result.stderr);
   if (result.status !== 0) throw die("出包失败", "看上面 pack.mjs 的输出；自检没过也会走到这里");
@@ -363,6 +458,49 @@ function packStage(config, ctx) {
     throw die(`市场条目有 ${entryBytes} 字节，超过上限 ${MARKET.maxEntryBytes}`, "大头通常是 manifest.icon 内联 base64，先压那张图再出包");
   }
   info(`zip ${(ctx.zipSize / 1024).toFixed(1)} KiB · entry ${entryBytes} 字节 · sha256 ${ctx.sha256.slice(0, 16)}…`);
+
+  // 自检数字从 pack.mjs 刚吐的那行里拿，不重跑一遍。
+  const reportLine = result.stdout.split("\n").find((l) => l.startsWith("[pack] selfcheck-report "));
+  if (reportLine) {
+    try {
+      ctx.selfcheck = JSON.parse(reportLine.slice("[pack] selfcheck-report ".length));
+    } catch {
+      /* 拿不到就不填，占位符会留空 */
+    }
+  }
+  ctx.zipEntries = readZipEntryCount(ctx.zipPath);
+
+  // 渲染自测报告。排在 sha256 / 条目数都算完之后，因为模板里会引用它们。
+  renderSelfTest(config, ctx);
+}
+
+/** 把 release/自测.md 这份模板渲染成 PR 正文里那段。占位符填不上就原样留着，并在日志里点名。 */
+function renderSelfTest(config, ctx) {
+  if (!ctx.selfTestTemplate) {
+    ctx.selfTest = "";
+    return;
+  }
+  // 模板开头那段 HTML 注释是写给维护者的说明，不进 PR 正文。
+  const body = ctx.selfTestTemplate.replace(/^\s*<!--[\s\S]*?-->\s*/, "");
+  const facts = collectFacts(config, ctx);
+  const { text, unknown } = renderTemplate(body, facts);
+  ctx.selfTest = text;
+
+  // 只对「模板里真正用到的」占位符报空值。facts 里有些键是这个插件本来就没有的
+  // （比如 gsl 的自检不算测试用例数），模板没引用它们就不该吵。
+  const used = new Set((body.match(/\{\{(\w+)\}\}/g) || []).map((m) => m.slice(2, -2)));
+  const blank = [...used].filter((k) => Object.prototype.hasOwnProperty.call(facts, k) && facts[k] === "");
+  if (unknown.length) warn(`release/自测.md 里有不认识的占位符，已原样保留：${unknown.map((k) => `{{${k}}}`).join("、")}`);
+  if (blank.length) warn(`自测报告里有几项没填上，正文里会留空：${blank.map((k) => `{{${k}}}`).join("、")}`);
+
+  // 兜底：不管写成什么形状的花括号，只要读完了还剩着，就是写错了（或用了没有的键）。
+  // 上面只报得出 {{单词}} 那种；{{带 空格}}、{{带-连字符}} 会绕过它，那种错更悄。
+  const leftovers = [...new Set((ctx.selfTest.match(/\{\{[^}]*\}\}/g) || []))];
+  if (leftovers.length) warn(`自测报告里还有没被替换的花括号，检查一下拼写：${leftovers.join("、")}`);
+
+  info(`自测报告已从 release/自测.md 渲染（${ctx.selfTest.length} 字）`);
+  // 想看一眼到底会写成什么，把 RELEASE_DEBUG 打开。
+  if (process.env.RELEASE_DEBUG) say(`\n───── 自测报告预览 ─────\n${ctx.selfTest}\n───────────────────────`);
 }
 
 /** S4：提交版本号、打 tag、推送。 */
@@ -374,19 +512,24 @@ function commitAndTag(config, ctx, args) {
     return;
   }
 
-  const staged = gitQuiet(["status", "--porcelain", "--", "manifest.json"]).stdout.trim();
+  // 截图跟着一起提交。PR 正文用 raw.githubusercontent 的链接引用它，而那个链接钉在 tag 上，
+  // 所以图必须先在 tag 指向的这个提交里，否则正文里是个 404 的破图。
+  // 提交在打 tag 之前，顺序不能反。
+  const commitPaths = ["manifest.json", "release/pr-assets"].filter((p) => existsSync(join(ROOT, p)));
+  const staged = gitQuiet(["status", "--porcelain", "--", ...commitPaths]).stdout.trim();
   if (staged) {
-    git(["add", "--", "manifest.json"]);
+    git(["add", "--", ...commitPaths]);
     git(["commit", "-m", `chore(release): ${ctx.tag}`]);
     info(`提交 chore(release): ${ctx.tag}`);
   } else {
-    info("manifest.json 没有变化，跳过提交");
+    info("manifest.json 与截图都没有变化，跳过提交");
   }
 
   // tag 可能已经打过了：上一次发到一半（Release 发了、投稿没做成）重跑时会走到这里。
   // 不用 -f 去覆盖：git tag 默认就拒绝覆盖，顺着它来。这个 tag 已经对外存在，
   // 一旦它指向的提交和现在这批代码不同，-f 会把它悄悄挪走，那比报错麻烦得多。
-  if (gitQuiet(["rev-parse", "-q", "--verify", `refs/tags/${ctx.tag}`]).status === 0) {
+  const tagExisted = gitQuiet(["rev-parse", "-q", "--verify", `refs/tags/${ctx.tag}`]).status === 0;
+  if (tagExisted) {
     info(`tag ${ctx.tag} 已存在，跳过打 tag`);
   } else {
     git(["tag", ctx.tag]);
@@ -396,6 +539,13 @@ function commitAndTag(config, ctx, args) {
   git(["push", "origin", config.defaultBranch]);
   git(["push", "origin", ctx.tag]);
   info(`已推送到 origin/${config.defaultBranch} 和 ${ctx.tag}`);
+}
+
+/** 版本号末位加一，只为在提示里举一个例子。形如 8.6.0 → 8.6.1。 */
+function bumpPatch(version) {
+  const m = String(version).match(/^(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) return `${version} 的下一版`;
+  return `${m[1]}.${m[2]}.${Number(m[3]) + 1}`;
 }
 
 /** S5 发 Release。 */
@@ -482,14 +632,14 @@ function main() {
   ctx.tag = `v${ctx.version}`;
   ctx.entryName = `app-${ctx.id}-${ctx.version}.entry.json`;
 
-  const prAssets = join(RELEASE_DIR, "pr-assets");
-  if (existsSync(prAssets)) {
-    ctx.screenshots = readdirSync(prAssets)
-      .filter((f) => /\.(png|jpe?g|gif|webp)$/i.test(f))
-      .sort();
-  }
+  ctx.prAssetsDir = join(RELEASE_DIR, "pr-assets");
+  ctx.screenshots = listScreenshots(ctx.prAssetsDir);
+
+  // 自测报告是一份带 {{占位符}} 的模板：能自动算的数字由脚本填，叙述部分写一次就够。
+  // 渲染推迟到出包之后，因为模板里要引用包的条目数、大小和 sha256。
   const selfTestPath = join(RELEASE_DIR, "自测.md");
-  ctx.selfTest = existsSync(selfTestPath) ? readFileSync(selfTestPath, "utf8").trim() : "";
+  ctx.selfTestTemplate = existsSync(selfTestPath) ? readFileSync(selfTestPath, "utf8").trim() : "";
+  ctx.selfTest = "";
 
   let stage = 0;
   const next = (label, fn) => {
@@ -529,7 +679,7 @@ function main() {
   else if (args.mode === "publish" && !args.dryRun) say("PR_URL=（没有新建 PR，市场那边可能已经是最新的）");
   if (args.dryRun) say("（干跑：以上动作都没有真正执行）");
   if (!ctx.screenshots.length && args.mode === "publish") {
-    warn("release/pr-assets/ 里没有图，PR 正文的截图那块留了「待补」，记得去浏览器里补一下");
+    info("release/pr-assets/ 里没有图；截图是选填，正文里会写一行「本版未附截图」");
   }
 }
 

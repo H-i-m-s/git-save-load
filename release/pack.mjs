@@ -40,7 +40,7 @@
 import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
@@ -110,6 +110,9 @@ function loadConfig() {
 }
 
 // ── 0) 出包前自检 ───────────────────────────────────────────────────────────
+/** 自检的机器可读结果。publish.mjs 拿它去填自测报告里的数字（同一次自检，不重跑）。 */
+let selfcheckReport = null;
+
 function runSelfcheck(config) {
   const script = join(RELEASE_DIR, "selfcheck.mjs");
   if (config.pack.selfcheck === "none" || hasFlag("--no-selfcheck")) {
@@ -124,16 +127,33 @@ function runSelfcheck(config) {
     console.error("[pack] config 要求自检（required），但 release/selfcheck.mjs 不存在");
     return false;
   }
+
+  // 跑 --json：同一趟既给终端看，也能把数字交给编排层去填自测报告。
+  // 老版本 selfcheck 没有 --json 分支时会解析失败，那就退回只当门槛用。
+  const result = spawnSync(process.execPath, [script, "--json"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+  const raw = String(result.stdout || "").trim();
+  let parsed = null;
   try {
-    execFileSync(process.execPath, [script], { stdio: "pipe" });
+    parsed = JSON.parse(raw);
+  } catch {
+    /* 没有 --json 分支 */
+  }
+
+  if (result.status === 0) {
+    selfcheckReport = parsed;
     console.log("[pack] selfcheck 通过");
     return true;
-  } catch (e) {
-    const out = [e.stdout, e.stderr].map((b) => String(b || "")).join("").trim();
-    console.error("[pack] selfcheck 未通过，拒绝出包：");
-    if (out) console.error(out.split("\n").map((l) => "    " + l).join("\n"));
-    return false;
   }
+
+  console.error("[pack] selfcheck 未通过，拒绝出包：");
+  const errors = Array.isArray(parsed?.errors) ? parsed.errors : [];
+  if (errors.length) {
+    console.error(errors.map((e) => String(e).split("\n").map((l) => "    " + l).join("\n")).join("\n"));
+  } else {
+    const out = [raw, result.stderr].map((b) => String(b || "")).join("").trim();
+    if (out) console.error(out.split("\n").map((l) => "    " + l).join("\n"));
+  }
+  return false;
 }
 
 // ── 1) 递归收集待打包文件（包根平铺，跳过排除项与符号链接） ──
@@ -292,6 +312,10 @@ function main() {
   }
 
   if (!runSelfcheck(config)) process.exit(1);
+  // 把自检数字以一行 JSON 交出去，给编排层填自测报告用。不设这个环境变量时完全无感。
+  if (process.env.RELEASE_PACK_REPORT === "1" && selfcheckReport) {
+    console.log(`[pack] selfcheck-report ${JSON.stringify(selfcheckReport)}`);
+  }
 
   const pack = config.pack;
   const outArg = arg("--out");

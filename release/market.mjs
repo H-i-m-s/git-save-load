@@ -202,13 +202,15 @@ function buildPrBody(config, ctx, changeNote) {
       lines.push(`![${shot}](${rawBase}/release/pr-assets/${encodeURIComponent(shot)})`);
     }
   } else {
-    lines.push("<!-- 在 release/pr-assets/ 里放几张图，脚本会自动列到这里；也可以在这里手动拖图 -->");
-    lines.push("（待补）");
+    // 截图是可选的：没放就不提，也不留「（待补）」拖得像个未完成的坑。
+    lines.push("（本版未附截图；截图不是必填项）");
   }
   lines.push("");
 
   lines.push("## 自测报告 / Author test report", "");
-  lines.push(ctx.selfTest || "<!-- 在 release/自测.md 里写好，脚本会自动抄到这里；也可以在这里手动补 -->\n（待补）");
+  // 正常情况下 ctx.selfTest 已经由模板渲染好了（见 publish.mjs 的 renderSelfTest）。
+  // 走到这个分支意味着 release/自测.md 不存在或没内容 —— 那也会把 PR 开成 draft。
+  lines.push(ctx.selfTest || "（release/自测.md 不存在或没有内容；补上后重跑即可，PR 也会变成正式）");
   lines.push("");
 
   lines.push("## 权限与外部服务 / Permissions and external services", "");
@@ -223,10 +225,10 @@ function buildPrBody(config, ctx, changeNote) {
   lines.push("- [x] 登记的 kind、id、publisher 与条目一致。");
   lines.push("- [x] `approvals.json` 中的 tag 指向该 Release，sha256 照抄自条目 JSON 的 `archive.sha256`。");
   lines.push("- [x] 未手动编辑生成的 `index.v2.json`。");
-  // 这一节的勾选是投稿人自述，脚本只是把它写进 PR 正文。最后一条以前留空，
-  // 于是正文里明明挂着「（待补）」、清单却不肯确认，看着像没准备好。补了上面那栏
-  // 之后这里就一致了，所以一起勾上 —— 以后真放了截图，记得自己看一眼敏感信息。
-  lines.push("- [x] 已填写审阅材料，不适用或未测试的部分已注明，图片已检查敏感信息。");
+  // 这一节的勾选是投稿人自述，脚本只是把它写进 PR 正文。截图不是必填项，所以只在真放了图
+  // 的那次才把「图片已检查敏感信息」捎上；没图时提它反而像缺了一件东西。
+  const picBit = ctx.screenshots.length ? "，图片已检查敏感信息" : "（截图非必填，本版未附）";
+  lines.push(`- [x] 已填写审阅材料，不适用或未测试的部分已注明${picBit}。`);
   return lines.join("\n") + "\n";
 }
 
@@ -235,11 +237,10 @@ export function marketStage(config, ctx, args) {
   const fork = forkOf(config.publisher);
   const branch = branchOf(ctx.id);
 
-  // 材料不齐就开成 draft：带「（待补）」的正式 PR 是在敲别人的门，先把门敲轻一点。
-  // 补齐后在网页上点一下 Ready for review 即可，不用关掉重开。
+  // 只有一种情况还算「材料不齐」：自测报告是空的。截图是可选材料，有就带上、没有就不提，
+  // 没有理由因此把 PR 降级成草案。
   const missing = [];
-  if (!(ctx.screenshots || []).length) missing.push("release/pr-assets/ 里还没有截图");
-  if (!ctx.selfTest) missing.push("release/自测.md 还是空的");
+  if (!ctx.selfTest) missing.push("release/自测.md 不存在或没有内容");
   const draft = missing.length > 0;
 
   // 读正本的内容：权威在正本，与 fork 落不落后无关。
