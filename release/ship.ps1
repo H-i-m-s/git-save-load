@@ -60,14 +60,6 @@ function Read-ManifestVersion {
   return $null
 }
 
-function Get-NextVersion {
-  $v = Read-ManifestVersion
-  if ($v -and $v -match '^(\d+)\.(\d+)\.(\d+)') {
-    return "{0}.{1}.{2}" -f $Matches[1], $Matches[2], ([int]$Matches[3] + 1)
-  }
-  return ""
-}
-
 # ── 窗口 ─────────────────────────────────────────────────────────────────────
 $fontUI = New-Object System.Drawing.Font("Microsoft YaHei UI", 9)
 $fontMono = New-Object System.Drawing.Font("Consolas", 9)
@@ -117,7 +109,9 @@ $verLabel = Add-Label "要发的版本" 16 140 100
 $txtVersion = New-Object System.Windows.Forms.TextBox
 $txtVersion.Location = New-Object System.Drawing.Point(122, 137)
 $txtVersion.Size = New-Object System.Drawing.Size(140, 24)
-$txtVersion.Text = Get-NextVersion
+# 默认就用 manifest 里写的版本，不自动加一：manifest 是版本的唯一出处。
+# 自动推一格会在「重跑这一版补材料」时帮倒忙（本想补 PR，却成了要发新版）。
+$txtVersion.Text = [string](Read-ManifestVersion)
 $form.Controls.Add($txtVersion)
 
 # 只打包时这一栏照样会写进 manifest.json（只是不提交），所以这句话只在那种模式下露出来。
