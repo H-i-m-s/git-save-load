@@ -226,17 +226,41 @@ Sync-Mode
 # ── 运行 ─────────────────────────────────────────────────────────────────────
 $script:queue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
 $script:proc = $null
+$script:outTask = $null
+$script:errTask = $null
 $script:releaseUrl = $null
 $script:prUrl = $null
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 150
 $timer.add_Tick({
+  # 收子进程的输出。不在 .NET 的事件回调里做：add_OutputDataReceived 的脚本块跑在 .NET
+  # 的线程池线程上，那里没有 PowerShell 的 Runspace，一执行就抛
+  # PSInvalidOperationException（“There is no Runspace available…”），窗口会直接消失。
+  # 改成主线程轮询异步读；ReadLineAsync 没数据时不阻塞 UI。
+  while ($script:outTask -and $script:outTask.IsCompleted) {
+    $text = $null
+    try { $text = $script:outTask.Result } catch { $text = $null }
+    if ($null -eq $text) { $script:outTask = $null; break }
+    $script:queue.Enqueue($text)
+    if ($text -match '^RELEASE_URL=(.+)$') { $script:releaseUrl = $Matches[1].Trim() }
+    if ($text -match '^PR_URL=(.+)$') { $script:prUrl = $Matches[1].Trim() }
+    $script:outTask = $script:proc.StandardOutput.ReadLineAsync()
+  }
+  while ($script:errTask -and $script:errTask.IsCompleted) {
+    $text = $null
+    try { $text = $script:errTask.Result } catch { $text = $null }
+    if ($null -eq $text) { $script:errTask = $null; break }
+    $script:queue.Enqueue($text)
+    $script:errTask = $script:proc.StandardError.ReadLineAsync()
+  }
+
   $line = $null
   while ($script:queue.TryDequeue([ref]$line)) {
     $txtLog.AppendText($line + "`r`n")
   }
-  if ($script:proc -and $script:proc.HasExited) {
+  # 等输出也收干净了再定格：进程刚退出的那一瞬间，管道里可能还留着没读完的行。
+  if ($script:proc -and $script:proc.HasExited -and -not $script:outTask -and -not $script:errTask) {
     $code = $script:proc.ExitCode
     $script:proc = $null
     $timer.Stop()
@@ -331,23 +355,12 @@ $btnRun.add_Click({
 
   $proc = New-Object System.Diagnostics.Process
   $proc.StartInfo = $psi
-  $proc.add_OutputDataReceived({
-    param($sender, $e)
-    if ($null -ne $e.Data) {
-      $script:queue.Enqueue($e.Data)
-      if ($e.Data -match '^RELEASE_URL=(.+)$') { $script:releaseUrl = $Matches[1].Trim() }
-      if ($e.Data -match '^PR_URL=(.+)$') { $script:prUrl = $Matches[1].Trim() }
-    }
-  })
-  $proc.add_ErrorDataReceived({
-    param($sender, $e)
-    if ($null -ne $e.Data) { $script:queue.Enqueue($e.Data) }
-  })
 
   $proc.Start() | Out-Null
-  $proc.BeginOutputReadLine()
-  $proc.BeginErrorReadLine()
   $script:proc = $proc
+  # 两路异步读，交给主线程的 Timer 去收（理由见 Timer.Tick 里的注释）。
+  $script:outTask = $proc.StandardOutput.ReadLineAsync()
+  $script:errTask = $proc.StandardError.ReadLineAsync()
   $timer.Start()
 })
 
