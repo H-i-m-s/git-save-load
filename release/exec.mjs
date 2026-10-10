@@ -14,7 +14,12 @@ import { warn, die } from "./console.mjs";
 const RELEASE_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(RELEASE_DIR, "..");
 
-const TRANSIENT = /could not resolve host|connection (reset|refused|aborted)|timed? out|timeout|tls|ssl|eof|network is unreachable|502|503|504|temporarily unavailable|remote end hung up/i;
+// 注意别用裸词：这几个模式都曾在无关文本上误命中过。
+//   eof      → 收紧成 \bEOF\b（"eof" 是不少英文词的中间片段）
+//   502/503/504 → 一度是裸数字，于是任何含这三个数字的文本都会命中：连出包自检里
+//                `✖ test/x.test.js (504.2ms)` 这种耗时行都能骗过它，本地失败就被当成
+//                网络失败，白等一秒重跑一遍。现在要求它们带 HTTP 上下文。
+const TRANSIENT = /could not resolve host|connection (reset|refused|aborted)|timed? out|timeout|tls|ssl|\bEOF\b|network is unreachable|\bHTTP[^\n]{0,32}?\b(?:502|503|504)\b|\b(?:502|503|504)\b[^\n]{0,32}?\b(?:Bad Gateway|Service Unavailable|Gateway Time-?out)\b|temporarily unavailable|remote end hung up/i;
 const RATE_LIMIT = /rate limit|secondary rate/i;
 const AUTH_PROBLEM = /authentication|not logged in|gh auth login|bad credentials|401|permission denied|insufficient|forbidden/i;
 

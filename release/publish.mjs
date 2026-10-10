@@ -303,9 +303,12 @@ function writeVersion(config, ctx, args) {
 /** S3 出包。 */
 function packStage(config, ctx) {
   step("出包");
-  const result = runRetry(process.execPath, [join(RELEASE_DIR, "pack.mjs")], { label: "pack.mjs" });
+  // 用 run 不用 runRetry：pack.mjs 是纯本地的，失败就是本地失败，重试只会再跑一遍自检、
+  // 白等几秒，还会把「自检没过」这种已经确定的事伪装成网络抖动。重试层留给 git / gh。
+  const result = run(process.execPath, [join(RELEASE_DIR, "pack.mjs")]);
   process.stdout.write(result.stdout.endsWith("\n") ? result.stdout : `${result.stdout}\n`);
   if (result.stderr.trim()) process.stdout.write(result.stderr);
+  if (result.status !== 0) throw die("出包失败", "看上面 pack.mjs 的输出；自检没过也会走到这里");
 
   const ver = ctx.effectiveVersion || ctx.version;
   const distDir = resolve(ROOT, config.packOut);
@@ -498,7 +501,7 @@ try {
 } catch (error) {
   if (!error?.hinted) {
     say(`\n[停] ${error instanceof Error ? error.message : String(error)}`);
-    if (process.env.GSL_DEBUG) say(String(error?.stack || ""));
+    if (process.env.RELEASE_DEBUG) say(String(error?.stack || ""));
   }
   process.exitCode = 1;
 }
