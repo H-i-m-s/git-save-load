@@ -649,7 +649,7 @@ git-save-load/
 │   ├── gh_exec.js         # 任意 gh 子命令透传
 │   ├── git_push.js        # 语义化推送（force 仅 force-with-lease）
 │   └── gh_pr.js           # PR 生命周期（create/list/view/merge）
-├── dev/                   # 开发工具（自检 / 出包 / 发版 / 投稿）；打包时整目录排除
+├── release/               # 开发工具（自检 / 出包 / 发版 / 投稿）；打包时整目录排除
 │   ├── config.json        # 唯一按插件改的文件（打包排除表、发布者、仓库、分支）
 │   ├── selfcheck.mjs      # 结构自检（每个插件各写各的）
 │   ├── pack.mjs           # 零依赖出包（读 config.json）
@@ -751,11 +751,11 @@ runner 会为每个用例 spawn 一个**受限模式**子进程（`--permission`
 
 覆盖范围：结构自检、入口装配（8 个工具 + 路由端点）、`POST /api/config` 白名单回归、`git_exec` / `git_push` 行为（含 force 语义）、令牌加密存取与解密失败语义。失败会逐条定位到用例名与断言点，并以非零码退出。用例清单见 [`tests/README.md`](./tests/README.md)。
 
-测试与 `dev/` 一样**不进安装包**。
+测试与 `release/` 一样**不进安装包**。
 
-### 开发工具（dev/）
+### 开发工具（release/）
 
-`dev/` 下的一切都**不进安装包**（打包时整目录排除）。插件相关的东西全部从 `dev/config.json` 读，
+`release/` 下的一切都**不进安装包**（打包时整目录排除）。插件相关的东西全部从 `release/config.json` 读，
 代码里不硬编码；换到别的插件时整目录复制过去，只改 `config.json`。
 
 | 文件 | 用途 |
@@ -775,17 +775,17 @@ runner 会为每个用例 spawn 一个**受限模式**子进程（`--permission`
 **结构自检**
 
 ```bash
-node dev/selfcheck.mjs            # 人类可读；不通过时非零退出
-node dev/selfcheck.mjs --json     # { ok, errors, warnings }
+node release/selfcheck.mjs            # 人类可读；不通过时非零退出
+node release/selfcheck.mjs --json     # { ok, errors, warnings }
 ```
 
 **本地出包**
 
 ```bash
-node dev/pack.mjs                     # 产物落 config.json 里 pack.out 指定的目录（默认 dist）
-node dev/pack.mjs --out <dir>         # 自定义输出目录
-node dev/pack.mjs --publisher <name>  # 覆盖 publisher（必须与市场登记值一致）
-node dev/pack.mjs --no-selfcheck      # 跳过自检
+node release/pack.mjs                     # 产物落 config.json 里 pack.out 指定的目录（默认 dist）
+node release/pack.mjs --out <dir>         # 自定义输出目录
+node release/pack.mjs --publisher <name>  # 覆盖 publisher（必须与市场登记值一致）
+node release/pack.mjs --no-selfcheck      # 跳过自检
 ```
 
 产物：`<id>-v<version>.zip`、同名 `.sha256`、`app-<id>-<version>.entry.json`。
@@ -800,17 +800,17 @@ zip 由安装器解到 apps 下的 `<id>/`。条目名一律用正斜杠（宿�
 双击：
 
 ```text
-dev\发布.cmd
+release\发布.cmd
 ```
 
 或者命令行：
 
 ```powershell
-node dev/publish.mjs --mode=pack                                  # 只打包
-node dev/publish.mjs --mode=release --version=3.2.1 --notes="- 修复xxx"
-node dev/publish.mjs --mode=publish --version=3.2.1 --notes-file=notes.md
-node dev/publish.mjs --mode=publish --version=3.2.1 --dry-run     # 干跑：什么都不改，只检查
-node dev/publish.mjs --mode=publish --version=3.2.1 --verify      # 投稿前用市场同步器复核自己这条
+node release/publish.mjs --mode=pack                                  # 只打包
+node release/publish.mjs --mode=release --version=3.2.1 --notes="- 修复xxx"
+node release/publish.mjs --mode=publish --version=3.2.1 --notes-file=notes.md
+node release/publish.mjs --mode=publish --version=3.2.1 --dry-run     # 干跑：什么都不改，只检查
+node release/publish.mjs --mode=publish --version=3.2.1 --verify      # 投稿前用市场同步器复核自己这条
 ```
 
 | 模式 | 做什么 | 出网 | 改你的仓库 |
@@ -826,7 +826,7 @@ node dev/publish.mjs --mode=publish --version=3.2.1 --verify      # 投稿前用
 分支已存在就直接更新到新提交。中途失败原样重跑同一个模式即可，不会重复发布。
 
 **投稿全程走 GitHub API**，在你的 fork 上直接落一个提交，**本地不留市场仓库的副本**。
-改哪两个文件、改成什么、PR 正文长什么样，见 [`dev/投稿规范.md`](./dev/投稿规范.md)。
+改哪两个文件、改成什么、PR 正文长什么样，见 [`release/投稿规范.md`](./release/投稿规范.md)。
 
 ---
 

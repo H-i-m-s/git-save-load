@@ -31,7 +31,7 @@ node --permission \
 | `lib/harness.mjs` | 极简断言（`check/eq/deepEq/contains/matches`），失败定位到「用例名 :: 断言点」 |
 | `lib/fixture.mjs` | 临时目录 / 临时 git 仓库 / 裸远端夹具，进程退出统一清理 |
 | `lib/stub.mjs` | 宿主侧桩：v2 入口上下文（`tools.register` 返回 `{ ready: Promise }` 回执）、路由 app/ctx |
-| `cases/01-structure.mjs` | spawn `dev/selfcheck.mjs`，断言退出码 0 |
+| `cases/01-structure.mjs` | spawn `release/selfcheck.mjs`，断言退出码 0 |
 | `cases/02-entry-wiring.mjs` | `index.js` 注册 8 个工具且名字集合一致；`routes/git.js` 装配 PR / 令牌端点 |
 | `cases/03-config-whitelist.mjs` | `POST /api/config` 白名单回归：白名单内键写入、白名单外键不被写入 |
 | `cases/04-tools-behavior.mjs` | `git_exec` 返回值；`git_push` 无远端错误 / 裸远端成功 / `--force-with-lease` 语义 |

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 //
-// dev/exec.mjs — 调外部命令（git / gh），给失败分类，按类退避重试。
+// release/exec.mjs — 调外部命令（git / gh），给失败分类，按类退避重试。
 //
 // 重试只给「可能已经成功了但没收到回执」的那一类：DNS、连接中断、5xx、限速抖动。
 // 认证失败和事实错误一律立刻抛。这一层是唯一 fork 子进程的地方。
@@ -11,8 +11,8 @@ import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { warn, die } from "./console.mjs";
 
-const DEV_DIR = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(DEV_DIR, "..");
+const RELEASE_DIR = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(RELEASE_DIR, "..");
 
 const TRANSIENT = /could not resolve host|connection (reset|refused|aborted)|timed? out|timeout|tls|ssl|eof|network is unreachable|502|503|504|temporarily unavailable|remote end hung up/i;
 const RATE_LIMIT = /rate limit|secondary rate/i;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 //
-// dev/market.mjs — Hana 市场的规矩，以及投稿这个动作本身。
+// release/market.mjs — Hana 市场的规矩，以及投稿这个动作本身。
 //
 // 市场改了规矩（附件命名、条目大小上限、tag 字符集、批准记录格式、PR 正文要求），
 // 只改这个文件。投稿全程走 GitHub API，本地不留市场仓库的副本。
@@ -154,16 +154,16 @@ function buildPrBody(config, ctx, changeNote) {
   lines.push("## 截图或演示 / Screenshots or demo", "");
   if (ctx.screenshots.length) {
     for (const shot of ctx.screenshots) {
-      lines.push(`![${shot}](${rawBase}/dev/pr-assets/${encodeURIComponent(shot)})`);
+      lines.push(`![${shot}](${rawBase}/release/pr-assets/${encodeURIComponent(shot)})`);
     }
   } else {
-    lines.push("<!-- 在 dev/pr-assets/ 里放几张图，脚本会自动列到这里；也可以在这里手动拖图 -->");
+    lines.push("<!-- 在 release/pr-assets/ 里放几张图，脚本会自动列到这里；也可以在这里手动拖图 -->");
     lines.push("（待补）");
   }
   lines.push("");
 
   lines.push("## 自测报告 / Author test report", "");
-  lines.push(ctx.selfTest || "<!-- 在 dev/自测.md 里写好，脚本会自动抄到这里；也可以在这里手动补 -->\n（待补）");
+  lines.push(ctx.selfTest || "<!-- 在 release/自测.md 里写好，脚本会自动抄到这里；也可以在这里手动补 -->\n（待补）");
   lines.push("");
 
   lines.push("## 权限与外部服务 / Permissions and external services", "");

@@ -12,10 +12,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, v. 2.0.
 //
-// dev/pack.mjs — 零依赖出包（不调外部 tar/zip，不用 npm 库）。
+// release/pack.mjs — 零依赖出包（不调外部 tar/zip，不用 npm 库）。
 //
-// 采集范围与 publisher 一律从 dev/config.json 读，代码里不硬编码插件相关的东西。
-// 想给另一个插件用，整个 dev/ 复制过去，只改 config.json。
+// 采集范围与 publisher 一律从 release/config.json 读，代码里不硬编码插件相关的东西。
+// 想给另一个插件用，整个 release/ 复制过去，只改 config.json。
 //
 // 产物（dist/）：
 //   <id>-v<version>.zip            归档；manifest.json / index.js 直接位于包根（平铺，不套顶层目录）
@@ -33,10 +33,10 @@
 // manifest.json，套一层目录会被判成「读不到 manifest.json」；zip 由安装器解到 <id>/ 下。
 //
 // 用法：
-//   node dev/pack.mjs                 # 出包到 config.pack.out，publisher 取 config.publisher
-//   node dev/pack.mjs --out <dir>     # 自定义输出目录
-//   node dev/pack.mjs --publisher <p> # 覆盖 publisher（必须与 registry.json 登记值一致）
-//   node dev/pack.mjs --no-selfcheck  # 跳过自检
+//   node release/pack.mjs                 # 出包到 config.pack.out，publisher 取 config.publisher
+//   node release/pack.mjs --out <dir>     # 自定义输出目录
+//   node release/pack.mjs --publisher <p> # 覆盖 publisher（必须与 registry.json 登记值一致）
+//   node release/pack.mjs --no-selfcheck  # 跳过自检
 import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -45,8 +45,8 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 
-const DEV_DIR = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(DEV_DIR, "..");
+const RELEASE_DIR = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(RELEASE_DIR, "..");
 
 /** 市场同步器读 entry 附件时的响应字节上限（MAX_ENTRY_BYTES）。超了整批同步失败。 */
 const MARKET_ENTRY_MAX_BYTES = 512 * 1024;
@@ -61,9 +61,9 @@ function arg(name) {
 
 const hasFlag = (name) => process.argv.includes(name);
 
-// ── 配置：dev/config.json 是采集范围与发布身份的唯一来源 ─────────────────────
+// ── 配置：release/config.json 是采集范围与发布身份的唯一来源 ─────────────────────
 function loadConfig() {
-  const path = join(DEV_DIR, "config.json");
+  const path = join(RELEASE_DIR, "config.json");
   let raw;
   try {
     raw = JSON.parse(readFileSync(path, "utf8"));
@@ -103,7 +103,7 @@ function loadConfig() {
     },
   };
   if (problems.length) {
-    console.error(`[pack] dev/config.json 有问题：\n${problems.map((p) => "    - " + p).join("\n")}`);
+    console.error(`[pack] release/config.json 有问题：\n${problems.map((p) => "    - " + p).join("\n")}`);
     process.exit(1);
   }
   return config;
@@ -111,17 +111,17 @@ function loadConfig() {
 
 // ── 0) 出包前自检 ───────────────────────────────────────────────────────────
 function runSelfcheck(config) {
-  const script = join(DEV_DIR, "selfcheck.mjs");
+  const script = join(RELEASE_DIR, "selfcheck.mjs");
   if (config.pack.selfcheck === "none" || hasFlag("--no-selfcheck")) {
     console.log("[pack] 已配置跳过自检");
     return true;
   }
   if (!existsSync(script)) {
     if (config.pack.selfcheck === "optional") {
-      console.log("[pack] 未发现 dev/selfcheck.mjs，跳过自检");
+      console.log("[pack] 未发现 release/selfcheck.mjs，跳过自检");
       return true;
     }
-    console.error("[pack] config 要求自检（required），但 dev/selfcheck.mjs 不存在");
+    console.error("[pack] config 要求自检（required），但 release/selfcheck.mjs 不存在");
     return false;
   }
   try {

@@ -1,5 +1,5 @@
 @echo off
-rem dev\release.cmd - double-click this one.
+rem Double-click this file.
 rem
 rem Keep this file ASCII-only: cmd.exe reads it in the ANSI codepage, and
 rem UTF-8 Chinese in here gets parsed as commands.

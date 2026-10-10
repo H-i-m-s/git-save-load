@@ -1,29 +1,29 @@
 ﻿#requires -Version 5.1
 <#
-dev/ship.ps1 — 发布窗口。标题取 manifest.json 的 name，不写死插件名。
+release/ship.ps1 — 发布窗口。标题取 manifest.json 的 name，不写死插件名。
 
-它本身不干活，只是 dev/publish.mjs 的一层壳：收三样东西（做什么、发几号、这次改了什么），
+它本身不干活，只是 release/publish.mjs 的一层壳：收三样东西（做什么、发几号、这次改了什么），
 把参数交给 publish.mjs，把它的输出实时刷到窗口里。
 
 用法：
-  双击 dev\发布.cmd（推荐），或者
-  pwsh -NoProfile -STA -File dev\ship.ps1
+  双击 release\发布.cmd（推荐），或者
+  pwsh -NoProfile -STA -File release\ship.ps1
 
 调优/排障时可以用 -NoUI：把窗口搭到一半就停，不显示，也不会弹任何东西。
 
-窗口本身不做任何 git / gh / 网络操作。真正干什么、怎么干、出错了怎么办，全看 dev/publish.mjs
-和 dev/投稿规范.md。
+窗口本身不做任何 git / gh / 网络操作。真正干什么、怎么干、出错了怎么办，全看 release/publish.mjs
+和 release/投稿规范.md。
 #>
 param([switch]$NoUI)
 
 $ErrorActionPreference = "Stop"
 
-$devDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$appRoot = Split-Path -Parent $devDir
-$publishScript = Join-Path $devDir "publish.mjs"
+$releaseDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$appRoot = Split-Path -Parent $releaseDir
+$publishScript = Join-Path $releaseDir "publish.mjs"
 $manifestPath = Join-Path $appRoot "manifest.json"
 
-# 标题跟着插件走，不写死：整个 dev/ 是要整目录复制到别的插件去的。
+# 标题跟着插件走，不写死：整个 release/ 是要整目录复制到别的插件去的。
 # 放在 trap 之前算好，这样连 trap 弹的那个框也带着正确的名字。
 $appTitle = "发布"
 try {
@@ -45,7 +45,7 @@ trap {
 }
 
 if (-not (Test-Path $publishScript)) {
-  [System.Windows.Forms.MessageBox]::Show("找不到 dev/publish.mjs，dev 目录可能不完整。", $appTitle, "OK", "Error") | Out-Null
+  [System.Windows.Forms.MessageBox]::Show("找不到 release/publish.mjs，release 目录可能不完整。", $appTitle, "OK", "Error") | Out-Null
   exit 1
 }
 
@@ -187,7 +187,7 @@ $btnPr.Enabled = $false
 $form.Controls.Add($btnPr)
 
 $btnOpenDir = New-Object System.Windows.Forms.Button
-$btnOpenDir.Text = "打开 dev 目录"
+$btnOpenDir.Text = "打开 release 目录"
 $btnOpenDir.Location = New-Object System.Drawing.Point(392, 556)
 $btnOpenDir.Size = New-Object System.Drawing.Size(110, 30)
 $form.Controls.Add($btnOpenDir)
@@ -359,7 +359,7 @@ $btnRun.add_Click({
 
 $btnRelease.add_Click({ if ($script:releaseUrl) { Start-Process $script:releaseUrl } })
 $btnPr.add_Click({ if ($script:prUrl) { Start-Process $script:prUrl } })
-$btnOpenDir.add_Click({ Start-Process explorer.exe $devDir })
+$btnOpenDir.add_Click({ Start-Process explorer.exe $releaseDir })
 
 $btnClose.add_Click({
   if ($script:proc) {

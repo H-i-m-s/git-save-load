@@ -10,7 +10,7 @@
 
   "pack": {
     "out": "dist",
-    "excludeDirs": [".git", ".github", "node_modules", "dist", "dev", "tests"],
+    "excludeDirs": [".git", ".github", "node_modules", "dist", "release", "tests"],
     "excludeNames": [".DS_Store", "Thumbs.db", "desktop.ini"],
     "excludePrefixes": ["._"],
     "excludeExtensions": ["tmp", "temp", "swp", "swo", "log", "bak"],

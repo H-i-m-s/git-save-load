@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 //
-// dev/publish.mjs — 出包 / 发版 / 投稿 的编排引擎（零依赖，只用 Node 内置模块 + git / gh）。
+// release/publish.mjs — 出包 / 发版 / 投稿 的编排引擎（零依赖，只用 Node 内置模块 + git / gh）。
 //
 // 它是唯一干活的地方：ship.ps1 只是它的窗户，也可以直接被命令行或别的程序调用。
 //
 // 用法：
-//   node dev/publish.mjs --mode=pack                      只出包
-//   node dev/publish.mjs --mode=release  --version=3.2.1 --notes="- 修复xxx"
-//   node dev/publish.mjs --mode=publish  --version=3.2.1 --notes-file=notes.md
+//   node release/publish.mjs --mode=pack                      只出包
+//   node release/publish.mjs --mode=release  --version=3.2.1 --notes="- 修复xxx"
+//   node release/publish.mjs --mode=publish  --version=3.2.1 --notes-file=notes.md
 //   加 --dry-run  只做本地和只读检查，不写 manifest、不提交、不打 tag、不发 Release、不建 PR
 //   加 --verify   投稿前用市场自带的同步器复核自己那一条（需要联网，默认关）
 //   加 --skip-version-write  不把版本号写回 manifest.json（此时两者必须已经一致）
@@ -24,12 +24,12 @@
 // 就跳过提 PR；分支已存在就直接更新到新提交。所以中途失败可以原样重跑，不会重复发布。
 //
 // 出错只重试"可能已经成功但没收到回执"的那一类（DNS / 连接中断 / 5xx）。认证失败、事实错误
-// （版本号字符违规、条目超限、sha 不一致）一律立刻停下并说明原因。细则见 dev/投稿规范.md。
+// （版本号字符违规、条目超限、sha 不一致）一律立刻停下并说明原因。细则见 release/投稿规范.md。
 //
 // 这个文件只放编排：命令行参数、配置与清单、七阶段流程、main。其余三头在
-//   dev/console.mjs   终端输出与带着原因退出
-//   dev/exec.mjs      调 git / gh，失败分类与退避重试
-//   dev/market.mjs    市场的规矩与投稿动作
+//   release/console.mjs   终端输出与带着原因退出
+//   release/exec.mjs      调 git / gh，失败分类与退避重试
+//   release/market.mjs    市场的规矩与投稿动作
 
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -40,19 +40,19 @@ import { say, step, info, warn, die } from "./console.mjs";
 import { run, runRetry, git, gh, gitQuiet, classify, sleepSync } from "./exec.mjs";
 import { MARKET, marketStage, verifyStage } from "./market.mjs";
 
-const DEV_DIR = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(DEV_DIR, "..");
+const RELEASE_DIR = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(RELEASE_DIR, "..");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 配置与清单
 // ─────────────────────────────────────────────────────────────────────────────
 function loadConfig() {
-  const path = join(DEV_DIR, "config.json");
+  const path = join(RELEASE_DIR, "config.json");
   let raw;
   try {
     raw = JSON.parse(readFileSync(path, "utf8"));
   } catch (e) {
-    throw die(`读不到或解析不了 dev/config.json：${(e && e.message) || e}`, "确认 dev/config.json 存在且是合法 JSON");
+    throw die(`读不到或解析不了 release/config.json：${(e && e.message) || e}`, "确认 release/config.json 存在且是合法 JSON");
   }
   const missing = [];
   if (raw.schema !== 1) missing.push("schema 必须是 1");
@@ -61,7 +61,7 @@ function loadConfig() {
     missing.push("release.repo 必须是 owner/repo 形式");
   }
   if (missing.length) {
-    throw die(`dev/config.json 有问题：\n      ${missing.join("\n      ")}`, "补齐后再跑一次");
+    throw die(`release/config.json 有问题：\n      ${missing.join("\n      ")}`, "补齐后再跑一次");
   }
   return {
     publisher: raw.publisher.trim(),
@@ -293,7 +293,7 @@ function writeVersion(config, ctx, args) {
 /** S3 出包。 */
 function packStage(config, ctx) {
   step("出包");
-  const result = runRetry(process.execPath, [join(DEV_DIR, "pack.mjs")], { label: "pack.mjs" });
+  const result = runRetry(process.execPath, [join(RELEASE_DIR, "pack.mjs")], { label: "pack.mjs" });
   process.stdout.write(result.stdout.endsWith("\n") ? result.stdout : `${result.stdout}\n`);
   if (result.stderr.trim()) process.stdout.write(result.stderr);
 
@@ -409,7 +409,7 @@ function main() {
   };
   if (!ctx.id) throw die("manifest.json 缺 id");
 
-  // 标题跟着插件走，不写死：整个 dev/ 是要整目录复制到别的插件去的。
+  // 标题跟着插件走，不写死：整个 release/ 是要整目录复制到别的插件去的。
   step(`${ctx.name} 发布 · 模式 ${args.mode}${args.dryRun ? " · 干跑" : ""}`);
 
   ctx.version = String(ctx.version).trim().replace(/^v/, "");
@@ -418,13 +418,13 @@ function main() {
   ctx.tag = `v${ctx.version}`;
   ctx.entryName = `app-${ctx.id}-${ctx.version}.entry.json`;
 
-  const prAssets = join(DEV_DIR, "pr-assets");
+  const prAssets = join(RELEASE_DIR, "pr-assets");
   if (existsSync(prAssets)) {
     ctx.screenshots = readdirSync(prAssets)
       .filter((f) => /\.(png|jpe?g|gif|webp)$/i.test(f))
       .sort();
   }
-  const selfTestPath = join(DEV_DIR, "自测.md");
+  const selfTestPath = join(RELEASE_DIR, "自测.md");
   ctx.selfTest = existsSync(selfTestPath) ? readFileSync(selfTestPath, "utf8").trim() : "";
 
   let stage = 0;
@@ -465,7 +465,7 @@ function main() {
   else if (args.mode === "publish" && !args.dryRun) say("PR_URL=（没有新建 PR，市场那边可能已经是最新的）");
   if (args.dryRun) say("（干跑：以上动作都没有真正执行）");
   if (!ctx.screenshots.length && args.mode === "publish") {
-    warn("dev/pr-assets/ 里没有图，PR 正文的截图那块留了「待补」，记得去浏览器里补一下");
+    warn("release/pr-assets/ 里没有图，PR 正文的截图那块留了「待补」，记得去浏览器里补一下");
   }
 }
 

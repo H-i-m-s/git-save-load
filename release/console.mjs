@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 //
-// dev/console.mjs — 终端输出，以及带着「为什么」和「怎么办」退出。
+// release/console.mjs — 终端输出，以及带着「为什么」和「怎么办」退出。
 //
 // 所有模块共用这一层。别在别处直接 process.stdout.write，也别在别处 process.exit。
 
