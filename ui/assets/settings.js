@@ -5,9 +5,12 @@
 //       绝不让页面无声地停在「检测中」。
 // 注意：页面跑在沙箱 iframe 里，window.confirm 被禁 —— 确认走页内确认条。
 import { hana } from "./sdk.js";
+import { createUpdateApi } from "./update-api.mjs";
+import { installUpdateNotice } from "./update-notice.mjs";
 
 const API = {
-  status: "/settings/status",
+  local: "/settings/local",
+  gh: "/settings/gh",
   account: "/settings/account",
   ghLogin: "/settings/gh-login",
   ghLogout: "/settings/gh-logout",
@@ -18,6 +21,7 @@ const API = {
   pubkey: "/settings/signing/pubkey",
   token: "/settings/token",
   tokenClear: "/settings/token/clear",
+  updateCheck: "/settings/update-check",
 };
 const POLL_WAIT_MS = 3000;
 const CODE_COPIED_RESET_MS = 1800;
@@ -63,9 +67,20 @@ const ui = {
   confirmOk: el("confirm-ok"),
   confirmCancel: el("confirm-cancel"),
   note: el("gs-note"),
+  aboutCheck: el("about-check"),
+  aboutNotes: el("about-notes"),
+  aboutCurrent: el("about-current"),
+  aboutLatest: el("about-latest"),
+  aboutTag: el("about-tag"),
+  aboutEnabled: el("about-enabled"),
+  aboutInterval: el("about-interval"),
+  aboutIntervalHint: el("about-interval-hint"),
 };
 
 let state = { loading: true, error: "", accountId: "", git: {}, gh: {}, gpg: {}, signing: {}, device: {}, token: {} };
+// gh 账号校验要联网，单独一个进度位：本地那一趟回来就把整页画出来，
+// 「gh 认证」那一行自己转圈，不陪它等。
+let ghChecking = false;
 let pending = null; // "login" | "logout" | "generate" | "rotate" | null
 let confirmRequest = null; // { message, onOk }
 let pollTimer = null;
@@ -198,12 +213,14 @@ function renderAccount() {
   const device = state.device;
   const waiting = !!device.active;
 
-  ui.acctId.textContent = state.accountId || login || (state.loading ? "…" : "—");
+  ui.acctId.textContent = state.accountId || login || (ghChecking ? "…" : "—");
 
   // “未能确认”和“未登录”必须分开说：gh 网络不通时退出码是 0，但 state 是 error，
   // 以前这会被读成“未登录”，于是刷新几下就看见登录状态来回跳。
   // “探测失败”和“未检测到 gh”同理，也不能混。
-  ui.authHint.textContent = state.loading
+  // 这里读的是 ghChecking（那一趟要联网），不是 state.loading：本地那一趟回来就能把
+  // “未检测到 gh”这类结论说清楚，只有“登没登上”才需要等联网校验。
+  ui.authHint.textContent = state.loading || ghChecking
     ? "检测中…"
     : state.error
       ? "检测失败"
@@ -224,6 +241,10 @@ function renderAccount() {
   ui.authAction.textContent = "";
   if (pending === "login" || pending === "logout") {
     ui.authAction.append(makeBusy("处理中…"));
+  } else if (ghChecking || state.loading) {
+    // 还没问过 GitHub 就不摆「登录 / 退出」：这一刻不知道登没登上，
+    // 提前摆一个按钮就是在猜（而且猜错的时候按钮还会闪一下）。
+    ui.authAction.append(makeBusy("校验中…"));
   } else if (loggedIn) {
     ui.authAction.append(makeButton("退出登录", { variant: "danger", onClick: requestLogout }));
   } else if (!installed) {
@@ -350,10 +371,11 @@ async function refresh() {
   state.error = "";
   render();
   try {
-    const { data } = await withTimeout(api(API.status), STATUS_TIMEOUT_MS, "状态请求");
+    const { data } = await withTimeout(api(API.local), STATUS_TIMEOUT_MS, "本地状态请求");
     if (!data?.ok) throw new Error(data?.message || "后端返回失败");
     state.loading = false;
     state.git = data.git || {};
+    // gh 只拿到本地探针（装没装、版本号）；「登没登上」要等下面那次联网校验。
     state.gh = data.gh || {};
     state.gpg = data.gpg || {};
     state.signing = data.signing || {};
@@ -361,14 +383,39 @@ async function refresh() {
     setNote("");
     render();
     schedulePoll();
-    loadAccountId();
   } catch (error) {
     state.loading = false;
-    state.error = explainError("读取状态失败", error, API.status);
+    state.error = explainError("读取状态失败", error, API.local);
     render();
     setNote(`${state.error}。点右上角「重新检测」重试。`, "err");
   }
-  loadTokenInfo();
+  // 剩下两件都是「首屏之后自己补」，不拦住上面那些格的显示：
+  // 账号校验要联网、令牌摘要要读本地记录，两件互不依赖，所以一起发出去。
+  void loadGhAccount();
+  void loadTokenInfo();
+}
+
+// gh 账号校验（联网，可能卡十几秒）：单独立一个口。本地那一趟已经把「装没装」交代清楚，
+// 这一次只补「登没登上」，慢也只慢那一行。
+async function loadGhAccount() {
+  ghChecking = true;
+  render();
+  try {
+    const { data } = await withTimeout(api(API.gh), STATUS_TIMEOUT_MS, "gh 校验");
+    if (data?.ok) {
+      // 只覆盖 gh 那一块：本地那一趟已经带来的 git / gpg / signing 不动。
+      state.gh = { ...state.gh, ...data };
+    } else {
+      // 校验没成：不谎报“未登录”，老老实实说没能确认。
+      state.gh = { ...state.gh, verifyFailed: true, verifyError: data?.message || "校验请求失败" };
+    }
+  } catch (error) {
+    // 超时也算“没验成”，不是“未登录”——两者在界面上的说法必須分开。
+    state.gh = { ...state.gh, verifyFailed: true, verifyError: String(error?.message || error) };
+  }
+  ghChecking = false;
+  render();
+  loadAccountId();
 }
 
 // 账号数字 ID 是联网查询，放到首屏之后异步补，失败就留空，不影响其它部分。
@@ -580,8 +627,106 @@ ui.confirmCancel.addEventListener("click", clearConfirm);
 
 ui.refreshBtn.addEventListener("click", () => refresh());
 
+// ---------------------------------------------------------------- 版本与更新说明
+
+// 检查间隔的合法区间与服务端 lib/update-check.mjs 同源（那边是权威）。
+// 前端也存一份，是为了打字时就能给得出范围，不必为一个数字来回一趟。
+// 不能直接把 lib/update-check.mjs import 进来：那一份要 node:fs，浏览器里跑不了。
+const INTERVAL_MIN = 1;
+const INTERVAL_MAX = 10080;
+const INTERVAL_FALLBACK = 360;
+
+// 取数通道：设置页跑在宿主的沙箱 iframe 里，走 hana.api.fetch（凭据头由 SDK 带）。
+// update-api 那层内部只认相对路径 /update-check，本 App 的设置端点统一挂在 /settings/* 下，
+// 前缀在这里补上（那一层因此能与 doc-intake / magpie-hana 那几份逐字可 diff）。
+const updateApi = createUpdateApi({
+  fetchJson: async (path, init) => (await api(`${API.updateCheck}${path.replace(/^\/update-check/, "")}`, init)).data,
+});
+let updateNotice = null;
+
+function parseInterval(raw) {
+  const s = String(raw ?? "").trim();
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isInteger(n) && n >= INTERVAL_MIN && n <= INTERVAL_MAX ? n : null;
+}
+
+/** 间隔那一行的副文案：平时是一句说明，填得不对时就地变红说清范围。 */
+function setIntervalHint(bad) {
+  const node = ui.aboutIntervalHint;
+  if (!node) return;
+  if (bad) {
+    node.textContent = `要填 ${INTERVAL_MIN} – ${INTERVAL_MAX} 的整数分钟`;
+    node.dataset.kind = "err";
+  } else {
+    node.textContent = "超过就自动检查";
+    delete node.dataset.kind;
+  }
+}
+
+/** 快照一到就刷这一格。不自己算版本高低，只听服务端的判断（拿不到就保持上一个值）。 */
+function syncAbout() {
+  if (!ui.aboutCurrent) return;
+  const d = updateNotice?.data;
+  ui.aboutCurrent.textContent = d?.current ? `v${d.current}` : "—";
+  ui.aboutLatest.textContent = d ? (d.latest ? `v${d.latest.version}` : "—") : "…";
+  ui.aboutLatest.dataset.state = d?.hasUpdate ? "new" : "";
+  const showTag = !!d?.hasUpdate;
+  ui.aboutTag.hidden = !showTag;
+  if (showTag) ui.aboutTag.textContent = `有新版本 v${d.latest.version}`;
+  if (ui.aboutEnabled) ui.aboutEnabled.checked = d ? d.enabled !== false : true;
+  // 输入框正在填的时候别去覆盖它，否则打字打到一半会被刷走。
+  if (ui.aboutInterval && document.activeElement !== ui.aboutInterval) {
+    const minutes = d?.intervalMinutes ?? INTERVAL_FALLBACK;
+    if (ui.aboutInterval.value !== String(minutes)) ui.aboutInterval.value = String(minutes);
+    setIntervalHint(false);
+  }
+}
+
+// 这一格改完就存，但走的不是插件配置，是插件进程里那份状态文件（更新提示开关与检查间隔）。
+// 两笔都成功才算存好：任何一笔失败都报出来，不让界面停在一个没生效的位置上。
+async function commitAbout() {
+  const enabled = !!ui.aboutEnabled?.checked;
+  const minutes = parseInterval(ui.aboutInterval?.value);
+  if (minutes === null) {
+    setIntervalHint(true);
+    setNote(`检查间隔要填 ${INTERVAL_MIN} – ${INTERVAL_MAX} 之间的整数分钟`, "err");
+    return;
+  }
+  setIntervalHint(false);
+  try {
+    await withTimeout(updateApi.dismissUpdate({ action: "toggle", enabled }), STATUS_TIMEOUT_MS, "保存更新提示");
+    await withTimeout(updateApi.setUpdateInterval(minutes), STATUS_TIMEOUT_MS, "保存检查间隔");
+    // 新间隔可能已经过期，顺手问一次（间隔没到它不会真出门）。
+    void updateNotice?.refresh();
+    setNote("已保存", "ok");
+  } catch (error) {
+    setNote(`保存失败：${error?.message || error}`, "err");
+  }
+}
+
+ui.aboutCheck.addEventListener("click", () => updateNotice?.openManual());
+ui.aboutNotes.addEventListener("click", () => updateNotice?.openCached());
+ui.aboutEnabled.addEventListener("change", () => void commitAbout());
+ui.aboutInterval.addEventListener("input", () => {
+  // 打字时只做一件事：改对了就把红字收回。打到一半不判它错。
+  if (parseInterval(ui.aboutInterval.value) !== null) setIntervalHint(false);
+});
+ui.aboutInterval.addEventListener("change", () => void commitAbout());
+
 (async function boot() {
   render(); // 先画一版加载态，页面不会像卡住
   try { await withTimeout(hana.ready(), READY_TIMEOUT_MS, "SDK 就绪"); } catch {}
+  // 更新说明接在 SDK 就绪之后、首屏请求之前：它是自己一条线（按服务端定的间隔去查一次），
+  // 与下面那趟本地请求互不依赖，所以不排在它后面。
+  // 没网络通道时它不报错，只是拿不到新东西，已缓存的版本与历史照旧能看。
+  try {
+    updateNotice = installUpdateNotice({ hana, api: updateApi });
+    updateNotice?.subscribe(() => syncAbout());
+    syncAbout();
+  } catch (error) {
+    setNote(`更新说明没装上：${error?.message || error}`, "err");
+  }
+  // 这一趟只等本地探针（秒回）；gh 账号校验与令牌摘要在它内部自己铺开去跑，不拦住首屏。
   await refresh();
 })();

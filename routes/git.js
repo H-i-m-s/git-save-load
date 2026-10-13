@@ -591,6 +591,6 @@ export default function (app, ctx) {
     parseNameStatus,
   });
   registerStashRoutes(app, { repoPath, gitExecFile, commandErrorText });
-  registerSettingsPageRoutes(app, { dataDir, resolveGitPath });
+  registerSettingsPageRoutes(app, { ctx, dataDir, resolveGitPath });
   registerMiscRoutes(app, { pluginDir: PLUGIN_DIR });
 }

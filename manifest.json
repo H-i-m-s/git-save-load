@@ -15,6 +15,12 @@
     "app/resources.read",
     "app/resources.write"
   ],
+  "network": {
+    "allowedHosts": ["github.com"],
+    "methods": ["GET"],
+    "defaultTimeoutMs": 15000,
+    "maxResponseBytes": 2097152
+  },
   "contributes": {
     "settings": {
       "title": "Git Save/Load 设置",

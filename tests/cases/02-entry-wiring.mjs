@@ -23,7 +23,6 @@ const EXPECTED_TOOLS = [
   "git_push",
   "gh_pr",
 ];
-
 const EXPECTED_ROUTES = [
   ["GET", "/api/gh/pr-list"],
   ["GET", "/api/gh/pr-view"],
@@ -33,6 +32,12 @@ const EXPECTED_ROUTES = [
   ["POST", "/settings/token"],
   ["POST", "/settings/token/clear"],
   ["POST", "/api/config"],
+  // 首屏走本地那一趟；gh 账号校验单独一趟（要联网，不能拦住首屏）
+  ["GET", "/settings/local"],
+  ["GET", "/settings/gh"],
+  // 版本与更新说明（内容来自 GitHub Release，见 lib/update-check.mjs）
+  ["GET", "/settings/update-check"],
+  ["POST", "/settings/update-check"],
 ];
 
 const importAppModule = (relPath) => import(pathToFileURL(join(APP_DIR, ...relPath)).href);

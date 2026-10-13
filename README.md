@@ -610,16 +610,24 @@ git-save-load/
 ├── manifest.json          # v2 App 清单（manifestVersion 2）、设置 schema、卡片与功能面板声明
 ├── index.js               # defineApp 入口：注册 8 个 Agent 工具
 ├── lib/
-│   └── secret.js          # GitHub 令牌的本地加密存放（DPAPI，后端可插拔）
+│   ├── secret.js          # GitHub 令牌的本地加密存放（DPAPI，后端可插拔）
+│   └── update-check.mjs   # 版本与更新说明取数（GitHub Release atom 订阅源，与 doc-intake 同源）
 ├── assets/
 │   ├── icon.svg           # App 身份图标（manifest.icon）
 │   └── icon.png           # 同一图标的位图版本
 ├── ui/                    # 宿主静态树（/api/apps/git-save-load/ui/*），App 级资源鉴权
 │   ├── git.html           # 卡片与功能面板共用的页面入口
+│   ├── settings.html      # Hana 设置窗里的自定义设置页
 │   └── assets/
 │       ├── icon.png       # 卡片封面（face.image）
 │       ├── sdk.js         # @hana/app-sdk/ui 浏览器单例
 │       ├── hana-bridge.js # 主题/挂载位桥接（ESM）
+│       ├── settings.js    # 设置页前端逻辑
+│       ├── settings.css   # 设置页样式
+│       ├── components.mjs       # 设置页小工具（h()，供弹窗组件用）
+│       ├── update-api.mjs       # 更新说明取数层
+│       ├── update-notice.mjs    # 更新说明弹窗
+│       ├── update-notice.css    # 弹窗样式
 │       ├── git.css        # 全部样式
 │       └── git/           # 前端 JS 模块（27 个）
 ├── routes/                # 后端路由（Hono 目录形式，前缀 /api/apps/git-save-load/routes/）
@@ -638,6 +646,7 @@ git-save-load/
 │   ├── branch.js          # 分支管理
 │   ├── stash.js           # Stash 管理
 │   ├── config.js          # 配置读写（v2 config + dataDir 遗留文件回退）
+│   ├── settings-page.js   # 自定义设置页后端（gh 认证 / 工具链 / 签名 / 令牌 / 版本与更新说明）
 │   └── misc.js            # 兼容接口
 ├── tools/                 # Agent 可调用工具的实现模块
 │   ├── _helpers.js        # git / gh 路径探测与命令辅助
@@ -664,7 +673,7 @@ git-save-load/
 │   └── pr-assets/         # 给市场 PR 看的截图（出包时排除）
 ├── tests/                 # 自动化测试（受限模式运行）；打包时整目录排除
 │   ├── run.mjs            # 一键 runner
-│   ├── cases/             # 5 个用例
+│   ├── cases/             # 7 个用例
 │   └── lib/               # 断言骨架、夹具、宿主桩
 ├── sdk/                   # 随包分发的 @hana/app-sdk 运行时闭包（离线装载，不依赖 npm）
 ├── docs/
@@ -726,6 +735,9 @@ v2 App 迁移（2.4.0）：
 - `ui/git.html`：页面入口（DOM 结构与模块加载顺序）
 - `ui/assets/git/*.js`：前端功能模块，加载顺序即拆分前顶层执行顺序，勿随意调整
 - `ui/assets/hana-bridge.js`：v2 桥接（主题、function-panel 识别、App SDK 单例）
+- `ui/settings.html` + `ui/assets/settings.js`：Hana 设置窗里的自定义设置页（账号 / 工具链 / 签名 / 令牌 / 关于更新）
+  - 后端分两趟，不要合并：`GET /settings/local` 只跑本地探针（git/gpg `--version`、签名元信息、设备码会话），首屏读它，必须秒回；`GET /settings/gh` 才联网（`gh auth status` 会拿令牌去 GitHub 真验一次，最长 20s），只拿来补「登没登上」那一行。把两者捆回同一个响应，就等于让整页设置项陪着一次网络往返等，回归用例 07 会报错。
+- `lib/update-check.mjs` + `ui/assets/update-*.mjs`：版本与更新说明（内容来自 GitHub Release，与 doc-intake 同源，改逻辑请一并改）
 - `routes/*.js`：后端路由；`routes/git.js` 是公共辅助与模块装配
 - `tools/*.js`：Agent 工具
 
@@ -740,7 +752,7 @@ node scripts/validate-app.mjs --dir <HANA_HOME>/apps/git-save-load --smoke --jso
 
 ### 测试
 
-`tests/` 下有 5 个用例，一条命令跑完：
+`tests/` 下有 7 个用例，一条命令跑完：
 
 ```bash
 node tests/run.mjs            # 全部用例

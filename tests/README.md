@@ -32,10 +32,12 @@ node --permission \
 | `lib/fixture.mjs` | 临时目录 / 临时 git 仓库 / 裸远端夹具，进程退出统一清理 |
 | `lib/stub.mjs` | 宿主侧桩：v2 入口上下文（`tools.register` 返回 `{ ready: Promise }` 回执）、路由 app/ctx |
 | `cases/01-structure.mjs` | spawn `release/selfcheck.mjs`，断言退出码 0 |
-| `cases/02-entry-wiring.mjs` | `index.js` 注册 8 个工具且名字集合一致；`routes/git.js` 装配 PR / 令牌端点 |
+| `cases/02-entry-wiring.mjs` | `index.js` 注册 8 个工具且名字集合一致；`routes/git.js` 装配 PR / 令牌 / 更新说明端点 |
 | `cases/03-config-whitelist.mjs` | `POST /api/config` 白名单回归：白名单内键写入、白名单外键不被写入 |
 | `cases/04-tools-behavior.mjs` | `git_exec` 返回值；`git_push` 无远端错误 / 裸远端成功 / `--force-with-lease` 语义 |
 | `cases/05-secret.mjs` | 令牌加密往返、`credential.json` 不含明文、`alg` 不匹配时 `readable=false` |
+| `cases/06-update-check.mjs` | 更新说明数据层（版本比较 / atom 解析 / 间隔校验）、`REPO_SLUG` 与 `release/config.json` 一致、`/settings/update-check` 端点行为 |
+| `cases/07-settings-first-paint.mjs` | 设置页首屏不被网络拖住：`/settings/local` 只読本地（用一个没 network 的 ctx 柱证明）、`/settings/gh` 才是联网那一趟 |
 
 ## 边界
 

@@ -1,5 +1,5 @@
 // 设置窗自定义设置页后端（contributes.settings.ui → /settings.html）。
-// 只管三块：账号与 gh 认证、命令行工具检测、隔离 GPG 提交签名。
+// 只管四块：账号与 gh 认证、命令行工具检测、隔离 GPG 提交签名、版本与更新说明。
 // 卡片内的设置（仓库/暂存/推送/主题等）不走这里，互不影响。
 //
 // 分层：本文件是纯后端逻辑 + 路由；被 routes/git.js 的默认导出装配进来。
@@ -12,16 +12,20 @@
 
 import { execFileSync, spawn, execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { resolveGhPath, ghEnvironment } from "./github.js";
 import { saveSecret, clearSecret, secretInfo } from "../lib/secret.js";
+import { createUpdateCheck, normalizeIntervalMinutes } from "../lib/update-check.mjs";
 
 const GH_HOST = "github.com";
 const DEVICE_URL = "https://github.com/login/device";
 const SIGN_HOME_DIR = "gnupg";
 const SIGN_META_FILE = "signing.json";
 const SIGN_WRAPPER_FILE = "gpg-sign.cmd";
+
+const SETTINGS_DIR = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------- 通用子进程
 
@@ -331,8 +335,9 @@ function parseAuth(json) {
   };
 }
 
-// 只做本地检测（gh --version / auth status），不发网络请求 —— 状态页要秒回。
-async function readGhStatus() {
+// gh 本地探针：只跑 gh --version，不碰网络。这一趟要秒回，
+// 设置页首屏（工具链、签名、令牌、关于）全指望着它，不能被账号校验拖住。
+async function readGhLocal() {
   const version = await ghRunAsync(["--version"], 12000);
   if (!version.ok) {
     // 区分"没装"和"没探成"：只有明确的"找不到可执行文件"才是真的没装。
@@ -343,18 +348,16 @@ async function readGhStatus() {
     // 所以不用管 shell 的"不是内部或外部命令"那类文案；把它算进来反而会把
     // "gh.exe 是个跑不起来的坏程序"误判成"你没装"。
     const notFound = /ENOENT|ENOTDIR|cannot find the file/i.test(text);
-    return {
-      installed: false,
-      probeFailed: !notFound,
-      probeError: notFound ? "" : text,
-      version: "",
-      loggedIn: false,
-      login: "",
-      verifyFailed: false,
-      verifyError: "",
-    };
+    return { installed: false, probeFailed: !notFound, probeError: notFound ? "" : text, version: "" };
   }
+  return { installed: true, probeFailed: false, probeError: "", version: firstVersion(version.stdout) };
+}
 
+// gh 账号校验：这一趟要联网。`gh auth status` 不是纯本地读取 ——
+// 它会拿手里的令牌去 GitHub 验一次，所以在网络不好时能卡满 20 秒，
+// 快失败时还会再试一次。它必须与上面的本地探针分开走两趟：
+// 捆在一起就意味着一整页设置项都要等这一次往返，那正是要避免的。
+async function readGhAuth() {
   const started = Date.now();
   const auth = await ghRunAsync(["auth", "status", "--json", "hosts"], 20000);
   const elapsed = Date.now() - started;
@@ -376,15 +379,21 @@ async function readGhStatus() {
   }
 
   return {
-    installed: true,
-    probeFailed: false,
-    probeError: "",
-    version: firstVersion(version.stdout),
     loggedIn: parsed.loggedIn,
     login: parsed.login,
     verifyFailed: !!parsed.verifyFailed,
     verifyError: parsed.verifyFailed ? parsed.verifyError || "" : "",
   };
+}
+
+// 本地探针 + 账号校验拼成完整状态。给那些本来就要联网的调用方用
+// （登录前判断已装否、推导签名身份）—— 它们不赶首屏那几毫秒。
+async function readGhStatus() {
+  const local = await readGhLocal();
+  if (!local.installed) {
+    return { ...local, loggedIn: false, login: "", verifyFailed: false, verifyError: "" };
+  }
+  return { ...local, ...(await readGhAuth()) };
 }
 
 // 账号数字 ID 需要联网。单独一次、短超时、失败返回空串，绝不让它拖住状态页。
@@ -512,9 +521,24 @@ export function resolveCommitSigning(dataDir, gitPath) {
   };
 }
 
+// ---------------------------------------------------------------- 版本
+
+// 包根 manifest.json 的 version。这是本 App 版本的唯一事实源：发版脚本
+// （release/publish.mjs）的 tag 由它推出，打包与门禁也都校验它。读不到就交空串，
+// 更新检查那边会把「当前版本」显示成占位符，不瞎猜一个出来。
+function readAppVersion() {
+  try {
+    const text = readFileSync(join(SETTINGS_DIR, "..", "manifest.json"), "utf8").replace(/^\uFEFF/, "");
+    const manifest = JSON.parse(text);
+    return typeof manifest?.version === "string" ? manifest.version : "";
+  } catch {
+    return "";
+  }
+}
+
 // ---------------------------------------------------------------- 路由
 
-export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
+export function registerSettingsPageRoutes(app, { ctx, dataDir, resolveGitPath }) {
   const gitPath = () => (typeof resolveGitPath === "function" ? resolveGitPath() : "git");
 
   function toolchainStatus() {
@@ -527,10 +551,12 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
     };
   }
 
-  // 一次性状态：页面加载与轮询都读它
-  app.get("/settings/status", async (c) => {
+  // 本地状态：页面加载与轮询都读它。只跑本地探针（git/gpg --version、签名元信息、
+  // 设备码会话的内存快照）与 gh --version，一次网络都不出 —— 首屏必须秒回。
+  // gh 的账号校验另外走一趟（见下面 /settings/gh）。
+  app.get("/settings/local", async (c) => {
     try {
-      const gh = await readGhStatus();
+      const gh = await readGhLocal();
       const tools = toolchainStatus();
       const flow = activeFlow();
       return c.json({
@@ -541,6 +567,20 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
         signing: signingStatus(dataDir),
         device: flow ? { active: true, code: flow.code, url: flow.url, startedAt: flow.startedAt } : { active: false },
       });
+    } catch (e) {
+      return c.json({ ok: false, message: String(e?.message || e) });
+    }
+  });
+
+  // gh 账号校验：这一趟要联网，所以单独立一个口，与首屏分开。
+  // 前端先拿到本地那份把页面画出来，再拿这一份去补「是否已登录」那一行。
+  app.get("/settings/gh", async (c) => {
+    try {
+      const local = await readGhLocal();
+      if (!local.installed) {
+        return c.json({ ok: true, ...local, loggedIn: false, login: "", verifyFailed: false, verifyError: "" });
+      }
+      return c.json({ ok: true, ...local, ...(await readGhAuth()) });
     } catch (e) {
       return c.json({ ok: false, message: String(e?.message || e) });
     }
@@ -676,5 +716,69 @@ export function registerSettingsPageRoutes(app, { dataDir, resolveGitPath }) {
     const r = runGpg(backend, signHome(dataDir), ["--armor", "--export", meta.fingerprint], 20000);
     if (!r.ok || !r.stdout) return c.json({ ok: false, message: r.stderr || "导出公钥失败" });
     return c.json({ ok: true, armored: r.stdout });
+  });
+
+  // ======== 版本与更新说明 ========
+  // 数据层在 ../lib/update-check.mjs（与 doc-intake / magpie-hana / token-tracker-app 同源），
+  // 界面在 ui/assets/update-notice.mjs。这一节只负责把两边接起来：
+  //   GET  /settings/update-check            → 交一份快照（间隔没到就不出网）
+  //   GET  /settings/update-check?force=1    → 一定去 GitHub 取一次
+  //   GET  /settings/update-check?cached=1   → 只交手里那份，一次网络都不出
+  //   POST /settings/update-check            → ack / later / toggle / interval
+  //
+  // 出网只能走宿主代发的通道：App 进程没开 --net，能去哪些域名写在 manifest.json 的
+  // network.allowedHosts 里（那里的 github.com 就是给这一节用的）。拿不到通道也不报错，
+  // 那一层会自己退化成「没有网络能力」，界面照旧能看到已缓存的版本与历史。
+  const updateCheck = createUpdateCheck({
+    dataDir,
+    appVersion: readAppVersion(),
+    // 那一层的 log 形状是 log(level, message)，转一道落到宿主的 logger 上。
+    log: (level, message) => {
+      const line = `git-save-load 更新说明：${message}`;
+      try {
+        if (level === "warn") (ctx?.logger?.warn || console.warn)(line);
+        else (ctx?.logger?.info || console.info)(line);
+      } catch {
+        /* 记日志失败不影响功能 */
+      }
+    },
+    // 显式传入宿主受控通道；不给就是 null，那一层会说「当前环境没有网络能力」。
+    fetchImpl: typeof ctx?.network?.fetch === "function" ? (url, init) => ctx.network.fetch(url, init) : null,
+  });
+
+  app.get("/settings/update-check", async (c) => {
+    try {
+      // cached=1：只把手里的结果交出去，不出网。「查看更新说明」走这条。
+      if (c.req.query("cached") === "1") return c.json({ ok: true, update: updateCheck.snapshot() });
+      const update = await updateCheck.check({ force: c.req.query("force") === "1" });
+      return c.json({ ok: true, update });
+    } catch (e) {
+      return c.json({ ok: false, error: e?.message || String(e) }, 503);
+    }
+  });
+
+  // 「我已知晓」与「先不看」都走这里。后者只记在 App 进程内存里，重启就忘。
+  // 另外两个动作是设置页那两格：更新提示开关、自动检查的间隔（分钟）。
+  app.post("/settings/update-check", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const action = String(body?.action || "");
+    try {
+      if (action === "ack" || action === "later") {
+        return c.json({ ok: true, update: updateCheck.dismiss(body.version, action === "ack" ? "read" : "later") });
+      }
+      if (action === "toggle") {
+        return c.json({ ok: true, update: updateCheck.setEnabled(body.enabled !== false) });
+      }
+      if (action === "interval") {
+        // 本地先按合法区间拦一道，给界面一个能读的理由；那一层还会再校一次。
+        if (normalizeIntervalMinutes(body.minutes) === null) {
+          return c.json({ ok: false, error: "检查间隔要填 1 到 10080 之间的整数分钟数" }, 400);
+        }
+        return c.json({ ok: true, update: updateCheck.setIntervalMinutes(body.minutes) });
+      }
+      return c.json({ ok: false, error: "action 只认 ack / later / toggle / interval" }, 400);
+    } catch (e) {
+      return c.json({ ok: false, error: e?.message || String(e) }, 400);
+    }
   });
 }
