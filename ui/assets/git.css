@@ -80,6 +80,65 @@ body.paper-texture.theme-absolutely{--hana-bg:#F8F7F3;--hana-surface:#FEFDFB}
 body.paper-texture.theme-delve{--hana-bg:#FFFFFF;--hana-surface:#FCFCFC}
 body.paper-texture.theme-deep-think{--hana-bg:#FFFFFF;--hana-surface:#FCFCFE}
 body.paper-texture.theme-coral{--hana-bg:#FFF9F1;--hana-surface:#FFFDF7}
+/* ======== 更新说明浮层在主卡片上的取色 ========
+   ui/assets/update-notice.css 是跟设置页共用的同一份（与 doc-intake 那边逐字可 diff），
+   这里不改它一个字。它把颜色收在 :root 的 --tt-* 上，而 :root 那些值指向设置页的 --gs-*：
+     1) 主卡片没有 --gs-*（那是 settings.css 里的调色板），浮层会变成「有字没色」；
+     2) 而且 --tt-* 在 html 元素上就已经完成 var() 替换，在 body 上补 --gs-* 是没用的
+        ——子元素看不到，:root 也不会回头重算。必须直接覆写 --tt-* 本身。
+   另外主题类 .theme-* 挂在 body 上，所以这层写在 body、指向 --hana-* 才能跟着主题变。
+   自定义属性「自身声明优先于继承」，body 这层一定盖过 :root 那份。 */
+body{
+  --tt-radius-inner:8px;
+  --tt-t1:var(--hana-fg,#1a1d24);
+  --tt-t2:var(--hana-fg-muted,#6b7280);
+  --tt-t3:var(--hana-fg-subtle,#9ca3af);
+  --tt-t4:var(--hana-fg-subtle,#9ca3af);
+  --tt-em:var(--hana-fg,#1a1d24);
+  --tt-bg:var(--hana-bg-muted,#f6f7f7);
+  --tt-card:var(--hana-surface,#fff);
+  --tt-b1:var(--hana-border,#e2e5ea);
+  --tt-b2:var(--hana-border,#e2e5ea);
+  --tt-b3:var(--hana-border,#e2e5ea);
+  --tt-row-hover:var(--hana-bg-muted,#f6f7f7);
+  --tt-select-bg:color-mix(in srgb,var(--hana-accent,#5e6ad2) 14%,transparent);
+  --tt-select-fg:var(--hana-accent,#5e6ad2);
+  --tt-select-b:var(--hana-accent,#5e6ad2);
+  --tt-red:var(--hana-danger,#c0392b);
+  --tt-orange:var(--hana-danger,#c0392b);
+  --tt-green:var(--hana-green,#3d9a63);
+  --tt-blue:var(--hana-accent,#5e6ad2);
+  --tt-font:var(--hana-font-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif);
+  --tt-font-mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+
+/* ======== 顶部更新提示条 ========
+   与 #workflowGuide 同调（同一种渐变底 + accent 描边）。只在服务端说「有新版本
+   且这次会话还没处理过」时出现；点内容区或「查看更新」开浮层。
+   逻辑在 ui/assets/git/update-banner.mjs。 */
+.update-banner{
+  display:flex;align-items:center;gap:8px;
+  background:linear-gradient(135deg,var(--hana-bg-muted,#f6f7f7) 0%,var(--hana-surface,#fff) 100%);
+  border:1px solid var(--hana-accent,#5e6ad2);
+  border-radius:10px;padding:8px 12px;margin-bottom:10px;
+  font-size:12.5px;color:var(--hana-fg,#1a1d24);
+}
+.update-banner__dot{width:6px;height:6px;border-radius:50%;background:var(--hana-accent,#5e6ad2);flex:0 0 auto}
+.update-banner__text{flex:1;min-width:0;line-height:1.5}
+.update-banner__ver{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-weight:600;color:var(--hana-accent,#5e6ad2)}
+.update-banner__btn{
+  flex:0 0 auto;padding:3px 10px;border:0;border-radius:6px;
+  font-size:12px;font-weight:500;cursor:pointer;
+  background:var(--hana-accent,#5e6ad2);color:#fff;
+}
+.update-banner__btn:hover{filter:brightness(1.06)}
+.update-banner__x{
+  flex:0 0 auto;width:22px;height:22px;display:grid;place-items:center;
+  border:1px solid transparent;border-radius:6px;background:none;
+  color:var(--hana-fg-muted,#6b7280);font-size:15px;line-height:1;cursor:pointer;padding:0;
+}
+.update-banner__x:hover{color:var(--hana-fg,#1a1d24);border-color:var(--hana-border,#e2e5ea);background:var(--hana-bg-muted,#f6f7f7)}
+
 /* 开关样式 — 开启后就是一块主题 accent 纯色底，跟 "存档" / "初始化仓库" 那种填充按钮同调 */
 /* !important 强制覆盖内联于 span 上的默认 background:var(--hana-border) */
 #cfgTexture:checked + span{background:var(--hana-accent,#5e6ad2) !important}

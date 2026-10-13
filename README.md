@@ -734,6 +734,7 @@ v2 App 迁移（2.4.0）：
 - `index.js`：工具注册（`defineApp`）
 - `ui/git.html`：页面入口（DOM 结构与模块加载顺序）
 - `ui/assets/git/*.js`：前端功能模块，加载顺序即拆分前顶层执行顺序，勿随意调整
+- `ui/assets/git/update-banner.js`：卡片顶部更新提示条 + 更新说明浮层（ES 模块，见 `ui/README.md`）
 - `ui/assets/hana-bridge.js`：v2 桥接（主题、function-panel 识别、App SDK 单例）
 - `ui/settings.html` + `ui/assets/settings.js`：Hana 设置窗里的自定义设置页（账号 / 工具链 / 签名 / 令牌 / 关于更新）
   - 后端分两趟，不要合并：`GET /settings/local` 只跑本地探针（git/gpg `--version`、签名元信息、设备码会话），首屏读它，必须秒回；`GET /settings/gh` 才联网（`gh auth status` 会拿令牌去 GitHub 真验一次，最长 20s），只拿来补「登没登上」那一行。把两者捆回同一个响应，就等于让整页设置项陪着一次网络往返等，回归用例 07 会报错。

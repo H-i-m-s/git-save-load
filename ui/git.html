@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Save/Load</title>
 <link rel="stylesheet" href="assets/git.css">
+<!-- 更新说明浮层的样式：与设置页共用同一份（逐字可 diff）。主卡片需要的 --tt-* 取色
+     补在 git.css 里，不动这一份。 -->
+<link rel="stylesheet" href="assets/update-notice.css">
 </head>
 <body>
 
@@ -36,6 +39,15 @@
 </div>
 
 <div id="panelsArea">
+
+<!-- 更新提示条：有新版且本次会话还没处理过时才出现（逻辑在 assets/git/update-banner.js）。
+     与下面的 #workflowGuide 同一种横幅形态。 -->
+<div id="updateBanner" class="update-banner" style="display:none" role="status">
+  <span class="update-banner__dot"></span>
+  <span class="update-banner__text">有新版本 <b class="update-banner__ver" id="updateBannerVer"></b> 可用</span>
+  <button type="button" class="update-banner__btn" id="updateBannerBtn">查看更新</button>
+  <button type="button" class="update-banner__x" id="updateBannerX" title="本次会话不再提示" aria-label="本次会话不再提示">×</button>
+</div>
 
 <!-- 工作流程提示条（仅在未关闭时显示） -->
 <div id="workflowGuide" style="display:none;background:linear-gradient(135deg,var(--hana-bg-muted,#f6f7f7) 0%,var(--hana-surface,#fff) 100%);border:1px solid var(--hana-accent,#5e6ad2);border-radius:10px;padding:14px 16px;margin-bottom:12px;font-size:13px;color:var(--hana-fg,#1a1d24)">
@@ -748,6 +760,11 @@
 <script src="assets/git/identity.js"></script>
 <script src="assets/git/main.js"></script>
 <script type="module" src="./assets/hana-bridge.js"></script>
+<!-- 顶部更新提示条 + 「查看更新」浮层。
+     必须是 module：它 import 的 ../update-notice.mjs / ../update-api.mjs 与设置页共用同一份。
+     排在 hana-bridge 之后、且用 module（两者都是 deferred，按出现顺序执行）——
+     虽然 hana 是 import 进来的同一个单例、顺序并非硬约束，排在后边算一道防御。 -->
+<script type="module" src="assets/git/update-banner.js"></script>
 <script>
 // 加载健康检查：任一模块请求失败（如会话失效）时给出可见提示，避免静默白板。
 (function() {

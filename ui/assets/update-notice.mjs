@@ -57,7 +57,7 @@ function toneOf(heading) {
   return "";
 }
 
-export function installUpdateNotice({ hana, api, mock = false, log = () => {} } = {}) {
+export function installUpdateNotice({ hana, api, mock = false, autoShow = true, log = () => {} } = {}) {
   if (!api?.getUpdateCheck) return null;
 
   let dialog = null;      // 当前挂着的弹窗节点，同一时刻最多一个
@@ -146,6 +146,12 @@ export function installUpdateNotice({ hana, api, mock = false, log = () => {} } 
       dismissedThisSession: action === "later" ? true : !!(data && data.dismissedThisSession),
       ackVersion: action === "ack" ? (version || "") : ((data && data.ackVersion) || ""),
     };
+    // 本地这一笔也得广播出去。markLocal 是「她刚刚自己做了决定」的直接后果：
+    // 光改 data 而不通知，订阅方（设置页的「关于」卡片、git-save-load 主卡片的顶部
+    // 提示条）就要等到下一次 reconcile（最长一个轮询周期）才知道该收起。
+    // 主卡片那边点「我已知晓」后提示条赖着不走，就是这个原因。
+    // （这一条与本套其余几份不同：那几份的订阅方只有设置页，观感上看不出来。）
+    for (const fn of listeners) { try { fn(data); } catch {} }
   }
 
   /**
@@ -333,6 +339,10 @@ export function installUpdateNotice({ hana, api, mock = false, log = () => {} } 
 
   function scheduleAuto() {
     if (disposed || showTimer || dialog) return;
+    // autoShow:false 的界面自己负责「告知有新版」（比如 git-save-load 主卡片顶部那条
+    // 提示条），浮层只该在她点「查看更新」时出现。这里直接不排自动弹。
+    // 手动打开（openManual / openCached）不受它影响。
+    if (!autoShow) return;
     // 窄面板（输入栏旁边那个功能面板）里不自动浮：那里一弹就盖掉了聊天。手动打开不受此限。
     try { if (window.innerWidth < 380) return; } catch {}
     if (typeof document !== "undefined" && document.hidden) { pendingShow = true; return; }
