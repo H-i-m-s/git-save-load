@@ -685,3 +685,88 @@ body[data-hana-widget="1"] .card:last-child{margin-bottom:0}
 /* 分支画布在侧栏内可用：collapseBlock 占满视口高度（body 有 min-height:100vh），
    退出按钮在画布标题栏内，不依赖整页专属元素。 */
 body[data-hana-widget="1"] #collapseBlock{min-height:0}
+
+/* ============================================================
+   变更列表的动效层（对应 assets/git/list-anim.mjs）
+   增量渲染要能跑起来，靠的是下面两条约定：
+     1) 每行是可独立收展的普通流元素（li），插入/塌陷会连续推动下方内容；
+     2) 行内统计数字是一个「竖排 9..0 的带子」，靠 translateY 停在目标刻度。
+
+   ⚠ --digit-h 必须与 list-anim.mjs 里的 DIGIT_H 相等（当前 14px / 14）。
+     两边对不上时数字会停偏：带子按 14 算位移、格子却按别的值裁切。
+     这个不变量被 tests/cases/09-file-list-anim.mjs 盯着，改一个就得改另一个。
+   ============================================================ */
+.file-list{--digit-h:14px}
+
+/* 行本身：为收展动画准备，避免动画期间因 padding 残留而塌不干净。 */
+.file-list li{min-width:0}
+.file-list li>.file-name{min-width:0}
+
+/* 统计格：靠 margin-left:auto 右靠（与改动前那层内联样式等价）。
+   align-self:center 是为了让定高数字格在行内垂直居中——
+   行是 align-items:baseline，而带 overflow:hidden 的行内块基线取的是底边，
+   跟着 baseline 排会把数字整体抬高。 */
+.stat-cell{
+  margin-left:auto;
+  align-self:center;
+  display:inline-flex;
+  align-items:center;
+  gap:1px;
+  font-size:11px;
+  white-space:nowrap;
+  flex-shrink:0;
+}
+.stat-grp{display:inline-flex;align-items:center;font-weight:600}
+.stat-add{color:#27ae60}
+.stat-del{color:#e74c3c}
+.stat-sep{opacity:.45;margin:0 1px}
+
+/* 数字带子：9..0 竖排，格高 --digit-h。 */
+.digits{display:inline-flex;overflow:hidden;height:var(--digit-h)}
+.digit{
+  display:block;
+  width:1ch;
+  height:var(--digit-h);
+  overflow:hidden;
+}
+.digit-strip{
+  display:block;
+  transition:transform .34s cubic-bezier(.22,.61,.36,1);
+  will-change:transform;
+}
+.digit-g{
+  display:block;
+  height:var(--digit-h);
+  line-height:var(--digit-h);
+  text-align:center;
+}
+
+/* 位数变化（+9 → +10）：逐位复用会错位，整组重建后给一次轻弹，
+   让它看得见「这里刚重新排版过」，而不是凭空跳成另一个宽度。 */
+.digits-pop{animation:digitsPop .26s ease-out}
+@keyframes digitsPop{
+  from{opacity:.3;transform:translateY(-2px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+/* 冲突行的「解决」按钮：与改动前逐字一致，只是从内联样式搬到这里，
+   让 list-anim.mjs 建行时不必再拼一长串 style。 */
+.conflict-btn{
+  margin-left:auto;
+  padding:1px 6px;
+  border:1px solid #e74c3c;
+  border-radius:4px;
+  font-size:11px;
+  background:transparent;
+  color:#e74c3c;
+  cursor:pointer;
+  white-space:nowrap;
+}
+
+/* 系统级「减弱动效」：数字不再滚动、行不再收展，只留最终状态。
+   list-anim.mjs 的 prefersReduced() 也会提前退场，两层各管一道。 */
+@media (prefers-reduced-motion: reduce){
+  .digit-strip{transition:none!important}
+  .digits-pop{animation:none!important}
+  .file-list li{transition:none!important}
+}

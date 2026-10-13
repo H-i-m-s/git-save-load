@@ -312,7 +312,13 @@ function savePath() {
   document.getElementById("fileCard").style.display = "";
   document.getElementById("commitCard").style.display = "";
   document.getElementById("logCard").style.display = "";
-  document.getElementById("fileList").innerHTML = '<li class="empty-hint">正在加载仓库…</li>';
+  // 变更列表走动画层的重置（同时清掉它的动画基线）+ 占位文案；
+  // 直接写 innerHTML 会把基线留在旧仓库上，下次渲染就会把新仓库的行误当成「一直都在」。
+  if (typeof window !== "undefined" && window.FileListAnim && typeof window.FileListAnim.resetFileList === "function") {
+    window.FileListAnim.resetFileList(document.getElementById("fileList"), '<li class="empty-hint">正在加载仓库…</li>');
+  } else {
+    document.getElementById("fileList").innerHTML = '<li class="empty-hint">正在加载仓库…</li>';
+  }
   document.getElementById("commitList").innerHTML = '<li class="empty-hint">加载中…</li>';
   const stashListEl = document.getElementById("stashList");
   if (stashListEl) stashListEl.innerHTML = '<li class="empty-hint">加载中…</li>';

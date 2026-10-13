@@ -39,6 +39,7 @@ node --permission \
 | `cases/06-update-check.mjs` | 更新说明数据层（版本比较 / atom 解析 / 间隔校验）、`REPO_SLUG` 与 `release/config.json` 一致、`/settings/update-check` 端点行为 |
 | `cases/07-settings-first-paint.mjs` | 设置页首屏不被网络拖住：`/settings/local` 只読本地（用一个没 network 的 ctx 柱证明）、`/settings/gh` 才是联网那一趟 |
 | `cases/08-card-update-banner.mjs` | 主卡片顶部更新提示条与浮层接线（静态检查）：module 加载与次序、四个 id 逐字对应、`autoShow:false`、`markLocal` 会广播、`body` 层覆写 `--tt-*`、取数走 `/settings/update-check` |
+| `cases/09-file-list-anim.mjs` | 变更列表动效层（`ui/assets/git/list-anim.mjs`）：纯函数（`statParts` / `diffFileItems` / `digitOffset`）+ 最小 DOM 桩跑真渲染，验「同名行复用同一个 li、新增/离场只动那一行、换仓库整体重置」，并要求 `DIGIT_H` 与 CSS `--digit-h` 相等 |
 
 ## 边界
 

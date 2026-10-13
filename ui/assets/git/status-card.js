@@ -20,15 +20,59 @@ function renderApiFailure(failure) {
     : '';
   const fl = document.getElementById("fileList");
   if (fl) {
-    fl.innerHTML = '<li class="empty-hint">' + escapeHtml(failure.message) +
+    resetFileListEl(fl, '<li class="empty-hint">' + escapeHtml(failure.message) +
       '<br><span style="' + mutedStyle + '">💡 ' + escapeHtml(failure.hint) + '</span>' + detailLine +
-      '<br><button onclick="doRefreshAll()" style="margin-top:6px;padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24);font-size:11px;cursor:pointer">重试</button></li>';
+      '<br><button onclick="doRefreshAll()" style="margin-top:6px;padding:2px 8px;border:1px solid var(--hana-border,#d0d5dd);border-radius:4px;background:var(--hana-surface,#fff);color:var(--hana-fg,#1a1d24);font-size:11px;cursor:pointer">重试</button></li>');
   }
   const btnCommit = document.getElementById("btnCommit");
   if (btnCommit) btnCommit.disabled = true;
   // 只有需要用户动手的两类才弹警告（会话过期 / 后端不可用）；其他只在卡片里就地说明。
   if (failure.kind === "session" || failure.kind === "runtime") {
     notifyApiFailure(null, "Git 面板接口被拒绝：" + (failure.message || "") + "（" + (failure.hint || "") + "）", true);
+  }
+}
+
+// 把 git 状态码转成带 emoji 的中文标签与配色类名。
+// 抽成函数是因为现在有两条渲染路径（增量 / 降级整块重建）都要用它，逻辑不能各写一份。
+function describeFileStatus(st) {
+  const s = String(st == null ? "" : st).trim();
+  const cls = s === "??" ? "UNTRACKED" : s;   // 与改动前逐字一致，含冲突态 "UU" 不套样式类
+  const conflict = s.includes("U");
+  let label = s;
+  if (s === "M" || s.includes("M")) label = "🟠 已修改";
+  else if (s === "A" || s.includes("A")) label = "🟢 新增";
+  else if (s === "D" || s.includes("D")) label = "🔴 已删除";
+  else if (s === "R" || s.includes("R")) label = "🔄 重命名";
+  else if (s === "??" || s === "U") label = "⚪ 新文件";
+  else if (s.includes("U")) label = "⚠ 冲突";
+  return { label: label, cls: cls, conflict: conflict };
+}
+
+// 清空变更列表。有动效层就走它的重置（顺带清掉动画基线，否则下一次渲染会拿旧基线做增量），
+// 否则退回直接写 innerHTML。
+function resetFileListEl(fl, hintHtml) {
+  if (!fl) return;
+  const anim = typeof window !== "undefined" ? window.FileListAnim : null;
+  if (anim && typeof anim.resetFileList === "function") { anim.resetFileList(fl, hintHtml); return; }
+  fl.innerHTML = hintHtml || "";
+}
+
+// 动效层（list-anim.mjs）还没就位时的降级路径：行为与改动前的整块重建完全一致，只是没有动效。
+// 它是 deferred module，正常情况首帧前就已执行；但「正常情况」不等于保证，
+// 拿不到就明着退化成老样子，不让列表空着。
+function renderFileListFallback(fl, items) {
+  fl.innerHTML = "";
+  if (!items.length) {
+    fl.innerHTML = '<li class="empty-hint">工作区干净 ✅<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 可以点「存档」提交，或从「拉取」获取最新版本</span></li>';
+    return;
+  }
+  for (const item of items) {
+    const li = document.createElement("li");
+    li.dataset.file = item.key;
+    const statStr = item.added || item.deleted ? `<span style="margin-left:auto;font-size:11px;white-space:nowrap"><span style="color:#27ae60;font-weight:600">+${item.added}</span>/<span style="color:#e74c3c;font-weight:600">-${item.deleted}</span></span>` : '';
+    li.innerHTML = `<span class="file-status ${item.cls}">${item.label}</span><span onclick="toggleDiff('${escapeHtml(item.name)}', this)" style="cursor:pointer;flex:1;overflow:hidden;text-overflow:ellipsis" title="点击查看 diff">${escapeHtml(item.name)}</span>${statStr}`
+      + (item.conflict ? `<button onclick="resolveConflict('${escapeHtml(item.name)}')" style="margin-left:auto;padding:1px 6px;border:1px solid #e74c3c;border-radius:4px;font-size:11px;background:transparent;color:#e74c3c;cursor:pointer;white-space:nowrap">解决</button>` : '');
+    fl.appendChild(li);
   }
 }
 
@@ -39,7 +83,7 @@ function renderStatus(data) {
   if (!data.ok || data.isRepo === false) {
     document.getElementById("branch").textContent = "✕";
     updateRepoPathDisplay(data.path || currentPath || getSavedPath() || "");
-    document.getElementById("fileList").innerHTML = '<li class="empty-hint">不是 git 仓库<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 点顶部「切换」选一个 Git 项目文件夹</span></li>';
+    resetFileListEl(document.getElementById("fileList"), '<li class="empty-hint">不是 git 仓库<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 点顶部「切换」选一个 Git 项目文件夹</span></li>');
     // 新目录还没 init 是正常工作流（git 说"not a git repository"），不再多说一句；
     // 只有"目录在、但 git 读不出来"这类非预期原因才把 git 原文摆到初始化卡片里。
     const initResultEl = document.getElementById("initResult");
@@ -64,7 +108,6 @@ function renderStatus(data) {
   document.getElementById("fileCard").style.display = "";
   document.getElementById("commitCard").style.display = "";
   document.getElementById("logCard").style.display = "";
-
   const previousPath = currentPath;
   currentPath = data.path;
   if (previousPath !== data.path) onCurrentRepoChanged(data.path);
@@ -77,11 +120,11 @@ function renderStatus(data) {
   updateRepoPathDisplay(data.path);
 
   const fl = document.getElementById("fileList");
-  // 重建前先记住滚动位置：如果有自动轮询在用户翻看时重建列表，不这样做会把它拽回顶部。
+  // 重建前先记住滚动位置：降级路径会整块重画，不这样做会把它拽回顶部。
+  // 增量路径复用节点，位置本来就保住；这里留着只为兜住降级那一路。
   // 滚动容器是 #fileCard（inline overflow:auto + max-height），不是 #fileList（.file-list 自身无 overflow）。
   const fileCardScrollHost = document.getElementById("fileCard");
   const prevFileListScrollTop = fileCardScrollHost ? fileCardScrollHost.scrollTop : 0;
-  fl.innerHTML = "";
 
   const items = [];
   // 优先用 changedWithStats（带增删统计），否则回退
@@ -90,36 +133,24 @@ function renderStatus(data) {
     const name = f.slice(2).trim();
     return { raw: f, name, status: st, added: 0, deleted: 0 };
   });
-  for (const f of changes) {
-    items.push({ status: f.status, name: f.name, added: f.added, deleted: f.deleted });
-  }
-  for (const f of data.untrackedFiles || []) {
-    items.push({ status: "??", name: f });
-  }
+  // 行模型：key 就是文件名。git status 里同一路径不会出现两次，拿它做复用身份最稳。
+  const pushItem = (status, name, added, deleted) => {
+    const d = describeFileStatus(status);
+    items.push({
+      key: name, name: name, label: d.label, cls: d.cls, conflict: d.conflict,
+      added: added || 0, deleted: deleted || 0,
+    });
+  };
+  for (const f of changes) pushItem(f.status, f.name, f.added, f.deleted);
+  for (const f of data.untrackedFiles || []) pushItem("??", f, 0, 0);
 
-  if (items.length === 0) {
-    fl.innerHTML = '<li class="empty-hint">工作区干净 ✅<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 可以点「存档」提交，或从「拉取」获取最新版本</span></li>';
+  const anim = typeof window !== "undefined" ? window.FileListAnim : null;
+  if (anim && typeof anim.renderFileList === "function") {
+    // 增量渲染：同名行复用节点（数字滚动、新行展开推挤、离场收起都在这层里）；
+    // path 传进去是为了让「换了仓库」被识别成一次重置，而不是一次大型入场动画。
+    anim.renderFileList(fl, items, { path: data.path });
   } else {
-    for (const item of items) {
-      const li = document.createElement("li");
-      const statusClass = item.status === "??" ? "UNTRACKED" : item.status;
-      const isConflict = item.status.includes("U");
-      // 将 git 状态代码转换为带 emoji 的中文标签
-      const statusLabel = (function(st) {
-        const s = st.trim();
-        if (s === "M" || s.includes("M")) return "🟠 已修改";
-        if (s === "A" || s.includes("A")) return "🟢 新增";
-        if (s === "D" || s.includes("D")) return "🔴 已删除";
-        if (s === "R" || s.includes("R")) return "🔄 重命名";
-        if (s === "??" || s === "U") return "⚪ 新文件";
-        if (s.includes("U")) return "⚠ 冲突";
-        return s;
-      })(item.status);
-      const statStr = item.added || item.deleted ? `<span style="margin-left:auto;font-size:11px;white-space:nowrap"><span style="color:#27ae60;font-weight:600">+${item.added}</span>/<span style="color:#e74c3c;font-weight:600">-${item.deleted}</span></span>` : '';
-      li.innerHTML = `<span class="file-status ${statusClass}">${statusLabel}</span><span onclick="toggleDiff('${escapeHtml(item.name)}', this)" style="cursor:pointer;flex:1;overflow:hidden;text-overflow:ellipsis" title="点击查看 diff">${escapeHtml(item.name)}</span>${statStr}`
-        + (isConflict ? `<button onclick="resolveConflict('${escapeHtml(item.name)}')" style="margin-left:auto;padding:1px 6px;border:1px solid #e74c3c;border-radius:4px;font-size:11px;background:transparent;color:#e74c3c;cursor:pointer;white-space:nowrap">解决</button>` : '');
-      fl.appendChild(li);
-    }
+    renderFileListFallback(fl, items);
   }
 
   // 提交按钮状态

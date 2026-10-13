@@ -759,6 +759,13 @@
 <script src="assets/git/walkthrough.js"></script>
 <script src="assets/git/identity.js"></script>
 <script src="assets/git/main.js"></script>
+<!-- 变更列表的动效层（数字滚动 / 新行展开推挤）。
+     必须是 module：status-card.js 是经典脚本，不能 import，所以这里以 module 加载、
+     由 list-anim.mjs 把 API 挂到 window.FileListAnim 上，经典脚本运行时取用。
+     module 是 deferred，正常在首帧渲染前就已执行；万一没就绪，
+     status-card.js 会走自己的降级路径（整块重建，行为与改动前一致，只是没动画），
+     不会把列表空在那里。见 tests/cases/09-file-list-anim.mjs。 -->
+<script type="module" src="assets/git/list-anim.mjs"></script>
 <script type="module" src="./assets/hana-bridge.js"></script>
 <!-- 顶部更新提示条 + 「查看更新」浮层。
      必须是 module：它 import 的 ../update-notice.mjs / ../update-api.mjs 与设置页共用同一份。

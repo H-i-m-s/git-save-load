@@ -9,9 +9,19 @@
   以及它唤醒的更新说明浮层。它 import 的 `../update-notice.mjs` / `../update-api.mjs`
   与设置页是同一份（与 doc-intake 逐字可 diff），所以必须以 `type="module"` 加载。
   取数走现成的 `/settings/update-check`，后端不另开逻辑。
+- `assets/git/list-anim.mjs`：变更文件列表的动效层（数字滚动、新行展开推挤、旧行收起）。
+  它导出纯函数供测试直接 import，加载时又把 API 挂到 `window.FileListAnim`；
+  经典脚本 `status-card.js` 运行时取用，取不到就走自己的降级路径（整块重建，无动画）。
 
-两处非看不可的约定：
+三处非看不可的约定：
 
+- **变更列表不再整块重建**：`renderStatus()` 调 `window.FileListAnim.renderFileList()`，
+  按文件名 keyed 复用同一批 `li`。这是动效的前提（每帧重造的节点没有「旧状态」可过渡），
+  顺带修掉「自动轮询时闪一下 + 冲掉展开着的 diff」。新增/离场各走展开/塌陷；
+  「换了仓库」（`path` 变）做整体重置且不顺动画。「不是仓库 / 接口被拒 / 正在加载仓库…」
+  走 `resetFileList()`，它会一并清掉动画基线，不要改回直接写 `innerHTML`。
+- **数字滚轮的格高**：`list-anim.mjs` 的 `DIGIT_H` 与 `git.css` 的 `--digit-h` 必须相等（14px）。
+  两边对不上时数字会停偏。用例 09 盯着这个不变量。
 - **浮层取色**：`assets/update-notice.css` 指向设置页那套 `--gs-*`，主卡片没有。
   `git.css` 里在 `body` 上直接覆写了整组 `--tt-*` 指向 `--hana-*`。
   必须写在 `body` 而不是 `:root`，且必须覆写 `--tt-*` 而不是补 `--gs-*`：
