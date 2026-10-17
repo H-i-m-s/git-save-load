@@ -14,6 +14,7 @@ import * as toolGitExec from "./tools/git_exec.js";
 import * as toolGhExec from "./tools/gh_exec.js";
 import * as toolGitPush from "./tools/git_push.js";
 import * as toolGhPr from "./tools/gh_pr.js";
+import * as toolShowFiles from "./tools/show_files.js";
 
 export const name = "git-save-load";
 
@@ -27,6 +28,7 @@ const TOOL_MODULES = [
   toolGhExec,
   toolGitPush,
   toolGhPr,
+  toolShowFiles,
 ];
 
 export default defineApp(async (sdk) => {
@@ -68,6 +70,9 @@ export default defineApp(async (sdk) => {
           dataDir,
           config: { get: async (key) => config[key] },
         });
+        // 工具可以自己返回完整的工具结果（带 details，用来挂流内卡），
+        // 这种形态原样透传，不要再包成纯文本。
+        if (raw && typeof raw === "object" && Array.isArray(raw.content)) return raw;
         const text = typeof raw === "string" ? raw : JSON.stringify(raw);
         return { content: [{ type: "text", text }] };
       },
