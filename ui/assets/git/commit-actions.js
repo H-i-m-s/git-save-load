@@ -98,6 +98,15 @@ function syncCommitActionLayout() {
     ];
     if (!area || slots.some(function(item) { return !item.el || !item.el.querySelector("button"); })) return;
 
+    // 量不到就不写。
+    //
+    // 打开「分支列表」时 #mainInterface 会被 display:none，这一整块面积归零：
+    // 所有 rect 全是 0、button.offsetWidth 也是 0。原来这里照算不误，
+    // 于是 gap 被逐个累加进 shift，写出 [6, 12, 18] 这种完全无意义的位移；
+    // 卡片重新出现后没人再算一遍，三个按钮就一直错位，拖一下卡片才恢复。
+    // offsetWidth 不受 transform 影响，元素或祖先被隐藏时才是 0，适合拿来判「现在能不能量」。
+    if (!area.offsetWidth) return;
+
     // 先清除视觉位移，确保下面拿到的是未变换的真实换行结果。
     slots.forEach(function(item) {
       item.el.style.setProperty("--commit-slot-shift", "0px");
@@ -110,28 +119,35 @@ function syncCommitActionLayout() {
 
     // 强制一次布局，让 flex 根据最长状态槽位重新决定换行。
     area.offsetHeight;
-    var areaRect = area.getBoundingClientRect();
+
+    // 用 offset 坐标，不用 getBoundingClientRect()。
+    //
+    // getBoundingClientRect() 给的是屏幕坐标，会被祖先的 transform 缩放；
+    // 而 button.offsetWidth 是布局宽度，不跟着缩。两个坐标系混在一起算，
+    // 卡片正在做收拢动画（#panelsArea 带 scale(.1)）时就会算出错的值。
+    // offsetLeft / offsetTop / offsetWidth 都走布局坐标，与缩放无关。
     var children = Array.prototype.slice.call(area.children);
-    var rects = new Map(children.map(function(child) {
-      return [child, child.getBoundingClientRect()];
+    var boxes = new Map(children.map(function(child) {
+      return [child, { left: child.offsetLeft, top: child.offsetTop, width: child.offsetWidth }];
     }));
     var gap = parseFloat(getComputedStyle(area).columnGap) || 0;
 
     // 每个动作槽只在自己所在行内向前收回空白，不影响 flex 的换行判定。
+    // 行首的槽不需要位移：flex 本来就把它放在行首，没有前置元素可对齐。
+    // 这样就不必去求区域的绝对左边缘，两个坐标系也就不会打架。
     var previousInRow = null;
     children.forEach(function(child) {
-      var rect = rects.get(child);
+      var box = boxes.get(child);
       var isSlot = child.classList && child.classList.contains("commit-action-slot");
       if (isSlot) {
         var button = child.querySelector("button");
         var buttonWidth = button ? button.offsetWidth : 0;
-        var sameRow = previousInRow && Math.abs(rect.top - previousInRow.rect.top) < 1;
-        var desiredLeft = sameRow ? previousInRow.right + gap : areaRect.left;
-        var shift = desiredLeft - rect.left;
+        var sameRow = previousInRow && Math.abs(box.top - previousInRow.top) < 1;
+        var shift = sameRow ? (previousInRow.right + gap - box.left) : 0;
         child.style.setProperty("--commit-slot-shift", shift.toFixed(2) + "px");
-        previousInRow = { rect: rect, right: desiredLeft + buttonWidth };
+        previousInRow = { top: box.top, right: (sameRow ? box.left + shift : box.left) + buttonWidth };
       } else {
-        previousInRow = { rect: rect, right: rect.right };
+        previousInRow = { top: box.top, right: box.left + box.width };
       }
     });
     requestHostResize();
