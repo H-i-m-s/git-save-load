@@ -70,8 +70,11 @@ function renderFileListFallback(fl, items) {
     const li = document.createElement("li");
     li.dataset.file = item.key;
     const statStr = item.added || item.deleted ? `<span style="margin-left:auto;font-size:11px;white-space:nowrap"><span style="color:#27ae60;font-weight:600">+${item.added}</span>/<span style="color:#e74c3c;font-weight:600">-${item.deleted}</span></span>` : '';
-    li.innerHTML = `<span class="file-status ${item.cls}">${item.label}</span><span onclick="toggleDiff('${escapeHtml(item.name)}', this)" style="cursor:pointer;flex:1;overflow:hidden;text-overflow:ellipsis" title="点击查看 diff">${escapeHtml(item.name)}</span>${statStr}`
-      + (item.conflict ? `<button onclick="resolveConflict('${escapeHtml(item.name)}')" style="margin-left:auto;padding:1px 6px;border:1px solid #e74c3c;border-radius:4px;font-size:11px;background:transparent;color:#e74c3c;cursor:pointer;white-space:nowrap">解决</button>` : '');
+    // 文件名不再写内联排版样式，用 .file-name 类。这样做不只为了省字：
+    // 内联样式会盖住 git.css 里的两行截断（-webkit-line-clamp 靠 display:-webkit-box 生效，
+    // 内联的 flex:1 一压就回到单行），两条路径的排版必须同源，否则降级时就长出另一副样子。
+    li.innerHTML = `<span class="file-status ${item.cls}">${item.label}</span><span class="file-name" onclick="toggleDiff('${escapeHtml(item.name)}', this)" title="点击查看 diff">${escapeHtml(item.name)}</span>${statStr}`
+      + (item.conflict ? `<button class="conflict-btn" onclick="resolveConflict('${escapeHtml(item.name)}')">解决</button>` : '');
     fl.appendChild(li);
   }
 }

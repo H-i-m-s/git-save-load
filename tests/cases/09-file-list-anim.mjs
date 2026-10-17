@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { APP_DIR } from "../lib/fixture.mjs";
-import { main, check, eq, deepEq, contains, matches, note } from "../lib/harness.mjs";
+import { main, check, eq, deepEq, contains, excludes, matches, note } from "../lib/harness.mjs";
 
 const readUi = (...parts) => readFileSync(join(APP_DIR, "ui", ...parts), "utf8");
 
@@ -335,6 +335,43 @@ await main("card: 变更列表动效层（数字滚轮 + 增量渲染）", async
   contains(anim, "digits-pop", "位数变化时整组重建 + pop（逐位复用会错位）");
   contains(css, "@keyframes digitsPop", "git.css 有 digitsPop 关键帧");
   matches(css, /\.digits-pop\{animation/, ".digits-pop 真的挂了动画");
+
+  // 文件名必须能自己收窄并省略：少了 overflow:hidden，flex 会把盒子压窄，
+  // 文件名：可折行，最多两行，超出在第二行末省略。
+  // 三条不变量都不能少：少了 overflow:hidden 文字会画出盒子外压住统计；
+  // 少了 -webkit-line-clamp 就回到无限折行把行高撑爆；
+  // 写回 white-space:nowrap 会直接让 clamp 只有一行（这条坑过一次）。
+  // 判定看 .file-name 规则块里那几条同时在场，不是全文件里搜关键词。
+  const cssFileName = /\.file-list li>\.file-name\{([^}]*)\}/.exec(css);
+  check(!!cssFileName, "git.css 有 .file-list li>.file-name 规则");
+  const nameRule = cssFileName ? cssFileName[1] : "";
+  matches(nameRule, /overflow:hidden/, ".file-name 裁切溢出（否则长路径压到统计数字上）");
+  matches(nameRule, /flex:1/, ".file-name 吃掉中间剩余宽度");
+  matches(nameRule, /-webkit-line-clamp:\s*2/, ".file-name 限两行（-webkit-line-clamp:2）");
+  matches(nameRule, /display:-webkit-box/, ".file-name 用 -webkit-box（line-clamp 生效的前提）");
+  matches(nameRule, /white-space:normal/, ".file-name 允许折行（写 nowrap 会让 clamp 只剩一行）");
+  matches(nameRule, /overflow-wrap:anywhere/, ".file-name 无分隔长串也能断（中文没有空格断点）");
+  matches(nameRule, /cursor:pointer/, ".file-name 保留可点提示（原本写在内联 style 里）");
+
+  // 徽标与统计格都跟整行垂直居中，而不是贴第一行。
+  // 行是 align-items:baseline；两行名时徽标会悬在上半，得单独推翻：
+  // 少了这条 align-self，徽标就跑回第一行，与右侧数字脱节。
+  const cssBadge = /\.file-list li>\.file-status\{([^}]*)\}/.exec(css);
+  check(!!cssBadge, "git.css 有 .file-list li>.file-status 规则");
+  matches(cssBadge ? cssBadge[1] : "", /align-self:center/, "状态徽标按整行垂直居中（不贴第一行）");
+  const cssStat = /\.stat-cell\{([^}]*)\}/.exec(css);
+  matches(cssStat ? cssStat[1] : "", /align-self:center/, "统计格也垂直居中（与徽标同一规则）");
+  // 冲突行的「解决」按钮同理：不居中时在两行名的行里会贴第一行。
+  const cssConflict = /\.conflict-btn\{([^}]*)\}/.exec(css);
+  matches(cssConflict ? cssConflict[1] : "", /align-self:center/, "冲突按钮也垂直居中（整行三条纵轴一致）");
+  // 降级路径也必须用同一个类，不能自己再写一套内联排版：
+  // 内联 display:flex 会盖掉 -webkit-box，降级时就变回单行。
+  contains(statusCard, 'class="file-name"', "降级路径的建行也用 .file-name 类（排版同源）");
+  excludes(statusCard, "overflow:hidden;text-overflow:ellipsis;white-space:nowrap", "降级路径不再自拼一套内联排版");
+  // 冲突按钮同理：内联样式写着 margin-left:auto，会把 .conflict-btn 的 align-self:center 盖掉。
+  // 两条路径都只用类，纵向对齐才不会一边一半。
+  contains(statusCard, 'class="conflict-btn"', "降级路径的冲突按钮也用 .conflict-btn 类");
+  excludes(statusCard, "border:1px solid #e74c3c", "降级路径不再自拼冲突按钮的内联样式");
 
   // 收展动画：height + padding + margin 一起过渡（只动 height 会在首尾各跳一下）。
   contains(anim, "MORPH_PROPS", "收展动画用一组属性（不止 height）");

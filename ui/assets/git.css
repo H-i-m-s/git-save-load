@@ -700,7 +700,38 @@ body[data-hana-widget="1"] #collapseBlock{min-height:0}
 
 /* 行本身：为收展动画准备，避免动画期间因 padding 残留而塌不干净。 */
 .file-list li{min-width:0}
-.file-list li>.file-name{min-width:0}
+/* 文件名：占满中间剩余宽度，允许折行，最多两行，超出在第二行末尾省略。
+
+   这里两次踩坑的教训写在一起：
+   1) flex / overflow / text-overflow / cursor 原本写在内联 style 里，
+      list-anim.mjs 建行时改用 class 后没搬过来，只留了 min-width:0。
+      少了 overflow:hidden 的后果不是「不省略」，而是文字直接画到盒子外面，
+      压到右侧的 +n/-n 统计上——盒子被 flex 压窄了，画出来的字没有。
+   2) 单行省略会把长路径砍成半句，认不出是哪个文件。改成两行：
+      「能看清就尽量看清，两行还塞不下才省略」。
+
+   截断靠 -webkit-line-clamp（WebKit/Blink 的标准做法，本面板就跑在 WebView 里），
+   它是排版级截断：只排两行，余下由浏览器自己在第二行末加省略号。
+   注意 white-space 必须是 normal，写 nowrap 的话 clamp 永远只有一行。
+   overflow-wrap:anywhere 是给纯中文长串和无分隔长英文用的——
+   中文没有空格断点，不加这条会整段溢出而不是折行。 */
+.file-list li>.file-name{
+  min-width:0;
+  flex:1 1 auto;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  cursor:pointer;
+}
+
+/* 状态徽标：整行垂直居中，不再贴第一行。
+   行是 align-items:baseline，徽标是 inline-flex（内部居中），
+   跟着 baseline 排时它只会对齐第一行——两行名的行里就悬在上半。
+   align-self:center 让它按整行高度居中，和右侧统计格的规则对齐。 */
+.file-list li>.file-status{align-self:center}
 
 /* 统计格：靠 margin-left:auto 右靠（与改动前那层内联样式等价）。
    align-self:center 是为了让定高数字格在行内垂直居中——
@@ -750,9 +781,12 @@ body[data-hana-widget="1"] #collapseBlock{min-height:0}
 }
 
 /* 冲突行的「解决」按钮：与改动前逐字一致，只是从内联样式搬到这里，
-   让 list-anim.mjs 建行时不必再拼一长串 style。 */
+   让 list-anim.mjs 建行时不必再拼一长串 style。
+   align-self:center 是为了跟左侧徽标、右侧统计格同一条垂直规则：
+   行是 align-items:baseline，两行名时按钮会贴在第一行上。 */
 .conflict-btn{
   margin-left:auto;
+  align-self:center;
   padding:1px 6px;
   border:1px solid #e74c3c;
   border-radius:4px;
