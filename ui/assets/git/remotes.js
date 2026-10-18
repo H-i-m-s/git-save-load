@@ -694,6 +694,9 @@ function onCurrentRepoChanged(path) {
   _remotePanelPath = normalized;
   invalidateRemoteCache(normalized);
   _remoteLoadGeneration++;
+  // 换仓库了，旧 diff 缓存没用了（键里虽然带了路径不会串，
+  // 但留着只是占位，清掉更干净）。
+  if (typeof clearDiffCache === "function") clearDiffCache();
   const el = document.getElementById("ghRemoteList");
   if (el) el.innerHTML = normalized
     ? '<div style="font-size:10px;color:var(--hana-fg-muted,#6b7280)">正在切换远程仓库...</div>'

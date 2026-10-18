@@ -19,6 +19,33 @@ export function registerDiffConflictRoutes(app, { repoPath, gitExecFile, readTex
     }
   });
 
+  // ======== API: diff（批量） ========
+  // 预取用。单独一个文件的 diff 要跑两次 git（--stat 与正文），
+  // 十个文件就是二十个子进程，逐个点才发请求的话每次都要等。
+  // 这里一次调用把整批取回来，客户端存着，点击时直接命中。
+  // files 用 \n 分隔（文件名里可能有空格，不能用逗号）。
+  app.get("/api/diff-batch", async (c) => {
+    const path = repoPath(c.req.query("path"));
+    const raw = String(c.req.query("files") || "");
+    const files = raw.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 50);
+
+    try {
+      const out = {};
+      for (const file of files) {
+        try {
+          const detail = gitExecFile(path, ["-c", "core.quotepath=false", "diff", "--", file]);
+          out[file] = detail || "(no diff)";
+        } catch (e) {
+          // 单个文件取不到（例如二进制、权限）不拖整批下水
+          out[file] = null;
+        }
+      }
+      return c.json({ ok: true, diffs: out });
+    } catch (e) {
+      return c.json({ ok: false, message: e.message });
+    }
+  });
+
   // ======== API: 对比两个版本 ========
   app.get("/api/compare", async (c) => {
     const path = repoPath(c.req.query("path"));

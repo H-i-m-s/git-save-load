@@ -156,6 +156,14 @@ function renderStatus(data) {
     renderFileListFallback(fl, items);
   }
 
+  // 列表出来了就去把整批 diff 取回来存着，点击时直接展开，不用等。
+  // 放到下一帧做：不跟首次渲染抢主线程，也让首屏先画出来。
+  // 只预取有改动的文件（新增/删除也能取，但 0/0 的没意义）。
+  if (typeof prefetchDiffs === "function") {
+    const names = items.map((it) => it.name);
+    requestAnimationFrame(() => { prefetchDiffs(names); });
+  }
+
   // 提交按钮状态
   document.getElementById("btnCommit").disabled = !data.hasChanges;
   // 列表重建完成后再恢复滚动位置（内容变短时浏览器会自动夹到可滚动上限）。

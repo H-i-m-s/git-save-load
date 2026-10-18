@@ -10,11 +10,19 @@ function toggleGlobalDiffMode() {
   document.getElementById('diffModeBtn').textContent = diffMode === 'detail' ? '详细' : '精简';
   localStorage.setItem('git-sl-diff-mode', diffMode);
   saveSetting('defaultDiffMode', diffMode, true);
+  // 已展开的面板重排。高度是 auto 就不要紧，
+  // 若刚好还在补间中，重排后把目标高度重算一下，否则会停在旧值上。
   document.querySelectorAll('.diff-inline').forEach(container => {
-    if (container._diffLines) {
-      const body = container.querySelector('.diff-body');
-      if (body) renderDiffLines(body, container._diffLines, diffMode);
-    }
+    const inner = container.querySelector('.diff-inline-inner');
+    const body = container.querySelector('.diff-body');
+    if (!inner || !body) return;
+    // 缓存里存的是原始 diff 文本，模式只是渲染时的过滤，直接重渲染即可
+    const cached = diffCache.get(diffCacheKey(currentPath || getSavedPath(), container.dataset.file));
+    if (typeof cached !== 'string') return;
+    const lines = cached.split('\n');
+    body._diffLines = lines;
+    renderDiffLines(body, lines, diffMode);
+    container.style.height = 'auto';
   });
 }
 
@@ -68,42 +76,209 @@ function renderDiffLines(el, lines, mode) {
 }
 
 // 切换 diff 内联展开
+/* ── diff 预取与缓存 ──
+ *
+ * 点开才发请求，等的就是那一趟 git 子进程；文件多的时候每个都要等。
+ * 所以列表渲染完就在后台把整批 diff 取回来存住，点击时直接命中。
+ *
+ * 缓存的键里带上仓库路径：同一会话可能切仓库，只拿文件名会串到别的仓。
+ * 刷新时清掉，否则看到的是上一次的差异。
+ */
+const diffCache = new Map();
+let prefetchToken = 0;
+
+function diffCacheKey(p, file) {
+  return String(p || "") + "\u0000" + String(file || "");
+}
+
+function clearDiffCache() {
+  diffCache.clear();
+  prefetchToken++;
+}
+
+/* 把一批文件的 diff 一次取回来。
+ * 失败不打扰用户：预取只是提速，拿不到就退回点击时才请求。 */
+async function prefetchDiffs(files) {
+  const p = currentPath || getSavedPath();
+  if (!p || !files || !files.length) return;
+  const need = files.filter((f) => f && f !== "(no diff)" && !diffCache.has(diffCacheKey(p, f)));
+  if (!need.length) return;
+
+  const token = ++prefetchToken;
+  try {
+    const res = await pluginFetch(
+      "api/diff-batch?path=" + encodeURIComponent(p) +
+      "&files=" + encodeURIComponent(need.join("\n"))
+    );
+    const data = await res.json();
+    // 取回来时仓库可能已经换了，或又刷新过一次，这批就不要了
+    if (token !== prefetchToken) return;
+    if (!data.ok || !data.diffs) return;
+    for (const [file, text] of Object.entries(data.diffs)) {
+      if (typeof text === "string") diffCache.set(diffCacheKey(p, file), text);
+    }
+  } catch (e) { /* 预取失败不报，点击时会重新请 */ }
+}
+
+/* 高度补间。
+ *
+ * 只动容器的 height，不动内容：内容一次性铺满，外层 overflow:hidden 裁着，
+ * 容器逐帧长高，看起来就是展开。若改成动内容高度，每帧都要重排文字。
+ *
+ * 用 requestAnimationFrame 跟屏幕刷新对齐，进度按时间戳算，
+ * 掉帧不会把总时长拖长。 */
+const DIFF_ANIM_MS = 220;
+const diffAnims = new WeakMap();
+
+function diffEase(p) {
+  const x = Math.min(1, Math.max(0, p));
+  return x * x * (3 - 2 * x);
+}
+
+function animateDiffHeight(el, from, to, done) {
+  const prev = diffAnims.get(el);
+  if (prev) cancelAnimationFrame(prev);
+
+  el.style.height = from + "px";
+  let start = 0;
+  function step(ts) {
+    if (!start) start = ts;
+    const p = Math.min(1, (ts - start) / DIFF_ANIM_MS);
+    const h = from + (to - from) * diffEase(p);
+    el.style.height = h + "px";
+    if (p < 1) {
+      diffAnims.set(el, requestAnimationFrame(step));
+    } else {
+      diffAnims.delete(el);
+      // 展开完交回 auto，内容再变（换 diff 模式、滚动条）不会被固定值卡住
+      el.style.height = "auto";
+      if (done) done();
+    }
+  }
+  diffAnims.set(el, requestAnimationFrame(step));
+}
+
+// 是否该跳过动画
+function diffReduced() {
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch (e) { return false; }
+}
+
 async function toggleDiff(file, nameEl) {
   const p = currentPath || getSavedPath();
   const li = nameEl.closest("li");
   const existing = li.nextElementSibling;
   if (existing && existing.classList.contains("diff-inline") && existing.dataset.file === file) {
-    existing.remove();
+    collapseDiff(existing);
     return;
   }
 
   const container = document.createElement("div");
   container.className = "diff-inline";
   container.dataset.file = file;
-  container.style.cssText = "padding:8px 10px;margin:4px 0;border:1px solid var(--hana-border,#e2e5ea);border-radius:8px;font-size:11px;font-family:monospace;line-height:1.6;background:var(--hana-bg,#f5f6f8);resize:vertical;overflow-x:hidden;overflow-y:auto;min-height:60px;max-height:300px;white-space:pre-wrap;word-break:break-all";
-  container.textContent = "加载中...";
+  const inner = document.createElement("div");
+  inner.className = "diff-inline-inner";
+  container.appendChild(inner);
   li.parentNode.insertBefore(container, li.nextSibling);
+
+  // 收起时的高度记下来，下次展开从这个高度长出去
+  container.style.height = "0px";
+
+  const cached = diffCache.get(diffCacheKey(p, file));
+  if (typeof cached === "string") {
+    // 已经预取过：先铺内容再开动画，点击到展开之间没有空档
+    fillDiff(container, inner, file, cached);
+    const h = expandedHeight(container, inner);
+    if (diffReduced()) {
+      container.style.height = "auto";
+    } else {
+      container.style.height = "0px";
+      container.getBoundingClientRect();   // 强制一次布局，保证从 0 起算
+      animateDiffHeight(container, 0, h);
+    }
+    return;
+  }
+
+  // 没预取到（刚刷新、刚改文件、或预取还没回来）：先把面板长出来占位，
+  // 不让用户看着没反应，内容到了再填
+  inner.textContent = "加载中...";
+  const placeholderH = expandedHeight(container, inner);
+  if (!diffReduced()) {
+    container.style.height = "0px";
+    container.getBoundingClientRect();
+    animateDiffHeight(container, 0, placeholderH);
+  } else {
+    container.style.height = "auto";
+  }
 
   try {
     const res = await pluginFetch("api/diff?file=" + encodeURIComponent(file) + "&path=" + encodeURIComponent(p));
     const data = await res.json();
+    if (!container.isConnected) return;   // 等待期间已被收起/移除
     if (data.ok && data.detail && data.detail !== "(no diff)") {
-      const lines = data.detail.split('\n');
-      container._diffLines = lines;
-      const header = document.createElement("div");
-      header.style.cssText = "font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px";
-      header.textContent = file;
-      const body = document.createElement("div");
-      body.className = "diff-body";
-      renderDiffLines(body, lines, diffMode);
-      container.textContent = '';
-      container.append(header, body);
+      diffCache.set(diffCacheKey(p, file), data.detail);
+      const from = container.offsetHeight;
+      fillDiff(container, inner, file, data.detail);
+      if (diffReduced()) {
+        container.style.height = "auto";
+      } else {
+        const to = expandedHeight(container, inner);
+        animateDiffHeight(container, from, to);
+      }
     } else {
-      container.textContent = "(没有变更内容)";
+      const from = container.offsetHeight;
+      inner.textContent = "(没有变更内容)";
+      if (diffReduced()) container.style.height = "auto";
+      else animateDiffHeight(container, from, expandedHeight(container, inner));
     }
   } catch (e) {
-    container.textContent = "加载失败：" + e.message;
+    if (!container.isConnected) return;
+    inner.textContent = "加载失败：" + e.message;
+    container.style.height = "auto";
   }
+}
+
+/* 展开到位后容器该有多高。
+ *
+ * 不能直接拿 inner.offsetHeight：容器是 border-box，上下边框占掉 2px，
+ * 按 inner 高度给的话最后一帧会被裁掉内容。
+ * 也不能用 offsetHeight - clientHeight 去反推：此刻容器高度可能被钉在 0，量不准。
+ * 直接读计算样式里的边框宽度，与当前高度无关。 */
+function expandedHeight(container, inner) {
+  let border = 0;
+  try {
+    const cs = getComputedStyle(container);
+    border = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  } catch (e) { border = 2; }
+  return inner.offsetHeight + border;
+}
+
+/* 把 diff 正文填进面板。
+ * 分开写是因为“缓存命中”与“请求回来”两条路径都要填同一种结构，
+ * 各写一份迟早长歪。 */
+function fillDiff(container, inner, file, detail) {
+  const lines = String(detail).split("\n");
+  inner.textContent = "";
+  const header = document.createElement("div");
+  header.className = "diff-inline-head";
+  header.textContent = file;
+  const body = document.createElement("div");
+  body.className = "diff-body";
+  body._diffLines = lines;   // 切详细/精简时重排要用
+  renderDiffLines(body, lines, diffMode);
+  inner.append(header, body);
+}
+
+/* 收起：先量当前高度，再补间到 0，结束后才把节点删掉。
+ * 直接 remove 的话下方内容会瞬移上去。 */
+function collapseDiff(container) {
+  if (diffReduced()) { container.remove(); return; }
+  const from = container.offsetHeight;
+  container.style.height = from + "px";
+  container.style.overflow = "hidden";
+  container.getBoundingClientRect();
+  animateDiffHeight(container, from, 0, () => container.remove());
 }
 
 // 状态帮助气泡

@@ -109,6 +109,9 @@ function doRefreshAll() {
   if (btn) btn.classList.add("spinning");
   invalidateRepoCaches(currentPath || getSavedPath());
   cacheClear();
+  // diff 缓存也要跟着清：文件改动后旧 diff 已经不对了，
+  // 留着会让展开时展示上一次的内容。
+  if (typeof clearDiffCache === "function") clearDiffCache();
   const run = beginRefreshRun();
   if (run.pending === 0) finishRefreshRun(run.id);
   else Bus.emit("refresh-all", run.id);

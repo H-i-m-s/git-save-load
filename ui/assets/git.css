@@ -449,6 +449,37 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .diff-del{background:var(--hana-diff-del-bg,#fdeced);color:var(--hana-diff-del-fg,#c62a2f);padding:0 4px}
 .diff-hunk{background:color-mix(in srgb,var(--hana-accent,#C99AAF) 11%,transparent);color:var(--hana-accent,#C99AAF);padding:0 4px}
 /* diff 容器 */
+/* diff 内联面板（主卡片的变更列表里点文件名展开的那一块）
+
+   外边是容器、里面是 diff 正文，两层分开是为了做高度补间：
+   容器的高度从 0 涨到正文高度，overflow:hidden 把多的裁掉，
+   视觉上就是向下推开、下面内容被顶下去。
+   补间不动 font-size 与 padding，只动 height，所以文字不会重排。
+
+   max-height 封顶在层上，正文超过就在面板内部滚，不把整张卡抽长。 */
+.diff-inline{
+  margin:4px 0;
+  border:1px solid var(--hana-border,#e2e5ea);
+  border-radius:8px;
+  background:var(--hana-bg,#f5f6f8);
+  font-size:11px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  line-height:1.6;
+  overflow:hidden;
+  white-space:pre-wrap;
+  word-break:break-all;
+  /* height 由 JS 逐帧写，这里只给过渡曲线兜住意外情况 */
+}
+.diff-inline-inner{
+  padding:8px 10px;
+  max-height:300px;
+  overflow-y:auto;
+  overflow-x:hidden;
+}
+.diff-inline-inner::-webkit-scrollbar{width:6px;height:6px}
+.diff-inline-inner::-webkit-scrollbar-corner{background:transparent}
+.diff-inline-head{font-size:11px;color:var(--hana-fg-muted,#6b7280);margin-bottom:4px}
+
 .diff-body{}
 
 /* 分支树 */
