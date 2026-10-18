@@ -544,10 +544,16 @@ select:disabled{opacity:.5;cursor:not-allowed}
 #remoteCtxMenu .item.danger{color:#e74c3c}
 #remoteCtxMenu .item.danger:hover{background:rgba(231,76,60,.08)}
 
-/* === 设置卡里控件统一宽度，跟走整体的控件右对齐 === */
-#settingsBody .hana-select,
-#settingsBody .hana-seg{
+/* === 设置卡里控件统一宽度，跟走整体的控件右对齐 ===
+   110px 是按两字按钮定的（详细/精简、内置/外部）。
+   四字以上的分组控件在 110px 里装不下，会把文字撑破，
+   所以给它们一个单独的、仍靠右但不硬卡宽度的容器。 */
+#settingsBody .hana-select{
   width:110px;
+}
+#settingsBody .hana-seg{
+  min-width:110px;
+  width:auto;
 }
 
 /* === 分段按钮（HanaSegments） === */
