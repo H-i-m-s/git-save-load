@@ -33,8 +33,12 @@
     --sf-btn-bg:rgba(0,0,0,.055);
     --sf-btn-hover:rgba(0,0,0,.11);
     --sf-diff-bg:rgba(0,0,0,.04);
-    --sf-diff-add:rgba(21,128,61,.1);
-    --sf-diff-del:rgba(185,28,28,.1);
+    /* 增删行的底色与字色，跟对话卡片里那套 diff 同一个观感：色块 + 彩色文字。
+       深色主题用实测像素值，浅色主题淡底深字。 */
+    --sf-diff-add:var(--hana-diff-add-bg, #e6f4ea);
+    --sf-diff-del:var(--hana-diff-del-bg, #fdeced);
+    --sf-diff-text:var(--hana-diff-add-fg, #1a7f37);
+    --sf-diff-text-del:var(--hana-diff-del-fg, #c62a2f);
     --sf-meta:rgba(0,0,0,.045);
     --sf-weak:#4b5563;
     /* 小卡描边与向外那层淡影。
@@ -62,8 +66,11 @@
     --sf-btn-bg:rgba(255,255,255,.07);
     --sf-btn-hover:rgba(255,255,255,.14);
     --sf-diff-bg:rgba(0,0,0,.28);
-    --sf-diff-add:rgba(78,196,138,.13);
-    --sf-diff-del:rgba(240,121,127,.13);
+    /* 同浅色板：色块 + 彩色文字，深色主题用实测值。 */
+    --sf-diff-add:var(--hana-diff-add-bg, #354E4E);
+    --sf-diff-del:var(--hana-diff-del-bg, #4A454C);
+    --sf-diff-text:var(--hana-diff-add-fg, #6CE3A5);
+    --sf-diff-text-del:var(--hana-diff-del-fg, #F9B0B3);
     --sf-meta:rgba(255,255,255,.05);
     --sf-weak:#bcc9d3;
     /* 描边同样跟 --border 走，不在这里写死颜色。 */
@@ -207,8 +214,10 @@
   .sf-diff::-webkit-scrollbar-corner{background:transparent}
   .sf-diff-inner{display:inline-block;min-width:100%;vertical-align:top}
   .sf-diff .l{display:block;padding:0 9px}
-  .sf-diff .l.a{background:var(--sf-diff-add);color:var(--sf-add)}
-  .sf-diff .l.d{background:var(--sf-diff-del);color:var(--sf-del)}
+  /* 增删行：底色块 + 彩色文字，和对话卡片里那套 diff 一致。
+     增行绿字、删行粉字，各自用自己的字色。 */
+  .sf-diff .l.a{background:var(--sf-diff-add);color:var(--sf-diff-text)}
+  .sf-diff .l.d{background:var(--sf-diff-del);color:var(--sf-diff-text-del)}
   .sf-diff .l.h{color:var(--sf-faint)}
   .sf-diff .l.m{color:var(--sf-faint);opacity:.9}
 
@@ -262,9 +271,18 @@ async function loadHostColors() {
     // 它叠在卡片底色上才是屏幕上看到的那个颜色。
     // 直接把它拿过来用，小卡的描边就和宿主卡片一致，换主题自动跟着走。
     const border = cs.getPropertyValue("--border").trim();
+    // diff 的增删色与宿主同源，换主题时深浅自动跟随。
+    const diffAddBg = cs.getPropertyValue("--hana-diff-add-bg").trim();
+    const diffAddFg = cs.getPropertyValue("--hana-diff-add-fg").trim();
+    const diffDelBg = cs.getPropertyValue("--hana-diff-del-bg").trim();
+    const diffDelFg = cs.getPropertyValue("--hana-diff-del-fg").trim();
     if (bg) document.body.style.setProperty("--sf-chat-bg", bg);
     if (bgCard) document.body.style.setProperty("--sf-tile-bg", bgCard);
     if (border) document.body.style.setProperty("--sf-tile-ring", border);
+    if (diffAddBg) document.body.style.setProperty("--hana-diff-add-bg", diffAddBg);
+    if (diffAddFg) document.body.style.setProperty("--hana-diff-add-fg", diffAddFg);
+    if (diffDelBg) document.body.style.setProperty("--hana-diff-del-bg", diffDelBg);
+    if (diffDelFg) document.body.style.setProperty("--hana-diff-del-fg", diffDelFg);
   } catch {}
 }
 

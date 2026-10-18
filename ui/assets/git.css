@@ -1,31 +1,34 @@
 /* Git Save/Load Card 全部样式 — 由原 git.html 两个内联 <style> 按原顺序合并（主体样式在前，confirmModal 滚动条补充在后） */
 :root{color-scheme:light}
 /* Linear 设计系统 — 浅色默认 */
-:root{--hana-bg:#f5f6f6;--hana-fg:#000;--hana-surface:#fff;--hana-border:#e2e5ea;--hana-accent:#5e6ad2;--hana-bg-muted:#f6f7f7;--hana-fg-muted:#6b7280;--hana-fg-subtle:#9ca3af;--hana-border-strong:#d0d5dd;--hana-scrollbar:rgba(94,106,210,.2)}
+:root{--hana-bg:#f5f6f6;--hana-fg:#000;--hana-surface:#fff;--hana-border:#e2e5ea;--hana-accent:#5e6ad2;--hana-bg-muted:#f6f7f7;--hana-fg-muted:#6b7280;--hana-fg-subtle:#9ca3af;--hana-border-strong:#d0d5dd;--hana-scrollbar:rgba(94,106,210,.2);--hana-green:#7BAE7F;--hana-danger:#8B3A3A;--hana-diff-add-bg:#e6f4ea;--hana-diff-add-fg:#1a7f37;--hana-diff-del-bg:#fdeced;--hana-diff-del-fg:#c62a2f}
+/* diff 行色。深色主题取的是 Hana 对话卡片里那套 diff 的实际像素值，
+   浅色主题用相反的明暗关系（淡底深字），两边都是实色，
+   不用半透明：半透明会跟着面板底色跑，换主题就偏。 */
 /* 深色主题 */
-.theme-dark{--hana-bg:#010102;--hana-fg:#f7f8f8;--hana-surface:#0f1011;--hana-border:#23252a;--hana-accent:#5e6ad2;--hana-bg-muted:#141516;--hana-fg-muted:#8a8f98;--hana-fg-subtle:#62666d;--hana-border-strong:#34343a;--hana-scrollbar:rgba(94,106,210,.3)}
+.theme-dark{--hana-bg:#010102;--hana-fg:#f7f8f8;--hana-surface:#0f1011;--hana-border:#23252a;--hana-accent:#5e6ad2;--hana-bg-muted:#141516;--hana-fg-muted:#8a8f98;--hana-fg-subtle:#62666d;--hana-border-strong:#34343a;--hana-scrollbar:rgba(94,106,210,.3);--hana-green:#6ee7a8;--hana-danger:#ffb3b6;--hana-diff-add-bg:#16281f;--hana-diff-add-fg:#6ee7a8;--hana-diff-del-bg:#2a1a1e;--hana-diff-del-fg:#ffb3b6}
 /* 暖纸主题 */
-.theme-warm-paper{--hana-bg:#F8F4ED;--hana-fg:#3B3D3F;--hana-surface:#FCFAF5;--hana-border:rgba(122,96,88,0.18);--hana-accent:#537D96;--hana-bg-muted:#F5F1EA;--hana-fg-muted:#8E9196;--hana-fg-subtle:#B0B3B8;--hana-border-strong:rgba(122,96,88,0.28);--hana-scrollbar:rgba(83,125,150,.2)}
+.theme-warm-paper{--hana-bg:#F8F4ED;--hana-fg:#3B3D3F;--hana-surface:#FCFAF5;--hana-border:rgba(122,96,88,0.18);--hana-accent:#537D96;--hana-bg-muted:#F5F1EA;--hana-fg-muted:#8E9196;--hana-fg-subtle:#B0B3B8;--hana-border-strong:rgba(122,96,88,0.28);--hana-scrollbar:rgba(83,125,150,.2);--hana-green:#7BAE7F;--hana-danger:#8B3A3A}
 /* 青夜主题 */
-.theme-midnight{--hana-bg:#3B4A54;--hana-fg:#E1EAF0;--hana-surface:#445560;--hana-border:rgba(170,121,141,0.16);--hana-accent:#C99AAF;--hana-bg-muted:#34424B;--hana-fg-muted:#A3B5C0;--hana-fg-subtle:#8A9BA5;--hana-border-strong:rgba(170,121,141,0.24);--hana-scrollbar:rgba(201,154,175,.3)}
+.theme-midnight{--hana-bg:#3B4A54;--hana-fg:#E1EAF0;--hana-surface:#445560;--hana-border:rgba(170,121,141,0.16);--hana-accent:#C99AAF;--hana-bg-muted:#34424B;--hana-fg-muted:#A3B5C0;--hana-fg-subtle:#8A9BA5;--hana-border-strong:rgba(170,121,141,0.24);--hana-scrollbar:rgba(201,154,175,.3);--hana-green:#8CC790;--hana-danger:#C77070;--hana-diff-add-bg:#354E4E;--hana-diff-add-fg:#6CE3A5;--hana-diff-del-bg:#4A454C;--hana-diff-del-fg:#F9B0B3}
 /* 素白主题 */
-.theme-high-contrast{--hana-bg:#FAF8F7;--hana-fg:#1A1C1E;--hana-surface:#FDFBFA;--hana-border:rgba(92,75,70,0.22);--hana-accent:#3A6B85;--hana-bg-muted:#F5F3F2;--hana-fg-muted:#6B6F73;--hana-fg-subtle:#9EA2A6;--hana-border-strong:rgba(92,75,70,0.32);--hana-scrollbar:rgba(58,107,133,.2)}
+.theme-high-contrast{--hana-bg:#FAF8F7;--hana-fg:#1A1C1E;--hana-surface:#FDFBFA;--hana-border:rgba(92,75,70,0.22);--hana-accent:#3A6B85;--hana-bg-muted:#F5F3F2;--hana-fg-muted:#6B6F73;--hana-fg-subtle:#9EA2A6;--hana-border-strong:rgba(92,75,70,0.32);--hana-scrollbar:rgba(58,107,133,.2);--hana-green:#5A9A5E;--hana-danger:#7A3030}
 /* 草香主题 */
-.theme-grass-aroma{--hana-bg:#F5F8F3;--hana-fg:#2E3832;--hana-surface:#F9FBF7;--hana-border:rgba(91,168,140,0.22);--hana-accent:#5BA88C;--hana-bg-muted:#EDF2EA;--hana-fg-muted:#8A9490;--hana-fg-subtle:#B0BAB6;--hana-border-strong:rgba(91,168,140,0.32);--hana-scrollbar:rgba(91,168,140,.2)}
+.theme-grass-aroma{--hana-bg:#F5F8F3;--hana-fg:#2E3832;--hana-surface:#F9FBF7;--hana-border:rgba(91,168,140,0.22);--hana-accent:#5BA88C;--hana-bg-muted:#EDF2EA;--hana-fg-muted:#8A9490;--hana-fg-subtle:#B0BAB6;--hana-border-strong:rgba(91,168,140,0.32);--hana-scrollbar:rgba(91,168,140,.2);--hana-green:#7BAE7F;--hana-danger:#8B4A3A}
 /* 沉思主题 */
-.theme-contemplation{--hana-bg:#F3F5F7;--hana-fg:#2C3238;--hana-surface:#F8F9FB;--hana-border:rgba(126,153,168,0.22);--hana-accent:#7E99A8;--hana-bg-muted:#EBF0F3;--hana-fg-muted:#869098;--hana-fg-subtle:#A8B0B8;--hana-border-strong:rgba(126,153,168,0.32);--hana-scrollbar:rgba(126,153,168,.2)}
+.theme-contemplation{--hana-bg:#F3F5F7;--hana-fg:#2C3238;--hana-surface:#F8F9FB;--hana-border:rgba(126,153,168,0.22);--hana-accent:#7E99A8;--hana-bg-muted:#EBF0F3;--hana-fg-muted:#869098;--hana-fg-subtle:#A8B0B8;--hana-border-strong:rgba(126,153,168,0.32);--hana-scrollbar:rgba(126,153,168,.2);--hana-green:#6FA87E;--hana-danger:#8B4040}
 /* Absolutely主题 */
-.theme-absolutely{--hana-bg:#F4F3EE;--hana-fg:#2D2B28;--hana-surface:#FAF9F5;--hana-border:rgba(177,173,161,0.28);--hana-accent:#B5846E;--hana-bg-muted:#EBEAE6;--hana-fg-muted:#9B9793;--hana-fg-subtle:#C0BCB8;--hana-border-strong:rgba(177,173,161,0.38);--hana-scrollbar:rgba(181,132,110,.2)}
+.theme-absolutely{--hana-bg:#F4F3EE;--hana-fg:#2D2B28;--hana-surface:#FAF9F5;--hana-border:rgba(177,173,161,0.28);--hana-accent:#B5846E;--hana-bg-muted:#EBEAE6;--hana-fg-muted:#9B9793;--hana-fg-subtle:#C0BCB8;--hana-border-strong:rgba(177,173,161,0.38);--hana-scrollbar:rgba(181,132,110,.2);--hana-green:#7BAE7F;--hana-danger:#8B3A3A}
 /* Delve主题 */
-.theme-delve{--hana-bg:#FFFFFF;--hana-fg:#1A1A1A;--hana-surface:#F7F7F8;--hana-border:rgba(0,0,0,0.10);--hana-accent:#1A1A1A;--hana-bg-muted:#F3F3F4;--hana-fg-muted:#999999;--hana-fg-subtle:#CCCCCC;--hana-border-strong:rgba(0,0,0,0.18);--hana-scrollbar:rgba(0,0,0,.15)}
+.theme-delve{--hana-bg:#FFFFFF;--hana-fg:#1A1A1A;--hana-surface:#F7F7F8;--hana-border:rgba(0,0,0,0.10);--hana-accent:#1A1A1A;--hana-bg-muted:#F3F3F4;--hana-fg-muted:#999999;--hana-fg-subtle:#CCCCCC;--hana-border-strong:rgba(0,0,0,0.18);--hana-scrollbar:rgba(0,0,0,.15);--hana-green:#5CB85C;--hana-danger:#8B3A3A}
 /* Deep Think主题 */
-.theme-deep-think{--hana-bg:#FCFCFD;--hana-fg:#1D1D1F;--hana-surface:#F8F8FA;--hana-border:rgba(0,0,0,0.09);--hana-accent:#636AE8;--hana-bg-muted:#F4F4F6;--hana-fg-muted:#95959C;--hana-fg-subtle:#C0C0C8;--hana-border-strong:rgba(0,0,0,0.16);--hana-scrollbar:rgba(99,106,232,.2)}
+.theme-deep-think{--hana-bg:#FCFCFD;--hana-fg:#1D1D1F;--hana-surface:#F8F8FA;--hana-border:rgba(0,0,0,0.09);--hana-accent:#636AE8;--hana-bg-muted:#F4F4F6;--hana-fg-muted:#95959C;--hana-fg-subtle:#C0C0C8;--hana-border-strong:rgba(0,0,0,0.16);--hana-scrollbar:rgba(99,106,232,.2);--hana-green:#34A853;--hana-danger:#8B3A3A}
 /* 新暖纸主题 */
-.theme-new-warm-paper{--hana-bg:#F5EFE4;--hana-fg:#2A2622;--hana-surface:#FBF7EE;--hana-border:#D8CFBE;--hana-accent:#537D96;--hana-bg-muted:#EFE8DB;--hana-fg-muted:#6B6158;--hana-fg-subtle:#8F867B;--hana-border-strong:#D8CFBE;--hana-scrollbar:rgba(83,125,150,.2)}
+.theme-new-warm-paper{--hana-bg:#F5EFE4;--hana-fg:#2A2622;--hana-surface:#FBF7EE;--hana-border:#D8CFBE;--hana-accent:#537D96;--hana-bg-muted:#EFE8DB;--hana-fg-muted:#6B6158;--hana-fg-subtle:#8F867B;--hana-border-strong:#D8CFBE;--hana-scrollbar:rgba(83,125,150,.2);--hana-green:#4A6B4A;--hana-danger:#8B2C1F}
 /* 青夜·高对比主题 */
-.theme-midnight-contrast{--hana-bg:#26343D;--hana-fg:#F0F6FA;--hana-surface:#30414B;--hana-border:rgba(230,177,196,0.26);--hana-accent:#E6B1C4;--hana-bg-muted:#1E2C34;--hana-fg-muted:#B7C8D3;--hana-fg-subtle:#8FA0AD;--hana-border-strong:rgba(230,177,196,0.36);--hana-scrollbar:rgba(230,177,196,.3)}
+.theme-midnight-contrast{--hana-bg:#26343D;--hana-fg:#F0F6FA;--hana-surface:#30414B;--hana-border:rgba(230,177,196,0.26);--hana-accent:#E6B1C4;--hana-bg-muted:#1E2C34;--hana-fg-muted:#B7C8D3;--hana-fg-subtle:#8FA0AD;--hana-border-strong:rgba(230,177,196,0.36);--hana-scrollbar:rgba(230,177,196,.3);--hana-green:#A8DDAA;--hana-danger:#E28B8B;--hana-diff-add-bg:#1E3A32;--hana-diff-add-fg:#A8DDAA;--hana-diff-del-bg:#3A2730;--hana-diff-del-fg:#E28B8B}
 /* 珊瑚主题 */
-.theme-coral{--hana-bg:#FDF6EC;--hana-fg:#1A3049;--hana-surface:#FFFBF3;--hana-border:rgba(243,126,99,0.18);--hana-accent:#1A3049;--hana-bg-muted:#F5EDE0;--hana-fg-muted:#727F89;--hana-fg-subtle:#A0ACB5;--hana-border-strong:rgba(243,126,99,0.28);--hana-scrollbar:rgba(26,48,73,.2)}
+.theme-coral{--hana-bg:#FDF6EC;--hana-fg:#1A3049;--hana-surface:#FFFBF3;--hana-border:rgba(243,126,99,0.18);--hana-accent:#1A3049;--hana-bg-muted:#F5EDE0;--hana-fg-muted:#727F89;--hana-fg-subtle:#A0ACB5;--hana-border-strong:rgba(243,126,99,0.28);--hana-scrollbar:rgba(26,48,73,.2);--hana-green:#6E8C7A;--hana-danger:#A3483B}
 *{box-sizing:border-box;margin:0;padding:0}
 /* 滚动条 */
 html,body{height:100%;margin:0}
@@ -438,10 +441,13 @@ select:disabled{opacity:.5;cursor:not-allowed}
 .commit-tooltip.show{display:block}
 .commit-tooltip.interactive{pointer-events:auto;cursor:text;}
 
-/* diff 颜色 */
-.diff-add{background:#e6ffed;color:#1a7f37;padding:0 4px}
-.diff-del{background:#ffeef0;color:#cf222e;padding:0 4px}
-.diff-hunk{background:#f0f4ff;color:#4a8cff;padding:0 4px}
+/* diff 颜色
+   跟 Hana 对话卡片里那套 diff 同一个观感：色块 + 彩色文字。
+   底色与字色都从主题变量取，深色主题是实测像素值，
+   浅色主题是淡底深字。换主题时两边都不跑偏。 */
+.diff-add{background:var(--hana-diff-add-bg,#e6f4ea);color:var(--hana-diff-add-fg,#1a7f37);padding:0 4px}
+.diff-del{background:var(--hana-diff-del-bg,#fdeced);color:var(--hana-diff-del-fg,#c62a2f);padding:0 4px}
+.diff-hunk{background:color-mix(in srgb,var(--hana-accent,#C99AAF) 11%,transparent);color:var(--hana-accent,#C99AAF);padding:0 4px}
 /* diff 容器 */
 .diff-body{}
 
