@@ -37,6 +37,12 @@
     --sf-diff-del:rgba(185,28,28,.1);
     --sf-meta:rgba(0,0,0,.045);
     --sf-weak:#4b5563;
+    /* 小卡描边与向外那层淡影。
+       描边默认跟宿主的 --border 走（见 loadHostColors）：那是半透明色，
+       叠在卡片底色上才是宿主卡片边框真正的颜色。
+       拿不到时退回这里的兼容值。 */
+    --sf-tile-ring:var(--border, rgba(0,0,0,.12));
+    --sf-tile-glow:rgba(0,0,0,.06);
   }
   /* 深色板
      对比度全部按 WCAG AA（正文 4.5:1）挑，底色参照 hana-downloader 深色卡底 #445560。
@@ -60,6 +66,9 @@
     --sf-diff-del:rgba(240,121,127,.13);
     --sf-meta:rgba(255,255,255,.05);
     --sf-weak:#bcc9d3;
+    /* 描边同样跟 --border 走，不在这里写死颜色。 */
+    --sf-tile-ring:var(--border, rgba(255,255,255,.14));
+    --sf-tile-glow:rgba(0,0,0,.10);
   }
 
   #sf-root{display:flex;flex-direction:column;gap:6px;width:100%}
@@ -94,6 +103,14 @@
     /* 展开收起时小卡自己长高：多余的差异内容由小卡露出来。
        靠它自己的圆角裁切，裁切线就是小卡底边，圆角不会掉。 */
     overflow:hidden;
+    /* 描边与淡影，都跟着圆角走：
+       inset 那圈是卡片内沿的 1px 描边，宽度与宿主卡片的 --border-width 一致，
+       颜色用宿主的 --border（半透明，叠在卡底上得出最终色）；
+       外圈是向下偏一点的淡影，向外轻微散开。
+       不用 border：border 会把内容区挤小，展开收起时尺寸会跳。 */
+    box-shadow:
+      inset 0 0 0 var(--border-width, 1px) var(--sf-tile-ring),
+      0 2px 9px var(--sf-tile-glow);
   }
   /* 合并模式下左侧三行，右侧按钮改为靠上居中。 */
   #sf-root.sf-bare .sf-card{align-items:center;padding:11px 12px}
@@ -241,8 +258,13 @@ async function loadHostColors() {
     const cs = getComputedStyle(document.documentElement);
     const bg = cs.getPropertyValue("--bg").trim();
     const bgCard = cs.getPropertyValue("--bg-card").trim();
+    // 宿主的边框色不是一个实色，而是一个半透明色，
+    // 它叠在卡片底色上才是屏幕上看到的那个颜色。
+    // 直接把它拿过来用，小卡的描边就和宿主卡片一致，换主题自动跟着走。
+    const border = cs.getPropertyValue("--border").trim();
     if (bg) document.body.style.setProperty("--sf-chat-bg", bg);
     if (bgCard) document.body.style.setProperty("--sf-tile-bg", bgCard);
+    if (border) document.body.style.setProperty("--sf-tile-ring", border);
   } catch {}
 }
 
@@ -760,8 +782,13 @@ reportSize(true);
   // grouped：一张卡里纵向排全部文件（默认）。
   // per-file：这一张卡只负责一个文件。
   // data.mode 由工具写入，总会有值；万一缺了就当合并处理。
-  const isGrouped = data.mode !== "per-file";
-  const picked = isGrouped ? files : files.slice(0, 1);
+  //
+  // 设置在合并、但这次只有一张卡的内容时，不摆合并那套外框：
+  // 一张卡再套一层聊天底加子卡，外面看就是卡里套卡，多一圈多余的边。
+  // 这时候直接按分开模式渲染，看起来就和单文件卡一致。
+  const modeGrouped = data.mode !== "per-file";
+  const isGrouped = modeGrouped && files.length > 1;
+  const picked = modeGrouped ? files : files.slice(0, 1);
   // 合并模式下每行要自带文件名，因为标题只有「N 个文件」。
   const showName = isGrouped;
 
