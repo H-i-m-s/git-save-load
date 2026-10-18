@@ -63,7 +63,6 @@
   }
 
   #sf-root{display:flex;flex-direction:column;gap:6px;width:100%}
-
   /* 一行内容就是宿主那张卡的正文，外面不再包一层。
      参考 hana-downloader 的 .dl：无背景、无边框、无圆角，只留左右内边距。
      宿主已经给了卡壳，再画一层就是「卡里套卡」。 */
@@ -83,9 +82,10 @@
   html.sf-chat,html.sf-chat body{background:var(--sf-chat-bg)}
   html.t-dark{--sf-chat-bg:#3B4A54;--sf-tile-bg:#445560}
   #sf-root.sf-bare{
-    padding:7px 9px;
+    padding:12px 9px;
     border-radius:0;
     background:transparent;
+    gap:9px;
   }
   #sf-root.sf-bare .sf-item{
     border-radius:9px;
@@ -243,6 +243,13 @@ try {
  * 容差自检同理——宿主要先把宽度采纳，卡才不会吐满整列。
  */
 var CARD_WIDTH = 350;
+// 合并模式的外框左右内边距（与 CSS 里 #sf-root.sf-bare 的 padding 保持一致）。
+// 子卡宽度 = 总宽 - 外框内边距×2，所以总宽要加上这一截，子卡才与分开模式同宽。
+var BARE_PAD_X = 9;
+function widthFor(mode) {
+  return mode === "grouped" ? CARD_WIDTH + BARE_PAD_X * 2 : CARD_WIDTH;
+}
+var curWidth = CARD_WIDTH;
 
 let lastH = 0;
 function measureH() {
@@ -255,8 +262,8 @@ function reportSize(force) {
     const h = measureH();
     if (!force && h === lastH) return;
     lastH = h;
-    try { hana.ui?.resize?.({ width: CARD_WIDTH, height: h }); } catch {}
-    try { window.parent.postMessage({ type: "hana.card-resize", width: CARD_WIDTH, height: h }, "*"); } catch {}
+    try { hana.ui?.resize?.({ width: curWidth, height: h }); } catch {}
+    try { window.parent.postMessage({ type: "hana.card-resize", width: curWidth, height: h }, "*"); } catch {}
   } catch {}
 }
 
@@ -271,7 +278,7 @@ reportSize(true);
   if (typeof setInterval !== "function") return;
   var tries = 0;
   var adopted = function () {
-    try { return Math.abs(window.innerWidth - CARD_WIDTH) <= 2; } catch (e) { return true; }
+    try { return Math.abs(window.innerWidth - curWidth) <= 2; } catch (e) { return true; }
   };
   var timer = setInterval(function () {
     tries += 1;
@@ -553,6 +560,10 @@ async function selfCardId() {
   root.classList.toggle("sf-bare", bare);
   // 底色要铺在 html 上，才能盖满整个 iframe，不留出宿主的卡底色。
   document.documentElement.classList.toggle("sf-chat", bare);
+  // 合并模式多一圈外框，总宽要加上那圈，子卡宽度才与分开模式一致。
+  curWidth = widthFor(data.mode);
+
+  reportSize(true);
 
 
 
