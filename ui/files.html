@@ -251,14 +251,15 @@ try {
  * 宽度必须显式上报，宿主不读 details.card.preferredWidthPx（文档写死会被忽略）。
  * 基准是 hana-downloader：它靠 hana.ui.resize({ width, height }) 收窄到 400。
  * 容差自检同理——宿主要先把宽度采纳，卡才不会吐满整列。
+ *
+ * 宽度不随展开变化。实测：宿主接受放大，但不接受缩小，
+ * 一旦展开变宽，收起后 iframe 会卡在宽的那个值上缩不回来。
  */
 var CARD_WIDTH = 350;
 // 合并模式的外框左右内边距（与 CSS 里 #sf-root.sf-bare 的 padding 保持一致）。
 // 子卡宽度 = 总宽 - 外框内边距×2，所以总宽要加上这一截，子卡才与分开模式同宽。
 var BARE_PAD_X = 12;
-function widthFor(mode) {
-  return mode === "grouped" ? CARD_WIDTH + BARE_PAD_X * 2 : CARD_WIDTH;
-}
+
 var curWidth = CARD_WIDTH;
 
 let lastH = 0;
@@ -412,6 +413,34 @@ function buildCard(f, opts = {}) {
   const diffBtn = wrap.querySelector('[data-act="diff"]');
   const revertBtn = wrap.querySelector('[data-act="revert"]');
 
+  // diff 预取：卡片建好就去拉，点开时直接贴出来，不用等。
+  // 拉不到就留个空标记，点开时再试一次并显示错误。
+  let diffPromise = null;
+  // settled：预取是否已有结果。预取完成时同步置位，点开时据此决定要不要等。
+  let settled = false;
+  function prefetchDiff() {
+    if (diffPromise) return diffPromise;
+    const q = new URLSearchParams({
+      file: f.relative || f.name,
+      repo: f.repo || "",
+      untracked: f.untracked ? "1" : "0",
+    });
+    diffPromise = api("/api/show-files/diff?" + q.toString()).catch((e) => ({
+      ok: false,
+      message: e && e.message ? e.message : String(e),
+    }));
+    diffPromise.then(
+      () => { settled = true; },
+      () => { settled = true; },
+    );
+    return diffPromise;
+  }
+  // 空闲时开始预取；多张卡时错开，不要一起挤到后端。
+  try {
+    const delay = 60 + Math.floor(Math.random() * 120);
+    setTimeout(prefetchDiff, delay);
+  } catch {}
+
   let diffEl = null;
   diffBtn.addEventListener("click", async () => {
     if (diffEl) {
@@ -421,27 +450,42 @@ function buildCard(f, opts = {}) {
       reportSize(true);
       return;
     }
+
     diffBtn.classList.add("on");
+
+    // 预取已完成就把内容先填进去，再同步拉宽：内容与动画同时到达，不等。
+    // settled 由 .then 先行置位：预取早已完成时它才为真，没完成就先去拉。
+    let cached = settled ? await prefetchDiff() : null;
+
     diffEl = document.createElement("div");
     diffEl.className = "sf-diff";
-    diffEl.textContent = "读取中…";
-    wrap.appendChild(diffEl);
-    reportSize(true);
-    try {
-      const q = new URLSearchParams({
-        file: f.relative || f.name,
-        repo: f.repo || "",
-        untracked: f.untracked ? "1" : "0",
-      });
-      const res = await api("/api/show-files/diff?" + q.toString());
-      if (!res || !res.ok) {
-        diffEl.innerHTML = `<span class="l m">${ESC((res && res.message) || "读不到差异")}</span>`;
-      } else {
-        diffEl.innerHTML = renderDiff(res.diff) + (res.truncated ? '<span class="l m">… 内容过长，只显示前面一部分</span>' : "");
-      }
-    } catch (e) {
-      diffEl.innerHTML = `<span class="l m">读取失败：${ESC(e && e.message ? e.message : e)}</span>`;
+    if (cached && cached.ok) {
+      diffEl.innerHTML = renderDiff(cached.diff)
+        + (cached.truncated ? '<span class="l m">… 内容过长，只显示前面一部分</span>' : "");
+    } else {
+      diffEl.textContent = "读取中…";
     }
+    wrap.appendChild(diffEl);
+
+    // 只是变高，宽度不变。
+    reportSize(true);
+
+    // 没命中缓存才真等后端。
+    if (!(cached && cached.ok)) {
+      try {
+        const res = await prefetchDiff();
+        if (!res || !res.ok) {
+          diffEl.innerHTML = `<span class="l m">${ESC((res && res.message) || "读不到差异")}</span>`;
+        } else {
+          diffEl.innerHTML = renderDiff(res.diff)
+            + (res.truncated ? '<span class="l m">… 内容过长，只显示前面一部分</span>' : "");
+        }
+      } catch (e) {
+        diffEl.innerHTML = `<span class="l m">读取失败：${ESC(e && e.message ? e.message : e)}</span>`;
+      }
+      reportSize(true);
+    }
+    // 内容铺好之后量一次真实高度（行数多时比预估高）。
     reportSize(true);
   });
 
@@ -579,7 +623,7 @@ reportSize(true);
   // 底色要铺在 html 上，才能盖满整个 iframe，不留出宿主的卡底色。
   document.documentElement.classList.toggle("sf-chat", bare);
   // 合并模式多一圈外框，总宽要加上那圈，子卡宽度才与分开模式一致。
-  curWidth = widthFor(isGrouped ? "grouped" : "per-file");
+  curWidth = isGrouped ? CARD_WIDTH + BARE_PAD_X * 2 : CARD_WIDTH;
 
 
 
