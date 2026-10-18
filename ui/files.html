@@ -82,40 +82,44 @@
   html.sf-chat,html.sf-chat body{background:var(--sf-chat-bg)}
   html.t-dark{--sf-chat-bg:#3B4A54;--sf-tile-bg:#445560}
   #sf-root.sf-bare{
-    padding:12px 9px;
+    /* 上下内边距与卡片间距取同一个值，第一张卡到顶部就和卡与卡之间一样宽。 */
+    padding:13px 12px;
     border-radius:0;
     background:transparent;
-    gap:9px;
+    gap:13px;
   }
   #sf-root.sf-bare .sf-item{
     border-radius:9px;
     background:var(--sf-tile-bg);
   }
   /* 合并模式下左侧三行，右侧按钮改为靠上居中。 */
-  #sf-root.sf-bare .sf-card{align-items:center;padding:9px 11px}
+  #sf-root.sf-bare .sf-card{align-items:center;padding:11px 12px}
+  /* 字号只在合并模式里放大；分开模式仍用紧凑的 12/11.5。 */
+  #sf-root.sf-bare .sf-chg{font-size:12.5px}
+  #sf-root.sf-bare .sf-sub{font-size:12px}
   #sf-root.sf-bare .sf-acts{align-self:center}
 
   /* 左侧：增量计数 + 路径。合并模式下多一行文件名。 */
   .sf-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px}
-  .sf-info.tall{gap:3px}
+  .sf-info.tall{gap:4px}
   /* 增删数：无序列表，每一项一条状态色点 + 数字。 */
   .sf-chg{
-    display:flex;align-items:center;gap:10px;
+    display:flex;align-items:center;gap:11px;
     list-style:none;margin:0;padding:0;
-    font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-variant-numeric:tabular-nums;line-height:1.15;
+    font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-variant-numeric:tabular-nums;line-height:1.2;
   }
   .sf-chg .sf-stat{display:flex;align-items:center;gap:5px}
   /* 路径行：装不下时由 JS 做中间省略（保头保尾），CSS 不裁。 */
   .sf-sub{
     min-width:0;overflow:hidden;white-space:nowrap;
-    font-size:10.5px;line-height:1.2;color:var(--sf-faint);
+    font-size:11.5px;line-height:1.25;color:var(--sf-faint);
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   /* 文件名：只在合并模式下出现，独立一行、字号加大。 */
   .sf-name{
     min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-    font-size:12.5px;line-height:1.25;color:var(--sf-text);font-weight:600;
+    font-size:13.5px;line-height:1.3;color:var(--sf-text);font-weight:600;
   }
   .sf-dot{flex:0 0 auto;width:5px;height:5px;border-radius:50%;background:var(--sf-faint)}
   .sf-dot.new{background:var(--sf-add)}
@@ -245,7 +249,7 @@ try {
 var CARD_WIDTH = 350;
 // 合并模式的外框左右内边距（与 CSS 里 #sf-root.sf-bare 的 padding 保持一致）。
 // 子卡宽度 = 总宽 - 外框内边距×2，所以总宽要加上这一截，子卡才与分开模式同宽。
-var BARE_PAD_X = 9;
+var BARE_PAD_X = 12;
 function widthFor(mode) {
   return mode === "grouped" ? CARD_WIDTH + BARE_PAD_X * 2 : CARD_WIDTH;
 }
@@ -524,6 +528,11 @@ async function selfCardId() {
   return "";
 }
 
+/* 首帧骨架：必须在 boot 开始之前画。
+ * boot 是 async 的，如果在它后面同步覆盖 root，会把已经画好的内容冲掉。 */
+root.innerHTML = '<div class="sf-sk"></div><div class="sf-sk"></div>';
+reportSize(true);
+
 (async function boot() {
   const cardId = await selfCardId();
   const qs = cardId ? `?card=${encodeURIComponent(cardId)}` : "";
@@ -563,6 +572,8 @@ async function selfCardId() {
   // 合并模式多一圈外框，总宽要加上那圈，子卡宽度才与分开模式一致。
   curWidth = widthFor(data.mode);
 
+
+
   reportSize(true);
 
 
@@ -583,10 +594,6 @@ async function selfCardId() {
 try {
   window.addEventListener("resize", () => requestAnimationFrame(paintPaths));
 } catch (e) {}
-
-// 首帧骨架
-root.innerHTML = '<div class="sf-sk"></div><div class="sf-sk"></div>';
-reportSize(true);
 </script>
 </body>
 </html>
