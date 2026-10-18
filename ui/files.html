@@ -496,7 +496,25 @@ const ESC = (s) => String(s == null ? "" : s)
   .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 const ICON_DIFF = '<svg viewBox="0 0 24 24"><path d="M9 3H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h4"/><path d="M15 3h4a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4"/><path d="M12 3v18"/></svg>';
-const ICON_UNDO = '<svg viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M3.5 13a9 9 0 1 0 2.6-6.4L3 9"/></svg>';
+/* 撤回图标：实心回转箭头。
+
+   原来的描边写法两段弧拼不出清晰的箭头，换成实心图标。
+   实心块必须自己带 fill，否则会被 .sf-btn svg 的 fill:none 抹平。
+
+   加粗与圆角：图形是实心块，改 stroke-width 对填充没作用。
+   做法是同色描边叠在填充上，向外胀一半宽度，线条就变粗。
+   stroke-linejoin/linecap 给 round，箭头的三个尖角自然变圆。
+
+   转角：实测开口原本朝 120°（0°=右，90°=正下），偏右 30°。
+   逆时针转 28°，开口落到 92°，基本正对下方，还留一点斜度。
+
+   尾巴与箭头：尾端沿弧线切线往外伸 70，尾巴变长。
+   箭头五个顶点整体沿屏幕斜上挪 40，形状一点没动，只是位置退了。
+   路径已由相对坐标展开成绝对坐标，否则改一个点会带动后面所有段平移。
+
+   viewBox 是旋转 + 改造后重新量的，不是算出来的。
+   数字带三位小数，是展开时的精度，不影响渲染。 */
+const ICON_UNDO = '<svg viewBox="170 220 696 646" preserveAspectRatio="xMidYMid meet"><g transform="rotate(-28 502 576)"><path d="M341.470 420.433L477.924 331.264C604.615 258.105 764.587 298.098 835.300 420.580C905.956 543.004 860.615 701.554 733.924 774.656L530.620 892.024L505.020 847.651L630.745 775.117L708.324 730.340C809.643 671.801 845.995 544.996 789.390 447.033C732.843 349.070 604.843 317.099 503.524 375.580L486.571 385.422L367.070 464.749L424.641 564.419L172.737 550.709L286.800 325.656L341.470 420.433Z" fill="currentColor" stroke="currentColor" stroke-width="24" stroke-linejoin="round" stroke-linecap="round"/></g></svg>';
 
 function api(path, init) {
   return hana.api.fetch(path, init).then((r) => r.json());
