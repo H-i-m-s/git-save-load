@@ -91,27 +91,31 @@
     border-radius:9px;
     background:var(--sf-tile-bg);
   }
-  /* 内部每张小卡的内边距向分开模式看齐：那张卡的高度是宿主卡壳 + 正文内边距一起撑出来的，
-     这里只有自己的内边距，所以要给得比 2px 宽。 */
-  #sf-root.sf-bare .sf-card{padding:9px 11px}
+  /* 合并模式下左侧三行，右侧按钮改为靠上居中。 */
+  #sf-root.sf-bare .sf-card{align-items:center;padding:9px 11px}
+  #sf-root.sf-bare .sf-acts{align-self:center}
 
-  /* 左侧两行：增删计数 / 相对路径 */
+  /* 左侧：增量计数 + 路径。合并模式下多一行文件名。 */
   .sf-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .sf-info.tall{gap:3px}
+  /* 增删数：无序列表，每一项一条状态色点 + 数字。 */
   .sf-chg{
-    display:flex;align-items:center;gap:6px;
+    display:flex;align-items:center;gap:10px;
+    list-style:none;margin:0;padding:0;
     font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
     font-variant-numeric:tabular-nums;line-height:1.15;
   }
+  .sf-chg .sf-stat{display:flex;align-items:center;gap:5px}
   /* 路径行：装不下时由 JS 做中间省略（保头保尾），CSS 不裁。 */
   .sf-sub{
     min-width:0;overflow:hidden;white-space:nowrap;
     font-size:10.5px;line-height:1.2;color:var(--sf-faint);
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
-  /* 文件名：只在合并模式下出现（标题栏那时写的是「N 个文件」）。 */
+  /* 文件名：只在合并模式下出现，独立一行、字号加大。 */
   .sf-name{
     min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-    font-size:12px;line-height:1.15;color:var(--sf-text);font-weight:500;
+    font-size:12.5px;line-height:1.25;color:var(--sf-text);font-weight:600;
   }
   .sf-dot{flex:0 0 auto;width:5px;height:5px;border-radius:50%;background:var(--sf-faint)}
   .sf-dot.new{background:var(--sf-add)}
@@ -362,16 +366,21 @@ function buildCard(f, opts = {}) {
   const addTxt = f.binary ? "二进制" : `+${f.added}`;
   const delTxt = f.binary ? "" : `-${f.deleted}`;
 
-  // 左两行：文件名（仅合并模式）/ 增删数、路径；右侧是一组按钮。
+  // 左边三行（合并模式）：文件名独立一行、增删各一项、路径一行。
+  // 分开模式下只保留后两行的紧凑形式：标题已经写了文件名。
   wrap.innerHTML =
     '<div class="sf-card">'
-    +  '<div class="sf-info">'
-    +    '<div class="sf-chg">'
-    +      (key ? `<span class="sf-dot ${key}"></span>` : '<span class="sf-dot"></span>')
-    +      (showName ? `<span class="sf-name" title="${ESC(f.name)}">${ESC(f.name)}</span>` : "")
-    +      `<span class="${f.binary ? "sf-zero" : "sf-add"}">${ESC(addTxt)}</span>`
-    +      (delTxt ? `<span class="${f.deleted ? "sf-del" : "sf-zero"}">${ESC(delTxt)}</span>` : "")
-    +    "</div>"
+    +  '<div class="sf-info' + (showName ? " tall" : "") + '">'
+    +    (showName
+          ? `<div class="sf-name" title="${ESC(f.name)}">${ESC(f.name)}</div>`
+          : "")
+    +    '<ul class="sf-chg">'
+    +      `<li class="sf-stat">`
+    +        (key ? `<span class="sf-dot ${key}"></span>` : '<span class="sf-dot"></span>')
+    +        `<span class="${f.binary ? "sf-zero" : "sf-add"}">${ESC(addTxt)}</span>`
+    +      "</li>"
+    +      (delTxt ? `<li class="sf-stat"><span class="${f.deleted ? "sf-del" : "sf-zero"}">${ESC(delTxt)}</span></li>` : "")
+    +    "</ul>"
     +    '<div class="sf-sub"></div>'
     +  "</div>"
     +  '<div class="sf-acts">'
@@ -544,7 +553,9 @@ async function selfCardId() {
   root.classList.toggle("sf-bare", bare);
   // 底色要铺在 html 上，才能盖满整个 iframe，不留出宿主的卡底色。
   document.documentElement.classList.toggle("sf-chat", bare);
-
+
+
+
 
 
   root.innerHTML = "";
