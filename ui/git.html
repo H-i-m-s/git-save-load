@@ -228,6 +228,12 @@
         <button type="button" class="hana-seg-btn" data-value="simple">精简</button>
       </div>
     </label>
+    <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">变更文件卡
+      <div class="hana-seg" id="segFilesCard" style="float:none">
+        <button type="button" class="hana-seg-btn" data-value="per-file">一文件一卡</button>
+        <button type="button" class="hana-seg-btn" data-value="grouped">合并一卡</button>
+      </div>
+    </label>
     <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">自动刷新
       <select id="cfgAutoRefresh" onchange="saveSetting('autoRefreshSec',this.value);restartAutoRefresh(this.value)" style="font-size:11px">
         <option value="0">关闭</option>
