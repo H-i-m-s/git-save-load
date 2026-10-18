@@ -41,6 +41,46 @@ function initCardDrag() {
   dropLine.id = "dragDropLine";
   dropLine.style.cssText = "display:none;height:2px;background:var(--hana-accent,#5e6ad2);margin:2px 0;border-radius:1px;pointer-events:none;position:relative;z-index:10";
   container.appendChild(dropLine);
+
+  // ======== 指示线的收与放 ========
+  // 粉线表示“松手后卡片会落到这里”，是一个纯临时状态。临时状态全靠事件来收，
+  // 而结束事件是会丢的：松手落在这个 iframe 外面时容器收不到 drop，
+  // 被拖的节点在拖拽期间被重建时 dragend 也送不到。信号一丢，线就永远留在版面上。
+  // 所以这里不把任何单一事件当成唯一出口。
+  var LINE_IDLE_MS = 1000;   // 拖拽活着时浏览器会持续发 dragover，静默超过这个时长就当它已经结束
+  var DRAG_IDLE_MS = 4000;   // 更长的静默：连拖拽状态一起收，防止卡片一直停在半透明
+  var lineTimer = null;
+  var dragTimer = null;
+
+  // 软收：只收线，不动拖拽来源。
+  // 为什么不连 _dragSrc 一起清：万一是真实拖拽中浏览器短暂没发 dragover，
+  // 把来源清掉会让后续的落点全部作废，卡片就拖不动了。
+  function hideDropLine() {
+    dropLine.style.display = "none";
+    _dropTarget = null;
+    _dropPos = "";
+    if (lineTimer) { clearTimeout(lineTimer); lineTimer = null; }
+  }
+
+  // 硬收：连线带拖拽状态一起清，只在确定已经结束时用
+  function clearDragState() {
+    hideDropLine();
+    container.querySelectorAll(".card").forEach(function(c) { c.classList.remove("dragging"); });
+    _dragSrc = null;
+    if (dragTimer) { clearTimeout(dragTimer); dragTimer = null; }
+  }
+
+  // 还在拖就续命；超时先软收线，再久一点才硬收状态
+  function keepLineAlive() {
+    if (lineTimer) clearTimeout(lineTimer);
+    lineTimer = setTimeout(function() {
+      lineTimer = null;
+      hideDropLine();
+      container.querySelectorAll(".card").forEach(function(c) { c.classList.remove("dragging"); });
+    }, LINE_IDLE_MS);
+    if (dragTimer) clearTimeout(dragTimer);
+    dragTimer = setTimeout(function() { dragTimer = null; clearDragState(); }, DRAG_IDLE_MS);
+  }
   // 元素级事件
   container.addEventListener("dragstart", function(e) {
     // 兑底：即使 mousedown 拦截失效，也要阻止 input 上的 drag
@@ -50,6 +90,7 @@ function initCardDrag() {
     }
     var card = e.target.closest(".card");
     if (!card) return;
+    hideDropLine();   // 上一次若没收拾干净，新一次拖拽先把线收掉，不带着残留走
     _dragSrc = card;
     card.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
@@ -71,13 +112,13 @@ function initCardDrag() {
     document.addEventListener('mouseleave', restore, true);
   }, true);
   container.addEventListener("dragend", function(e) {
-    dropLine.style.display = "none";
-    container.querySelectorAll(".card").forEach(function(c) { c.classList.remove("dragging"); });
-    _dragSrc = null; _dropTarget = null;
+    clearDragState();
   });
   container.addEventListener("dragover", function(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
+    // 不是从卡片里发起的拖拽（比如从资源管理器拖文件进来）不该出现插入提示
+    if (!_dragSrc) return;
     var cr = container.getBoundingClientRect();
     var cards = container.querySelectorAll(".card:not(.dragging)");
     // 检查是否在最上方或最下方
@@ -89,6 +130,7 @@ function initCardDrag() {
         container.insertBefore(dropLine, cards[0]);
         dropLine.style.display = "block";
         _dropTarget = cards[0]; _dropPos = "before";
+        keepLineAlive();
         return;
       }
       if (e.clientY > lastRect.bottom) {
@@ -96,11 +138,14 @@ function initCardDrag() {
         container.appendChild(dropLine);
         dropLine.style.display = "block";
         _dropTarget = cards[cards.length - 1]; _dropPos = "after";
+        keepLineAlive();
         return;
       }
     }
     var target = e.target.closest(".card");
-    if (!target || target === _dragSrc) return;
+    // 停在被拖卡片自己身上、或停在卡片之外的空地上：没有有效落点。
+    // 这里必须收线并清掉旧落点，否则松手会拿上一次的 _dropTarget 把卡片挪到别处。
+    if (!target || target === _dragSrc) { hideDropLine(); return; }
     _dropTarget = target;
     var rect = target.getBoundingClientRect();
     _dropPos = e.clientY < rect.top + rect.height / 2 ? "before" : "after";
@@ -110,18 +155,40 @@ function initCardDrag() {
       container.insertBefore(dropLine, target.nextSibling);
     }
     dropLine.style.display = "block";
+    keepLineAlive();
   });
   container.addEventListener("drop", function(e) {
     e.preventDefault();
-    dropLine.style.display = "none";
-    if (!_dragSrc || !_dropTarget || _dragSrc === _dropTarget) return;
-    if (_dropPos === "before") {
-      container.insertBefore(_dragSrc, _dropTarget);
+    // 先把落点取下来再收线：hideDropLine 会清掉 _dropTarget
+    var src = _dragSrc, target = _dropTarget, pos = _dropPos;
+    hideDropLine();
+    if (!src || !target || src === target) { _dragSrc = null; return; }
+    if (pos === "before") {
+      container.insertBefore(src, target);
     } else {
-      container.insertBefore(_dragSrc, _dropTarget.nextSibling);
+      container.insertBefore(src, target.nextSibling);
     }
+    _dragSrc = null;
     saveCardOrder();
   });
+  // 兜底一：松手落在 iframe 外面时，容器收不到 drop，dragend 也可能送不到。
+  // 挂在 document 的冒泡阶段，保证容器自己的处理先跑完，
+  // 否则 _dropTarget 被提前清掉，卡片就不移动了。
+  document.addEventListener("drop", function() { clearDragState(); });
+  document.addEventListener("dragend", function() { clearDragState(); });
+  // 兜底二：指针真的离开了卡片区域，插入位置已经没有意义。
+  // 不用 relatedTarget 判断：真实拖拽里它经常是 null（浏览器实现不一），
+  // 一旦为 null 就会在容器内部迁移时误收，线会闪。用坐标最稳。
+  container.addEventListener("dragleave", function(e) {
+    if (typeof e.clientX !== "number" || (e.clientX === 0 && e.clientY === 0)) return;
+    var r = container.getBoundingClientRect();
+    var inside = e.clientX >= r.left && e.clientX <= r.right &&
+                 e.clientY >= r.top && e.clientY <= r.bottom;
+    if (!inside) clearDragState();
+  });
+  // 兜底三：窗口失焦，拖拽基本已经结束
+  window.addEventListener("blur", function() { clearDragState(); });
+
   // 每个卡片加拖拽把手
   container.querySelectorAll(".card").forEach(function(c) {
     c.draggable = true;
