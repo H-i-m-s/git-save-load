@@ -326,31 +326,61 @@ function easeS(p) {
  */
 function animateDiff(el, opening, done) {
   if (!el) return;
-  try { window.__d = window.__d || []; window.__d.push("enter op=" + opening); } catch {}
   if (heightAnim) {
     try { cancelAnimationFrame(heightAnim); } catch {}
     heightAnim = 0;
   }
 
-  // 量真实渲染高度。不能用 scrollHeight：它不受 max-height 约束，
-  // 会把目标设成内容全高，多出来的部分全是空白。
+  // 量当前渲染高度。
+  //
+  // 不用 scrollHeight：它不受 max-height 约束，会把目标设成内容全高（600+），
+  // 而元素实际最高只能到 280，多出来那段就是纯空转 + 空白。
+  // 也不解除 max-height：有上限时，height:auto 就是想要的最终高度。
   el.style.height = "";
-  try { window.__d.push("after auto h=" + el.style.height); } catch {}
-  var natural = Math.ceil(el.getBoundingClientRect().height);
-  try { window.__d.push("natural=" + natural); } catch {}
+  var natural = Math.ceil(el.getBoundingClientRect().height) || 0;
+
   if (!natural) {
-    void el.offsetHeight;
-    natural = Math.ceil(el.getBoundingClientRect().height);
-  }
-  if (!natural) {
-    el.style.height = "";
-    reportSize(true);
-    if (done) done();
+    // 再给一帧：挂载后布局可能要到下一帧才稳定。
+    requestAnimationFrame(function () {
+      el.style.height = "";
+      var n2 = Math.ceil(el.getBoundingClientRect().height) || 0;
+      if (!n2) {
+        // 仍然量不到：不做动画，直接显示完整内容。
+        el.style.height = "";
+        el.style.overflow = "";
+        reportSize(true);
+        if (done) done();
+        return;
+      }
+      runAnim(el, n2, opening, done);
+    });
     return;
   }
 
-  var to = opening ? natural : 0;
-  var from = opening ? 0 : Math.max(1, natural);
+  runAnim(el, natural, opening, done);
+}
+
+/* 真正跑补间。natural 是内容渲染高度（已含 padding）。 */
+function runAnim(el, natural, opening, done) {
+
+  // 目标高度必须是这个元素“真能长到”的高度。
+  //
+  // .sf-diff 有 max-height:280px，内容 600+ 时高度封顶在 280。
+  // 若拿内容全高当目标，补间会往 631 推，而元素早在 280 就被封住，
+  // 后面一大段动画是空转，同时报给宿主的高度与实际布局对不上。
+  var cap = 0;
+  try {
+    var cs = getComputedStyle(el);
+    var mh = cs.maxHeight;
+    if (mh && mh !== "none") {
+      var n = parseFloat(mh);
+      if (isFinite(n) && n > 0) cap = Math.ceil(n);
+    }
+  } catch {}
+  var full = cap > 0 ? Math.min(natural, cap) : natural;
+
+  var to = opening ? full : 0;
+  var from = opening ? 0 : Math.max(1, full);
 
   if (Math.abs(to - from) < 1) {
     el.style.height = opening ? "" : "0px";
@@ -359,6 +389,8 @@ function animateDiff(el, opening, done) {
     return;
   }
 
+  // 补间期间必须裁溢出，否则内容会在矮到高的过程中直接露出来。
+  el.style.overflow = "hidden";
   el.style.height = from + "px";
   reportSize(true);
 
@@ -376,8 +408,9 @@ function animateDiff(el, opening, done) {
     } else {
       heightAnim = 0;
       animating = false;
-      // 展开到位后交回 auto（让 diff 内部滚动正常）；收起保持 0，等外层拆。
+      // 展开到位后交回 auto / auto（让 diff 内部滚动正常）；收起保持 0，等外层拆。
       el.style.height = opening ? "" : "0px";
+      if (opening) el.style.overflow = "";
       reportSize(true);
       if (done) done();
     }
@@ -780,40 +813,6 @@ reportSize(true);
 try {
   window.addEventListener("resize", () => requestAnimationFrame(paintPaths));
 } catch (e) {}
-
-/*PROBE-RECT*/
-setInterval(function () {
-  var item = document.querySelector(".sf-item");
-  var card = document.querySelector(".sf-card");
-  var diff = document.querySelector(".sf-diff");
-  if (!item) return;
-  var b = document.getElementById("rectprobe");
-  if (!b) {
-    b = document.createElement("div");
-    b.id = "rectprobe";
-    b.style.cssText = "position:fixed;left:0;top:0;font-size:8px;opacity:.03;pointer-events:none;white-space:pre-wrap;max-width:345px;z-index:9";
-    document.body.appendChild(b);
-  }
-  var r = function (el) {
-    if (!el) return "-";
-    var q = el.getBoundingClientRect();
-    return Math.round(q.left) + "," + Math.round(q.right) + " w" + Math.round(q.width);
-  };
-  b.textContent = "body" + document.body.clientWidth
-    + "\nitem " + r(item)
-    + "\ncard " + r(card)
-    + "\ndiff " + r(diff)
-    + "\nH diff.put=" + (diff ? diff.style.height || "auto" : "-")
-    + " rect=" + (diff ? Math.round(diff.getBoundingClientRect().height) : "-")
-    + " scroll=" + (diff ? diff.scrollHeight : "-")
-    + " client=" + (diff ? diff.clientHeight : "-")
-    + "\ninner=" + (function () {
-      var i = diff && diff.firstElementChild;
-      return i ? (Math.round(i.getBoundingClientRect().height) + "/scroll" + i.scrollHeight) : "-";
-    })()
-    + "\nwinH=" + window.innerHeight
-    + "\nD=" + (window.__d || []).slice(-8).join(" | ");
-}, 350);
 </script>
 </body>
 </html>
