@@ -68,12 +68,6 @@
 
   /* 左侧两行：增删计数 / 相对路径 */
   .sf-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px}
-  .sf-name{
-    display:flex;align-items:center;gap:6px;
-    font-size:12px;font-weight:600;color:var(--sf-text);
-    line-height:1.2;min-width:0;
-  }
-  .sf-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sf-chg{
     display:flex;align-items:center;gap:6px;
     font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -290,15 +284,13 @@ function buildCard(f) {
   const addTxt = f.binary ? "二进制" : `+${f.added}`;
   const delTxt = f.binary ? "" : `-${f.deleted}`;
 
-  // 左三行：文件名 / 增删数 / 路径；右侧是一组按钮。
+  // 左两行：增删数 / 路径；右侧是一组按钮。
+  // 文件名不写：宿主大标题已有，路径末尾也带着它，再写一遍就是第三份。
   wrap.innerHTML =
     '<div class="sf-card">'
     +  '<div class="sf-info">'
-    +    '<div class="sf-name">'
-    +      (key ? `<span class="sf-dot ${key}"></span>` : '<span class="sf-dot"></span>')
-    +      `<span class="sf-text" title="${ESC(f.path)}">${ESC(f.name)}</span>`
-    +    "</div>"
     +    '<div class="sf-chg">'
+    +      (key ? `<span class="sf-dot ${key}"></span>` : '<span class="sf-dot"></span>')
     +      `<span class="${f.binary ? "sf-zero" : "sf-add"}">${ESC(addTxt)}</span>`
     +      (delTxt ? `<span class="${f.deleted ? "sf-del" : "sf-zero"}">${ESC(delTxt)}</span>` : "")
     +    "</div>"
