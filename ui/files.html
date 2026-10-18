@@ -557,20 +557,22 @@ reportSize(true);
     return;
   }
 
-  // per-file：这一张卡只负责一个文件（工具每次调用只画一张）。
-  // grouped：一张卡里纵向排全部文件。
-  const picked = data.mode === "grouped" ? files : files.slice(0, 1);
+  // grouped：一张卡里纵向排全部文件（默认）。
+  // per-file：这一张卡只负责一个文件。
+  // data.mode 由工具写入，总会有值；万一缺了就当合并处理。
+  const isGrouped = data.mode !== "per-file";
+  const picked = isGrouped ? files : files.slice(0, 1);
   // 合并模式下每行要自带文件名，因为标题只有「N 个文件」。
-  const showName = data.mode === "grouped";
+  const showName = isGrouped;
 
   // 合并模式：整块铺聊天背景，每个文件单独一张小卡，观感接近分开展示。
   // 分开模式：一行就是整张卡的正文，不加任何自己的底色。
-  const bare = data.mode === "grouped";
+  const bare = isGrouped;
   root.classList.toggle("sf-bare", bare);
   // 底色要铺在 html 上，才能盖满整个 iframe，不留出宿主的卡底色。
   document.documentElement.classList.toggle("sf-chat", bare);
   // 合并模式多一圈外框，总宽要加上那圈，子卡宽度才与分开模式一致。
-  curWidth = widthFor(data.mode);
+  curWidth = widthFor(isGrouped ? "grouped" : "per-file");
 
 
 

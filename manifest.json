@@ -64,9 +64,9 @@
           "filesCardMode": {
             "type": "string",
             "title": "变更文件卡片布局",
-            "default": "per-file",
+            "default": "grouped",
             "enum": ["per-file", "grouped"],
-            "description": "per-file：一个文件一张小卡；grouped：所有文件合在一张卡里"
+            "description": "grouped：所有文件合在一张卡里；per-file：一个文件一张小卡"
           },
           "theme": {
             "type": "string",

@@ -188,8 +188,8 @@ export async function execute(input = {}, ctx = {}) {
   }
 
   // 布局由用户设置决定，一次调用能不能带多个文件也由它决定。
-  // 设置读不到时按 per-file（一次一个）处理。
-  let cardMode = "per-file";
+  // 设置读不到时按 grouped（一次传完）处理。
+  let cardMode = "grouped";
   try {
     const v = await ctx.config?.get?.("filesCardMode");
     if (v === "grouped" || v === "per-file") cardMode = v;
