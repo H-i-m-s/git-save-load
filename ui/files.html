@@ -168,12 +168,20 @@
   .sf-btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
   .sf-btn.on{background:var(--sf-btn-hover);color:var(--sf-text)}
   .sf-btn.danger{color:var(--sf-del)}
-  .sf-btn.danger:hover{background:rgba(240,121,127,.16)}
+  .sf-btn.danger:hover{background:color-mix(in srgb,var(--sf-del) 16%,transparent)}
+  /* 确认回退：跟主卡片里其他危险按钮同一个做法
+     （见 git.css 的 .remote-action-btn.remote-action-danger）——
+     淡底 + 同色描边 + 彩色文字，不用实色底配白字。
+     实色底在这里是看不下去的：深色主题的 --sf-del 是浅粉 #ffb3b6，
+     白字压上去对比度只有 1.7:1，字和底糊成一片。
+     描边用 inset 阴影而不是 border，进确认态时宽度不变，按钮不会挑位置。 */
   .sf-btn.confirming{
     width:auto;padding:0 8px;font-size:11px;font-weight:600;
-    background:var(--sf-del);color:#fff;
+    background:color-mix(in srgb,var(--sf-del) 10%,transparent);
+    color:var(--sf-del);
+    box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--sf-del) 45%,transparent);
   }
-  .sf-btn.confirming:hover{background:var(--sf-del);filter:brightness(1.1)}
+  .sf-btn.confirming:hover{background:color-mix(in srgb,var(--sf-del) 18%,transparent)}
   .sf-btn:disabled{opacity:.4;cursor:default}
 
   /* 展开的 diff
