@@ -20,6 +20,11 @@
     --sf-text:#16181d;
     --sf-muted:#4b5563;
     --sf-faint:#6b7280;
+    /* 合并模式的两层：外层聊天底、内层每个文件一张卡的卡底。
+       这两个值会被 JS 用宿主主题的 --bg / --bg-card 覆盖（见 syncTheme）。
+       先给一对浅色兼容色，只能在拿不到宿主变量时才会用到。 */
+    --sf-chat-bg:rgba(0,0,0,.045);
+    --sf-tile-bg:#ffffff;
     --sf-card-bg:rgba(0,0,0,.035);
     --sf-card-bd:rgba(0,0,0,.07);
     --sf-card-hover:rgba(0,0,0,.055);
@@ -40,6 +45,9 @@
     --sf-text:#e6eaf2;
     --sf-muted:#c8d4de;
     --sf-faint:#c8d4de;
+    /* 拿不到宿主主题时的深色兼容色：外层偏暗、内层略亮一档。 */
+    --sf-chat-bg:#3B4A54;
+    --sf-tile-bg:#445560;
     --sf-card-bg:rgba(255,255,255,.045);
     --sf-card-bd:rgba(255,255,255,.09);
     --sf-card-hover:rgba(255,255,255,.07);
@@ -60,11 +68,24 @@
      参考 hana-downloader 的 .dl：无背景、无边框、无圆角，只留左右内边距。
      宿主已经给了卡壳，再画一层就是「卡里套卡」。 */
   .sf-item{display:flex;flex-direction:column;width:100%}
+  /* 分开模式：一行就是整张卡的内容，不带自己的底色。 */
   .sf-card{
     display:flex;align-items:center;gap:10px;
     padding:2px 10px;
     min-width:0;
   }
+  /* 合并模式：外层画聊天背景，每个文件单独一张小卡。
+     这也是为什么不给 .sf-card 直接上色——只有合并模式需要「卡里还有卡」。 */
+  #sf-root.sf-bare{
+    padding:6px 8px;
+    border-radius:10px;
+    background:var(--sf-chat-bg);
+  }
+  #sf-root.sf-bare .sf-item{
+    border-radius:8px;
+    background:var(--sf-tile-bg);
+  }
+  #sf-root.sf-bare .sf-card{padding:7px 10px}
 
   /* 左侧两行：增删计数 / 相对路径 */
   .sf-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px}
@@ -78,6 +99,11 @@
     min-width:0;overflow:hidden;white-space:nowrap;
     font-size:10.5px;line-height:1.2;color:var(--sf-faint);
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  /* 文件名：只在合并模式下出现（标题栏那时写的是「N 个文件」）。 */
+  .sf-name{
+    min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-size:12px;line-height:1.15;color:var(--sf-text);font-weight:500;
   }
   .sf-dot{flex:0 0 auto;width:5px;height:5px;border-radius:50%;background:var(--sf-faint)}
   .sf-dot.new{background:var(--sf-add)}
@@ -143,7 +169,38 @@ import { hana } from "./assets/sdk.js";
 const root = document.getElementById("sf-root");
 try { hana.ready(); } catch {}
 
-/* ── 主题 ── */
+/* ── 主题 ──
+ *
+ * 深色/浅色判定靠 hana.theme 快照。
+ * 另外拉一次宿主主题样式表，取出 --bg（聊天底）和 --bg-card（卡底），
+ * 用于合并模式画「聊天底 + 每个文件一张卡」的两层。
+ * 拉不到就退回样式表里写好的兼容色，不影响使用。
+ */
+let hostThemeLoaded = false;
+
+async function loadHostColors() {
+  if (hostThemeLoaded) return;
+  let snap = null;
+  try { snap = hana.theme?.getSnapshot?.() || null; } catch { return; }
+  const url = snap && snap.cssUrl;
+  if (!url) return;
+  hostThemeLoaded = true;
+  try {
+    const r = await fetch(url, { credentials: "same-origin" });
+    if (!r.ok) return;
+    const css = await r.text();
+    const st = document.createElement("style");
+    st.textContent = css;
+    document.head.appendChild(st);
+    if (snap.theme) document.documentElement.setAttribute("data-theme", snap.theme);
+    const cs = getComputedStyle(document.documentElement);
+    const bg = cs.getPropertyValue("--bg").trim();
+    const bgCard = cs.getPropertyValue("--bg-card").trim();
+    if (bg) document.body.style.setProperty("--sf-chat-bg", bg);
+    if (bgCard) document.body.style.setProperty("--sf-tile-bg", bgCard);
+  } catch {}
+}
+
 function syncTheme() {
   let snap = null;
   try { snap = hana.theme?.getSnapshot?.() || null; } catch { snap = null; }
@@ -155,7 +212,14 @@ function syncTheme() {
   document.body.classList.toggle("t-dark", dark);
 }
 syncTheme();
-try { hana.theme?.subscribe?.(() => syncTheme()); } catch {}
+loadHostColors();
+try {
+  hana.theme?.subscribe?.(() => {
+    syncTheme();
+    hostThemeLoaded = false;
+    loadHostColors();
+  });
+} catch {}
 
 /* ── 尺寸上报 ──
  *
@@ -274,7 +338,10 @@ function fitPath(el, text) {
   el.textContent = best;
 }
 
-function buildCard(f) {
+function buildCard(f, opts = {}) {
+  // 合并模式下宿主标题只写「N 个文件」，看不出具体是哪个文件，
+  // 所以每行自己带一遍文件名。分开模式下标题就是文件名，不再重复。
+  const showName = opts.showName === true;
   const key = statusKey(f.status);
   const wrap = document.createElement("div");
   wrap.className = "sf-item";
@@ -284,13 +351,13 @@ function buildCard(f) {
   const addTxt = f.binary ? "二进制" : `+${f.added}`;
   const delTxt = f.binary ? "" : `-${f.deleted}`;
 
-  // 左两行：增删数 / 路径；右侧是一组按钮。
-  // 文件名不写：宿主大标题已有，路径末尾也带着它，再写一遍就是第三份。
+  // 左两行：文件名（仅合并模式）/ 增删数、路径；右侧是一组按钮。
   wrap.innerHTML =
     '<div class="sf-card">'
     +  '<div class="sf-info">'
     +    '<div class="sf-chg">'
     +      (key ? `<span class="sf-dot ${key}"></span>` : '<span class="sf-dot"></span>')
+    +      (showName ? `<span class="sf-name" title="${ESC(f.name)}">${ESC(f.name)}</span>` : "")
     +      `<span class="${f.binary ? "sf-zero" : "sf-add"}">${ESC(addTxt)}</span>`
     +      (delTxt ? `<span class="${f.deleted ? "sf-del" : "sf-zero"}">${ESC(delTxt)}</span>` : "")
     +    "</div>"
@@ -457,9 +524,16 @@ async function selfCardId() {
   // per-file：这一张卡只负责一个文件（工具每次调用只画一张）。
   // grouped：一张卡里纵向排全部文件。
   const picked = data.mode === "grouped" ? files : files.slice(0, 1);
+  // 合并模式下每行要自带文件名，因为标题只有「N 个文件」。
+  const showName = data.mode === "grouped";
+
+  // 合并模式：外层铺聊天背景，每个文件单独一张小卡，观感接近分开展示。
+  // 分开模式：一行就是整张卡的正文，不加任何自己的底色。
+  root.classList.toggle("sf-bare", data.mode === "grouped");
+
 
   root.innerHTML = "";
-  for (const f of picked) root.appendChild(buildCard(f));
+  for (const f of picked) root.appendChild(buildCard(f, { showName }));
 
   // 宽度要等宿主把 iframe 布好才准，所以先用 rAF 试一次，
   // 再用一个短定时器装一次底（首帧常常仍是 0 宽）。
