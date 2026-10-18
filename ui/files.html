@@ -164,11 +164,11 @@
    * 展开高度直接由这个元素自身承担，不套外层裁切容器：
    * 有裁切层的话，裁切线与背景边缘是两个元素，圆角处必然差几像素（能看到直角）。
    */
+  /* 展开收起不碰 diff 自身高度。
+     html/body 上已经有 overflow:hidden，iframe 一变矮，
+     超出部分就被 iframe 边界遮住，不需要再包一层裁切框。 */
   .sf-diff{
     margin:5px 0 0 0;padding:7px 0;border-radius:9px;
-    /* border-box：补间里 height 与 getBoundingClientRect().height 同一个口径。
-       默认的 content-box 下，height 只算内容区，上下 padding 另加，
-       每帧都会多出 14px，收到底时就是屏幕上那块空白。 */
     box-sizing:border-box;
     background:var(--sf-diff-bg);
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -178,6 +178,11 @@
   }
   .sf-diff::-webkit-scrollbar{width:6px;height:6px}
   .sf-diff::-webkit-scrollbar-thumb{background:var(--sf-card-bd);border-radius:3px}
+  .sf-diff::-webkit-scrollbar-track{background:transparent}
+  /* 横向与纵向滚动条交汇的那一个小方块。
+     不给它设背景时浏览器会用默认的白色，在深色面板右下角就是一块白。
+     跟面板背景取同一个色，视觉上就消失了。 */
+  .sf-diff::-webkit-scrollbar-corner{background:var(--sf-diff-bg)}
   .sf-diff-inner{display:inline-block;min-width:100%;vertical-align:top}
   .sf-diff .l{display:block;padding:0 9px}
   .sf-diff .l.a{background:var(--sf-diff-add);color:var(--sf-add)}
@@ -313,16 +318,16 @@ function easeS(p) {
  * 时长按帧数算：DUR_MS 不变时实际帧数取决于刷新率，这里以时间为主，
  * 每帧的递进由时间戳决定，所以掉帧也不会拖慢整体时长。
  */
-/* 展开高度补间。
+/* 展开收起的高度过渡。
  *
- * 直接改 .sf-diff 自己的 height，不套裁切容器。
- * 裁切容器的问题：裁切线和背景边缘是两个元素，圆角处必然差几像素，
- * 展开收起时能看到直角边缘冒出圆角。
+ * 只做一件事：逐帧把“卡片应该多高”报给宿主。
+ * 页面里任何一个元素都不改高度，diff 始终是完整高度、位置不动。
  *
- * 每帧把新的整卡高度报给宿主，它看到的就是连续变化的高度。
+ * 裁切交给 iframe 自己：html/body 上是 overflow:hidden，
+ * iframe 一变矮，超出底边的部分就自然被盖住。不需要再包一层。
  *
- * opening=true  从 0 长到内容高度（展开）
- * opening=false 从当前高度收到 0（收起）
+ * opening=true  从“不带 diff 的高度”涨到完整高度
+ * opening=false 从完整高度收到底
  */
 function animateDiff(el, opening, done) {
   if (!el) return;
@@ -331,68 +336,26 @@ function animateDiff(el, opening, done) {
     heightAnim = 0;
   }
 
-  // 量当前渲染高度。
-  //
-  // 不用 scrollHeight：它不受 max-height 约束，会把目标设成内容全高（600+），
-  // 而元素实际最高只能到 280，多出来那段就是纯空转 + 空白。
-  // 也不解除 max-height：有上限时，height:auto 就是想要的最终高度。
-  el.style.height = "";
-  var natural = Math.ceil(el.getBoundingClientRect().height) || 0;
+  // diff 的完整可见高度（已含 max-height 封顶）。
+  var full = Math.ceil(el.getBoundingClientRect().height) || 0;
+  // 整页完整高度，减掉 diff 就是“没展开时”的底子。
+  var totalFull = Math.ceil(root.getBoundingClientRect().height) || 0;
+  var base = Math.max(1, totalFull - full);
 
-  if (!natural) {
-    // 再给一帧：挂载后布局可能要到下一帧才稳定。
-    requestAnimationFrame(function () {
-      el.style.height = "";
-      var n2 = Math.ceil(el.getBoundingClientRect().height) || 0;
-      if (!n2) {
-        // 仍然量不到：不做动画，直接显示完整内容。
-        el.style.height = "";
-        el.style.overflow = "";
-        reportSize(true);
-        if (done) done();
-        return;
-      }
-      runAnim(el, n2, opening, done);
-    });
-    return;
-  }
-
-  runAnim(el, natural, opening, done);
+  runAnim(full, base, opening, done);
 }
 
-/* 真正跑补间。natural 是内容渲染高度（已含 padding）。 */
-function runAnim(el, natural, opening, done) {
+/* 真正跑补间。full 是 diff 完整高度，base 是不带 diff 的底子高度。 */
+function runAnim(full, base, opening, done) {
 
-  // 目标高度必须是这个元素“真能长到”的高度。
-  //
-  // .sf-diff 有 max-height:280px，内容 600+ 时高度封顶在 280。
-  // 若拿内容全高当目标，补间会往 631 推，而元素早在 280 就被封住，
-  // 后面一大段动画是空转，同时报给宿主的高度与实际布局对不上。
-  var cap = 0;
-  try {
-    var cs = getComputedStyle(el);
-    var mh = cs.maxHeight;
-    if (mh && mh !== "none") {
-      var n = parseFloat(mh);
-      if (isFinite(n) && n > 0) cap = Math.ceil(n);
-    }
-  } catch {}
-  var full = cap > 0 ? Math.min(natural, cap) : natural;
-
-  var to = opening ? full : 0;
-  var from = opening ? 0 : Math.max(1, full);
+  var to = opening ? base + full : base;
+  var from = opening ? base : base + full;
 
   if (Math.abs(to - from) < 1) {
-    el.style.height = opening ? "" : "0px";
     reportSize(true);
     if (done) done();
     return;
   }
-
-  // 补间期间必须裁溢出，否则内容会在矮到高的过程中直接露出来。
-  el.style.overflow = "hidden";
-  el.style.height = from + "px";
-  reportSize(true);
 
   animating = true;
   var started = 0;
@@ -400,17 +363,12 @@ function runAnim(el, natural, opening, done) {
     if (!started) started = ts;
     var p = Math.min(1, (ts - started) / HEIGHT_MS);
     var h = Math.round(from + (to - from) * easeS(p));
-    el.style.height = h + "px";
-    var total = measureH();
-    if (total > 0) pushHeight(total);
+    pushHeight(h);
     if (p < 1) {
       heightAnim = requestAnimationFrame(step);
     } else {
       heightAnim = 0;
       animating = false;
-      // 展开到位后交回 auto / auto（让 diff 内部滚动正常）；收起保持 0，等外层拆。
-      el.style.height = opening ? "" : "0px";
-      if (opening) el.style.overflow = "";
       reportSize(true);
       if (done) done();
     }
@@ -594,7 +552,8 @@ function buildCard(f, opts = {}) {
   let diffEl = null;
   diffBtn.addEventListener("click", async () => {
     if (diffEl) {
-      // 收起：直接让 diff 自己收到 0，全程看得见内容被压缩。
+      // 收起：只靠高度上报。diff 节点在收的途中不删，
+      // 它在 iframe 里位置不动，只是被 iframe 变矮的底边盖住。
       const el = diffEl;
       diffEl = null;
       diffBtn.classList.remove("on");
@@ -620,17 +579,11 @@ function buildCard(f, opts = {}) {
       diffEl.textContent = "读取中…";
     }
 
-    // 插入前先锁成 0 高，并隐藏溢出。
-    // 否则 append 后到补间开始前会先跑一帧，那一帧高度是 auto，
-    // 整张卡被索到最终高度，看起来就是“先窜长一下再收回来”。
-    diffEl.style.height = "0px";
-    diffEl.style.overflow = "hidden";
+    // 直接挂上。不锁高度、不加图层：
+    // 内容本来就是完整高度，靠上报的卡高逐步变大把下半截露出来。
     wrap.appendChild(diffEl);
 
-    animateDiff(diffEl, true, function () {
-      // 展开完交回 auto / auto，让内部滚动正常。
-      diffEl.style.overflow = "";
-    });
+    animateDiff(diffEl, true, function () {});
 
     // 没命中缓存才真等后端。
     if (!(cached && cached.ok)) {
@@ -645,13 +598,9 @@ function buildCard(f, opts = {}) {
       } catch (e) {
         diffEl.innerHTML = `<span class="l m">读取失败：${ESC(e && e.message ? e.message : e)}</span>`;
       }
-      // “读取中”换成了真内容，高度变了。这里不再走补间：
-      // 已经展开到位的卡片再“长一次”会明显跳一下，直接落到新高度即可。
-      if (diffEl) {
-        diffEl.style.height = "";
-        diffEl.style.overflow = "";
-        reportSize(true);
-      }
+      // “读取中”换成了真内容。裁切框高度是 auto 或正在收放，
+      // 不再单独动 diff 的高度，只把新的整卡高度报上去。
+      reportSize(true);
     }
   });
 
