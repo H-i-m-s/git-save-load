@@ -181,8 +181,10 @@
   .sf-diff::-webkit-scrollbar-track{background:transparent}
   /* 横向与纵向滚动条交汇的那一个小方块。
      不给它设背景时浏览器会用默认的白色，在深色面板右下角就是一块白。
-     跟面板背景取同一个色，视觉上就消失了。 */
-  .sf-diff::-webkit-scrollbar-corner{background:var(--sf-diff-bg)}
+     设成 transparent：这个区域本来就压在 diff 自己的底色上，
+     透明就是直接透出那层底，与周围完全一致。
+     不能拿 --sf-diff-bg 填：那是半透明色，会在已有的底色上再叠一层，变得更深。 */
+  .sf-diff::-webkit-scrollbar-corner{background:transparent}
   .sf-diff-inner{display:inline-block;min-width:100%;vertical-align:top}
   .sf-diff .l{display:block;padding:0 9px}
   .sf-diff .l.a{background:var(--sf-diff-add);color:var(--sf-add)}
