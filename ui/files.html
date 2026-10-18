@@ -74,18 +74,26 @@
     padding:2px 10px;
     min-width:0;
   }
-  /* 合并模式：外层画聊天背景，每个文件单独一张小卡。
-     这也是为什么不给 .sf-card 直接上色——只有合并模式需要「卡里还有卡」。 */
+
+  /* 合并模式：整块铺聊天底色，每个文件单独一张小卡。
+     底色铺在 html/body 上而不是中间那个容器上：只给容器上色的话，
+     iframe 四周会露出宿主卡片的底色，看起来就是一圈浅边。
+     t-dark 同时加在 html 上（见 syncTheme），否则 html 只能拿到浅色兜底色，
+     body 没铺满的那一条就会露出浅灰。 */
+  html.sf-chat,html.sf-chat body{background:var(--sf-chat-bg)}
+  html.t-dark{--sf-chat-bg:#3B4A54;--sf-tile-bg:#445560}
   #sf-root.sf-bare{
-    padding:6px 8px;
-    border-radius:10px;
-    background:var(--sf-chat-bg);
+    padding:7px 9px;
+    border-radius:0;
+    background:transparent;
   }
   #sf-root.sf-bare .sf-item{
-    border-radius:8px;
+    border-radius:9px;
     background:var(--sf-tile-bg);
   }
-  #sf-root.sf-bare .sf-card{padding:7px 10px}
+  /* 内部每张小卡的内边距向分开模式看齐：那张卡的高度是宿主卡壳 + 正文内边距一起撑出来的，
+     这里只有自己的内边距，所以要给得比 2px 宽。 */
+  #sf-root.sf-bare .sf-card{padding:9px 11px}
 
   /* 左侧两行：增删计数 / 相对路径 */
   .sf-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px}
@@ -209,6 +217,9 @@ function syncTheme() {
   if (!snap?.appearance && (!label || label === "inherit")) {
     dark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   }
+  // t-dark 也要加在 html 上：底色变量同时被 html 和 body 用，
+  // 只加在 body 上的话 html 拿的是浅色兜底值，会露出一圈浅边。
+  document.documentElement.classList.toggle("t-dark", dark);
   document.body.classList.toggle("t-dark", dark);
 }
 syncTheme();
@@ -527,9 +538,13 @@ async function selfCardId() {
   // 合并模式下每行要自带文件名，因为标题只有「N 个文件」。
   const showName = data.mode === "grouped";
 
-  // 合并模式：外层铺聊天背景，每个文件单独一张小卡，观感接近分开展示。
+  // 合并模式：整块铺聊天背景，每个文件单独一张小卡，观感接近分开展示。
   // 分开模式：一行就是整张卡的正文，不加任何自己的底色。
-  root.classList.toggle("sf-bare", data.mode === "grouped");
+  const bare = data.mode === "grouped";
+  root.classList.toggle("sf-bare", bare);
+  // 底色要铺在 html 上，才能盖满整个 iframe，不留出宿主的卡底色。
+  document.documentElement.classList.toggle("sf-chat", bare);
+
 
 
   root.innerHTML = "";
