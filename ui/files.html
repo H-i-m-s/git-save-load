@@ -360,6 +360,11 @@ function runAnim(full, base, opening, done) {
   }
 
   animating = true;
+  // 先把卡片按到起始高度再开跑。
+  //
+  // 元素刚 append 时页面已经是完整高度，若等到第一帧才推起始值，
+  // 中间会先闪一帧完整高度，看起来就是“先弹开再收起再展开”。
+  pushHeight(from);
   var started = 0;
   function step(ts) {
     if (!started) started = ts;
@@ -569,8 +574,19 @@ function buildCard(f, opts = {}) {
 
     diffBtn.classList.add("on");
 
-    // 预取已完成就把内容先填进去，再开始高度补间：内容与动画同时到达，不等。
+    // 先把内容拿到手再插入。
+    //
+    // 之前是先插一个“读取中”占位、对着它做补间，等真内容到了再直接跳高。
+    // 占位只有一行高（31px），补间在 31 像素里来回走，肉眼看不见，
+    // 真内容到位那一下又是个瞬间跳变，合起来就是“没动效”。
     let cached = settled ? await prefetchDiff() : null;
+    if (!(cached && cached.ok)) {
+      try {
+        cached = await prefetchDiff();
+      } catch (e) {
+        cached = { ok: false, message: e && e.message ? e.message : String(e) };
+      }
+    }
 
     diffEl = document.createElement("div");
     diffEl.className = "sf-diff";
@@ -578,7 +594,7 @@ function buildCard(f, opts = {}) {
       diffEl.innerHTML = renderDiff(cached.diff)
         + (cached.truncated ? '<span class="l m">… 内容过长，只显示前面一部分</span>' : "");
     } else {
-      diffEl.textContent = "读取中…";
+      diffEl.innerHTML = `<span class="l m">${ESC((cached && cached.message) || "读不到差异")}</span>`;
     }
 
     // 直接挂上。不锁高度、不加图层：
@@ -586,24 +602,6 @@ function buildCard(f, opts = {}) {
     wrap.appendChild(diffEl);
 
     animateDiff(diffEl, true, function () {});
-
-    // 没命中缓存才真等后端。
-    if (!(cached && cached.ok)) {
-      try {
-        const res = await prefetchDiff();
-        if (!res || !res.ok) {
-          diffEl.innerHTML = `<span class="l m">${ESC((res && res.message) || "读不到差异")}</span>`;
-        } else {
-          diffEl.innerHTML = renderDiff(res.diff)
-            + (res.truncated ? '<span class="l m">… 内容过长，只显示前面一部分</span>' : "");
-        }
-      } catch (e) {
-        diffEl.innerHTML = `<span class="l m">读取失败：${ESC(e && e.message ? e.message : e)}</span>`;
-      }
-      // “读取中”换成了真内容。裁切框高度是 auto 或正在收放，
-      // 不再单独动 diff 的高度，只把新的整卡高度报上去。
-      reportSize(true);
-    }
   });
 
   if (!revertBtn.disabled) {
