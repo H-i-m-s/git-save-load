@@ -15,9 +15,9 @@ import { resolvePath, resolveDataDir, gitExec, gitExecCapture } from "./_helpers
 export const name = "show_files";
 
 export const description =
-  "展示变更文件，一个文件一张小卡（左：文件名 / +N -N；右：查看变更、回退）。" +
-  "默认一个文件一张卡，所以展示多个文件时请每个文件调一次、传 paths 数组只放一个路径；" +
-  "若用户在设置里选了「合并成一张」，则一次传入全部路径即可。" +
+  "展示变更文件（左：增删数 / 路径；右：查看变更、回退）。" +
+  "总是先把要展示的全部文件一次传进来：用户设置是「合并」就直接出卡；" +
+  "设置是「分开」时本工具会报错并告知，这时再改成每个文件调一次。" +
   "只读自身不改文件；回退按钮要点确认才会动。";
 
 export const sessionPermission = { readOnly: true };
@@ -28,7 +28,7 @@ export const parameters = {
     paths: {
       type: "array",
       items: { type: "string" },
-      description: "要展示的文件路径数组，可为绝对路径，也可为相对仓库根的路径。",
+      description: "要展示的文件路径数组，可为绝对路径，也可为相对仓库根的路径。一次传完全部要展示的文件。",
     },
     path: {
       type: "string",
@@ -187,6 +187,30 @@ export async function execute(input = {}, ctx = {}) {
     return JSON.stringify({ error: true, message: "paths 不能为空" }, null, 2);
   }
 
+  // 布局由用户设置决定，一次调用能不能带多个文件也由它决定。
+  // 设置读不到时按 per-file（一次一个）处理。
+  let cardMode = "per-file";
+  try {
+    const v = await ctx.config?.get?.("filesCardMode");
+    if (v === "grouped" || v === "per-file") cardMode = v;
+  } catch {}
+
+  // 分开模式下，一次传多个文件就是错的：直接拒绝，并把正确做法说清。
+  // 否则会把一张合并卡画成 N 张单行卡，看起来像没照用户的设置做。
+  if (cardMode === "per-file" && wanted.length > 1) {
+    return {
+      content: [
+        {
+          type: "text",
+          text:
+            `未出卡：用户在设置里选的是「分开」，一次只能展示一个文件，这次传了 ${wanted.length} 个。\n` +
+            "请改成每个文件调一次，每次 paths 只放一个路径。",
+        },
+      ],
+      isError: true,
+    };
+  }
+
   const configured = await resolvePath({}, ctx);
   const dataDir = resolveDataDir(ctx);
 
@@ -296,12 +320,7 @@ export async function execute(input = {}, ctx = {}) {
   const totalDeleted = out.filter((f) => !f.binary).reduce((s, f) => s + f.deleted, 0);
 
   // 布局偏好：一个文件一张小卡（默认），或全部合在一张里。
-  // 设置读不到时用 per-file，保证开箱就是一条一卡。
-  let cardMode = "per-file";
-  try {
-    const v = await ctx.config?.get?.("filesCardMode");
-    if (v === "grouped" || v === "per-file") cardMode = v;
-  } catch {}
+  // cardMode 已在函数入口按用户设置读好，这里不再重读。
 
   // 标题：单文件就用文件名（宿主标题栏已经显示它，卡内不再重复），
   // 多文件才用「N 个文件」。
