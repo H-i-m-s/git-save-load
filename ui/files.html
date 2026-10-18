@@ -91,6 +91,9 @@
   #sf-root.sf-bare .sf-item{
     border-radius:9px;
     background:var(--sf-tile-bg);
+    /* 展开收起时小卡自己长高：多余的差异内容由小卡露出来。
+       靠它自己的圆角裁切，裁切线就是小卡底边，圆角不会掉。 */
+    overflow:hidden;
   }
   /* 合并模式下左侧三行，右侧按钮改为靠上居中。 */
   #sf-root.sf-bare .sf-card{align-items:center;padding:11px 12px}
@@ -322,11 +325,14 @@ function easeS(p) {
  */
 /* 展开收起的高度过渡。
  *
- * 只做一件事：逐帧把“卡片应该多高”报给宿主。
- * 页面里任何一个元素都不改高度，diff 始终是完整高度、位置不动。
+ * 两层同时长高，看起来才是“里面的卡也在展开”：
+ *   1) 宿主那一层：逐帧上报整卡高度，卡片下边缘往下让。
+ *   2) 合并模式里的小卡：逐帧改它自己的高度，它的底边在走。
+ *      小卡有圆角和底色，多余内容由它自己裁（overflow:hidden），
+ *      裁切线就是它的底边，圆角不会掉。
+ * 分开模式没有小卡底色，只有宿主的 iframe 在裁，不需要第二层。
  *
- * 裁切交给 iframe 自己：html/body 上是 overflow:hidden，
- * iframe 一变矮，超出底边的部分就自然被盖住。不需要再包一层。
+ * diff 自身高度始终不动，只是逐步被露出来。
  *
  * opening=true  从“不带 diff 的高度”涨到完整高度
  * opening=false 从完整高度收到底
@@ -334,7 +340,7 @@ function easeS(p) {
 function animateDiff(el, opening, done) {
   if (!el) return;
   if (heightAnim) {
-    try { cancelAnimationFrame(heightAnim); } catch {}
+    try { cancelAnimationFrame(heightAnim); } catch {};
     heightAnim = 0;
   }
 
@@ -344,14 +350,36 @@ function animateDiff(el, opening, done) {
   var totalFull = Math.ceil(root.getBoundingClientRect().height) || 0;
   var base = Math.max(1, totalFull - full);
 
-  runAnim(full, base, opening, done);
+  runAnim(full, base, opening, isGroupedMode() ? el.parentElement : null, done);
 }
 
-/* 真正跑补间。full 是 diff 完整高度，base 是不带 diff 的底子高度。 */
-function runAnim(full, base, opening, done) {
+/* 当前是不是合并模式。子卡有自己的底色和圆角时才需要第二层动画。 */
+function isGroupedMode() {
+  try {
+    return root.classList.contains("sf-bare");
+  } catch (e) {
+    return false;
+  }
+}
+
+/* 真正跑补间。
+ * full 是 diff 完整高度，base 是不带 diff 的底子高度，
+ * tile 是合并模式里包住 diff 的那张子卡（分开模式没有，传 null）。
+ */
+function runAnim(full, base, opening, tile, done) {
+
+  // 子卡里除 diff 以外那部分（文字行、内边距）的高度。
+  // 子卡完整高度 = 这一截 + diff 完整高度。
+  var tileBase = 0;
+  if (tile) {
+    var th = Math.ceil(tile.getBoundingClientRect().height) || 0;
+    tileBase = Math.max(0, th - full);
+  }
 
   var to = opening ? base + full : base;
   var from = opening ? base : base + full;
+  var tileFrom = opening ? tileBase : tileBase + full;
+  var tileTo = opening ? tileBase + full : tileBase;
 
   if (Math.abs(to - from) < 1) {
     reportSize(true);
@@ -365,17 +393,23 @@ function runAnim(full, base, opening, done) {
   // 元素刚 append 时页面已经是完整高度，若等到第一帧才推起始值，
   // 中间会先闪一帧完整高度，看起来就是“先弹开再收起再展开”。
   pushHeight(from);
+  if (tile) tile.style.height = tileFrom + "px";
   var started = 0;
   function step(ts) {
     if (!started) started = ts;
     var p = Math.min(1, (ts - started) / HEIGHT_MS);
-    var h = Math.round(from + (to - from) * easeS(p));
+    var e = easeS(p);
+    var h = Math.round(from + (to - from) * e);
     pushHeight(h);
+    // 子卡同步长高，它自己的底边在走，圆角和底色都跟着走。
+    if (tile) tile.style.height = Math.round(tileFrom + (tileTo - tileFrom) * e) + "px";
     if (p < 1) {
       heightAnim = requestAnimationFrame(step);
     } else {
       heightAnim = 0;
       animating = false;
+      // 子卡交回 auto，让它回到由内容撑开的自然高度。
+      if (tile) tile.style.height = "";
       reportSize(true);
       if (done) done();
     }
