@@ -163,7 +163,7 @@ try { hana.theme?.subscribe?.(() => syncTheme()); } catch {}
  * 基准是 hana-downloader：它靠 hana.ui.resize({ width, height }) 收窄到 400。
  * 容差自检同理——宿主要先把宽度采纳，卡才不会吐满整列。
  */
-var CARD_WIDTH = 360;
+var CARD_WIDTH = 350;
 
 let lastH = 0;
 function measureH() {
