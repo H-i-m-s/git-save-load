@@ -7,6 +7,7 @@
 // 传进卡片 iframe，所以必须走这条侧路。
 
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, dirname, isAbsolute, resolve, basename, extname } from "node:path";
 
 import { resolvePath, resolveDataDir, gitExec, gitExecCapture } from "./_helpers.js";
@@ -14,8 +15,10 @@ import { resolvePath, resolveDataDir, gitExec, gitExecCapture } from "./_helpers
 export const name = "show_files";
 
 export const description =
-  "展示一组文件，并在对话里出一张卡片：每个文件一行，显示路径、状态与增删行数，" +
-  "带「查看变更」「回退变更」按钮。只读自身不改文件；回退按钮要点确认才会动。";
+  "展示变更文件，一个文件一张小卡（左：文件名 / +N -N；右：查看变更、回退）。" +
+  "默认一个文件一张卡，所以展示多个文件时请每个文件调一次、传 paths 数组只放一个路径；" +
+  "若用户在设置里选了「合并成一张」，则一次传入全部路径即可。" +
+  "只读自身不改文件；回退按钮要点确认才会动。";
 
 export const sessionPermission = { readOnly: true };
 
@@ -40,6 +43,18 @@ export const parameters = {
 };
 
 const MAX_PATHS = 200;
+
+/**
+ * 稳定的卡片实例 id。
+ *
+ * 宿主投影层对 details.card.cardInstanceId 有现成入口：格式合法就直接采用，
+ * 否则才自己铸。基准是 hana-downloader：它给了固定 id，卡片能正常挂载；
+ * 我先前不给，卡壳停在 not_mounted 不启动。
+ */
+function stableCardId(seed) {
+  const hex = createHash("sha256").update(`git-save-load:${seed}`).digest("hex").slice(0, 20);
+  return `a_${hex}`;
+}
 
 /** 从某个目录往上找 .git，找到就是仓库根。找不到返回空串。 */
 function findRepoRoot(startDir) {
@@ -257,10 +272,16 @@ export async function execute(input = {}, ctx = {}) {
     }
   }
 
+  // display 是给人看的那条路径：仓库名 + 仓内相对路径。
+  // 只写 release/publish.mjs 这种仓内相对路径的话，看一眼不知道是哪个项目下的。
+  // 不在仓库里的文件（无 root）退回绝对路径。
   const out = files.map((f) => ({
     name: basename(f.abs),
     path: f.abs.replace(/\\/g, "/"),
     relative: f.rel || "",
+    display: f.root
+      ? `${basename(f.root)}/${f.rel || basename(f.abs)}`
+      : f.abs.replace(/\\/g, "/"),
     ext: extname(f.abs).replace(/^\./, "").toLowerCase(),
     status: f.status,
     added: f.added,
@@ -273,9 +294,23 @@ export async function execute(input = {}, ctx = {}) {
 
   const totalAdded = out.filter((f) => !f.binary).reduce((s, f) => s + f.added, 0);
   const totalDeleted = out.filter((f) => !f.binary).reduce((s, f) => s + f.deleted, 0);
+
+  // 布局偏好：一个文件一张小卡（默认），或全部合在一张里。
+  // 设置读不到时用 per-file，保证开箱就是一条一卡。
+  let cardMode = "per-file";
+  try {
+    const v = await ctx.config?.get?.("filesCardMode");
+    if (v === "grouped" || v === "per-file") cardMode = v;
+  } catch {}
+
+  // 标题：单文件就用文件名（宿主标题栏已经显示它，卡内不再重复），
+  // 多文件才用「N 个文件」。
+  const autoTitle = out.length === 1 ? out[0].name : `${out.length} 个文件`;
+
   const payload = {
-    title: String(input.title || "").trim() || `${out.length} 个文件`,
+    title: String(input.title || "").trim() || autoTitle,
     at: Date.now(),
+    mode: cardMode,
     repo: groups.size === 1 ? [...groups.keys()][0] : "",
     files: out,
     totalAdded,
@@ -283,11 +318,18 @@ export async function execute(input = {}, ctx = {}) {
   };
 
   // 写盘给卡片读。dataDir 之外的路径写不了，这时卡片会显示「取不到数据」。
+  // 先算出这张卡的 id，再写两份：一份按卡 id（卡片认领自己那份），一份作最新快照。
+  //
+  // 为什么必须按卡分开：一个文件一张卡时，同一次会话里会有 N 张卡同时加载，
+  // 若共用一份文件，它们会全部读到最后一次写入的数据，前几张就显示成别人的文件了。
+  const cardInstanceId = stableCardId(`${payload.at}:${out.length}:${cardMode}`);
   let saved = false;
   if (dataDir) {
     try {
       mkdirSync(dataDir, { recursive: true });
-      writeFileSync(join(dataDir, "show-files.json"), JSON.stringify(payload), "utf8");
+      const blob = JSON.stringify(payload);
+      writeFileSync(join(dataDir, "show-files.json"), blob, "utf8");
+      writeFileSync(join(dataDir, `show-files.${cardInstanceId}.json`), blob, "utf8");
       saved = true;
     } catch {
       saved = false;
@@ -307,19 +349,27 @@ export async function execute(input = {}, ctx = {}) {
     ],
     details: {
       // 必须自带 bridgedTool：v2 App 的工具名在宿主实时投影里会被泛化成 "tool_call"，
-      // 归属解析（bundle 里的 nOr）只在泛化时改从 details.bridgedTool.name 取真实名。
-      // 不带这个字段，卡片会被判为无主而静默丢弃，而结果里照样会写一行
-      // "Card rendered. cardInstanceId: ..."——那句回执不代表卡片真的出来了。
+      // 归属解析只在泛化时改从 details.bridgedTool.name 取真实名。
       bridgedTool: { name: "show_files", server: "git-save-load" },
       card: {
         pluginId: "git-save-load",
+        cardId: "files",
+        // 本次调用的确定身份：同一次调用跨重载不换卡，各次调用各一张。
+        cardInstanceId,
         route: "/files.html",
         cardType: "iframe",
         cardForm: "flush",
         titlebar: null,
         title: payload.title,
-        description: `${out.length} 个文件，合计 +${totalAdded}/-${totalDeleted}`,
-        aspectRatio: 3.4,
+        description: out.length === 1
+          ? `${out[0].status || "文件"}${out[0].binary ? "，二进制" : ` ＋${totalAdded} －${totalDeleted}`}`
+          : `${out.length} 个文件，合计 +${totalAdded}/-${totalDeleted}`,
+        // 单行卡的高度：字符串比例，与 hana-downloader 一致（它用 "8:1"）。
+        // 数字形式壳高算不出来，卡片会停在 not_mounted。
+        aspectRatio: out.length === 1 ? "8:1" : "4:1",
+        // 宿主会忽略 preferredWidthPx，真实宽度由页面 hana.ui.resize 上报（CARD_WIDTH）。
+        // 这里保持一致，仅作为语义标注。
+        preferredWidthPx: 320,
       },
     },
   };

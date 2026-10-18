@@ -17,8 +17,23 @@ export function registerShowFilesRoutes(app, { ctx, dataDir, gitExecFile, repoPa
     if (!dataDir) {
       return c.json({ ok: false, message: "App 数据目录不可用，卡片拿不到数据" });
     }
+    // 每张卡各存一份：卡片带上自己的 cardInstanceId 来认领，
+    // 否则同一次会话里多张卡会同时读到最新那一份，前几张就串了。
+    const id = String(c.req.query("card") || "").trim();
+    const safe = /^a_[A-Za-z0-9_-]{1,64}$/.test(id) ? id : "";
+    const latest = join(dataDir, "show-files.json");
+    const own = safe ? join(dataDir, `show-files.${safe}.json`) : "";
+
     try {
-      const text = await readFile(join(dataDir, "show-files.json"), "utf8");
+      if (own) {
+        try {
+          const text = await readFile(own, "utf8");
+          return c.json({ ok: true, data: JSON.parse(text) });
+        } catch (e) {
+          if (!(e && e.code === "ENOENT")) throw e;
+        }
+      }
+      const text = await readFile(latest, "utf8");
       const data = JSON.parse(text);
       return c.json({ ok: true, data });
     } catch (e) {

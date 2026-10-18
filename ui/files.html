@@ -6,7 +6,7 @@
 <title>变更文件</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{width:100%;overflow:hidden}
+  html,body{width:100%;overflow:hidden;background:transparent}
   body{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
     font-size:12px;line-height:1.3;
@@ -18,8 +18,8 @@
   /* 浅色板 */
   :root{
     --sf-text:#16181d;
-    --sf-muted:#6b7280;
-    --sf-faint:#9ca3af;
+    --sf-muted:#4b5563;
+    --sf-faint:#6b7280;
     --sf-card-bg:rgba(0,0,0,.035);
     --sf-card-bd:rgba(0,0,0,.07);
     --sf-card-hover:rgba(0,0,0,.055);
@@ -31,58 +31,67 @@
     --sf-diff-add:rgba(21,128,61,.1);
     --sf-diff-del:rgba(185,28,28,.1);
     --sf-meta:rgba(0,0,0,.045);
+    --sf-weak:#4b5563;
   }
-  /* 深色板 */
+  /* 深色板
+     对比度全部按 WCAG AA（正文 4.5:1）挑，底色参照 hana-downloader 深色卡底 #445560。
+     先前用的 #5d6779 / #f0797f / #4ec48a 在这层底上只有 2.8~3.5，看不清。 */
   body.t-dark{
     --sf-text:#e6eaf2;
-    --sf-muted:#9aa4b8;
-    --sf-faint:#5d6779;
+    --sf-muted:#c8d4de;
+    --sf-faint:#c8d4de;
     --sf-card-bg:rgba(255,255,255,.045);
     --sf-card-bd:rgba(255,255,255,.09);
     --sf-card-hover:rgba(255,255,255,.07);
-    --sf-add:#4ec48a;
-    --sf-del:#f0797f;
+    --sf-add:#6ee7a8;
+    --sf-del:#ffb3b6;
     --sf-btn-bg:rgba(255,255,255,.07);
     --sf-btn-hover:rgba(255,255,255,.14);
     --sf-diff-bg:rgba(0,0,0,.28);
     --sf-diff-add:rgba(78,196,138,.13);
     --sf-diff-del:rgba(240,121,127,.13);
     --sf-meta:rgba(255,255,255,.05);
+    --sf-weak:#bcc9d3;
   }
 
-  #sf-root{display:flex;flex-direction:column;gap:5px;width:100%}
+  #sf-root{display:flex;flex-direction:column;gap:6px;width:100%}
 
-  /* ── 一个文件一张小卡 ── */
+  /* 一行内容就是宿主那张卡的正文，外面不再包一层。
+     参考 hana-downloader 的 .dl：无背景、无边框、无圆角，只留左右内边距。
+     宿主已经给了卡壳，再画一层就是「卡里套卡」。 */
   .sf-item{display:flex;flex-direction:column;width:100%}
   .sf-card{
     display:flex;align-items:center;gap:10px;
-    padding:7px 8px 7px 11px;border-radius:9px;
-    background:var(--sf-card-bg);border:1px solid var(--sf-card-bd);
+    padding:2px 10px;
     min-width:0;
   }
-  .sf-card:hover{background:var(--sf-card-hover)}
 
-  /* 左侧两行：文件名 / 增删 */
-  .sf-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+  /* 左侧两行：增删计数 / 相对路径 */
+  .sf-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px}
   .sf-name{
     display:flex;align-items:center;gap:6px;
-    font-size:12.5px;font-weight:600;color:var(--sf-text);
-    min-width:0;
+    font-size:12px;font-weight:600;color:var(--sf-text);
+    line-height:1.2;min-width:0;
+  }
+  .sf-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sf-chg{
+    display:flex;align-items:center;gap:6px;
+    font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-variant-numeric:tabular-nums;line-height:1.15;
+  }
+  /* 路径行：装不下时由 JS 做中间省略（保头保尾），CSS 不裁。 */
+  .sf-sub{
+    min-width:0;overflow:hidden;white-space:nowrap;
+    font-size:10.5px;line-height:1.2;color:var(--sf-faint);
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   .sf-dot{flex:0 0 auto;width:5px;height:5px;border-radius:50%;background:var(--sf-faint)}
   .sf-dot.new{background:var(--sf-add)}
   .sf-dot.mod{background:#7c8cf8}
   .sf-dot.del{background:var(--sf-del)}
-  .sf-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-  .sf-chg{
-    display:flex;align-items:center;gap:7px;
-    font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-variant-numeric:tabular-nums;line-height:1.15;
-  }
   .sf-add{color:var(--sf-add)}
   .sf-del{color:var(--sf-del)}
-  .sf-zero{color:var(--sf-faint)}
+  .sf-zero{color:var(--sf-weak)}
 
   /* 右侧按钮 */
   .sf-acts{flex:0 0 auto;display:flex;align-items:center;gap:4px}
@@ -106,11 +115,11 @@
 
   /* 展开的 diff */
   .sf-diff{
-    margin:4px 0 0 0;padding:7px 9px;border-radius:8px;
+    margin:5px 0 0 0;padding:7px 9px;border-radius:9px;
     background:var(--sf-diff-bg);
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
     font-size:11px;line-height:1.55;color:var(--sf-muted);
-    max-height:320px;overflow:auto;
+    max-height:280px;overflow:auto;
     white-space:pre;overflow-x:auto;
   }
   .sf-diff::-webkit-scrollbar{width:6px;height:6px}
@@ -127,7 +136,7 @@
     font-size:11.5px;color:var(--sf-faint);
   }
   .sf-state b{display:block;color:var(--sf-muted);font-weight:500;margin-bottom:2px}
-  .sf-sk{height:38px;border-radius:9px;background:var(--sf-meta);animation:sfp 1.4s ease-in-out infinite}
+  .sf-sk{height:40px;border-radius:10px;background:var(--sf-meta);animation:sfp 1.4s ease-in-out infinite}
   @keyframes sfp{0%,100%{opacity:.45}50%{opacity:.85}}
 </style>
 </head>
@@ -154,21 +163,52 @@ function syncTheme() {
 syncTheme();
 try { hana.theme?.subscribe?.(() => syncTheme()); } catch {}
 
-/* ── 尺寸上报 ── */
+/* ── 尺寸上报 ──
+ *
+ * 宽度必须显式上报，宿主不读 details.card.preferredWidthPx（文档写死会被忽略）。
+ * 基准是 hana-downloader：它靠 hana.ui.resize({ width, height }) 收窄到 400。
+ * 容差自检同理——宿主要先把宽度采纳，卡才不会吐满整列。
+ */
+var CARD_WIDTH = 320;
+
 let lastH = 0;
+function measureH() {
+  const h = Math.ceil(root.getBoundingClientRect().height) + 1;
+  return Number.isFinite(h) && h > 0 ? h : 24;
+}
+
 function reportSize(force) {
   try {
-    const h = Math.ceil(root.getBoundingClientRect().height) + 1;
+    const h = measureH();
     if (!force && h === lastH) return;
     lastH = h;
-    try { hana.ui?.resize?.({ height: h }); } catch {}
-    try { window.parent.postMessage({ type: "hana.card-resize", height: h }, "*"); } catch {}
+    try { hana.ui?.resize?.({ width: CARD_WIDTH, height: h }); } catch {}
+    try { window.parent.postMessage({ type: "hana.card-resize", width: CARD_WIDTH, height: h }, "*"); } catch {}
   } catch {}
 }
+
 if (typeof ResizeObserver !== "undefined") {
   try { new ResizeObserver(() => reportSize(false)).observe(root); } catch {}
 }
 reportSize(true);
+
+// 启动期收敛：宿主要把宽度真正采纳（实测是 min(想要, 信封上限)），
+// 没到位就补报几轮；到位后停手，不再打扰通道。
+(function bootSettle() {
+  if (typeof setInterval !== "function") return;
+  var tries = 0;
+  var adopted = function () {
+    try { return Math.abs(window.innerWidth - CARD_WIDTH) <= 2; } catch (e) { return true; }
+  };
+  var timer = setInterval(function () {
+    tries += 1;
+    if (adopted() || tries > 12) { clearInterval(timer); return; }
+    reportSize(true);
+  }, 180);
+  try {
+    window.addEventListener("resize", function () { if (!adopted()) reportSize(true); });
+  } catch (e) {}
+})();
 
 /* ── 工具 ── */
 const ESC = (s) => String(s == null ? "" : s)
@@ -204,15 +244,53 @@ function renderDiff(text) {
 }
 
 /* ── 建卡 ── */
+
+/**
+ * 中间省略：装不下时保留头尾，中间换成 …。
+ *
+ * 不用 CSS 的 text-overflow: ellipsis：那是末尾省略，长路径会把文件名切掉，
+ * 剩下的都是前缀。不用固定字符数：卡宽由宿主决定，写死长度必然在某些场景溢出。
+ */
+function fitPath(el, text) {
+  el.textContent = text;
+  el.title = text;
+  if (!el.clientWidth) return;
+  if (el.scrollWidth <= el.clientWidth) return;
+
+  const fits = (s) => {
+    el.textContent = s;
+    return el.scrollWidth <= el.clientWidth;
+  };
+
+  let lo = 0;
+  let hi = text.length;
+  let best = "…";
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const headLen = Math.max(1, Math.floor(mid * 0.4));
+    const tailLen = Math.max(1, mid - headLen);
+    const s = `${text.slice(0, headLen)}…${text.slice(text.length - tailLen)}`;
+    if (fits(s)) {
+      best = s;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  el.textContent = best;
+}
+
 function buildCard(f) {
   const key = statusKey(f.status);
   const wrap = document.createElement("div");
   wrap.className = "sf-item";
   wrap.dataset.file = f.relative || f.name;
+  wrap.__file = f;
 
   const addTxt = f.binary ? "二进制" : `+${f.added}`;
   const delTxt = f.binary ? "" : `-${f.deleted}`;
 
+  // 左三行：文件名 / 增删数 / 路径；右侧是一组按钮。
   wrap.innerHTML =
     '<div class="sf-card">'
     +  '<div class="sf-info">'
@@ -224,6 +302,7 @@ function buildCard(f) {
     +      `<span class="${f.binary ? "sf-zero" : "sf-add"}">${ESC(addTxt)}</span>`
     +      (delTxt ? `<span class="${f.deleted ? "sf-del" : "sf-zero"}">${ESC(delTxt)}</span>` : "")
     +    "</div>"
+    +    '<div class="sf-sub"></div>'
     +  "</div>"
     +  '<div class="sf-acts">'
     +    `<button class="sf-btn" data-act="diff" title="查看变更">${ICON_DIFF}</button>`
@@ -319,28 +398,88 @@ function buildCard(f) {
   return wrap;
 }
 
+/**
+ * 给路径行填内容。
+ *
+ * 挂载前宽度为 0，算不出要不要省略，所以得等宿主给宽后再算；
+ * 卡宽会随窗口变化，也要跟着重算。
+ */
+function paintPaths() {
+  for (const wrap of root.querySelectorAll(".sf-item")) {
+    const f = wrap.__file;
+    const el = wrap.querySelector(".sf-sub");
+    if (!f || !el) continue;
+    fitPath(el, f.display || f.relative || f.name);
+  }
+  reportSize(true);
+}
+
 /* ── 主流程 ── */
 function showState(title, detail) {
   root.innerHTML = `<div class="sf-state"><b>${ESC(title)}</b>${ESC(detail || "")}</div>`;
   reportSize(true);
 }
 
-api("/api/show-files")
-  .then((res) => {
-    if (!res || !res.ok) {
-      showState("没取到数据", (res && res.message) || "");
-      return;
-    }
-    const files = (res.data && res.data.files) || [];
-    if (!files.length) {
-      showState("没有文件", "");
-      return;
-    }
-    root.innerHTML = "";
-    for (const f of files) root.appendChild(buildCard(f));
-    reportSize(true);
-  })
-  .catch((e) => showState("读取失败", e && e.message ? e.message : String(e)));
+/**
+ * 认出自己这张卡。
+ *
+ * 宿主不会把工具参数传进 iframe，但会把自己的 cardInstanceId 吐在
+ * hana.surface.getContext() 里。工具已经按这个 id 各写了一份数据，
+ * 所以一个文件一张卡时，每张卡只拿自己那一个文件，不会串。
+ */
+async function selfCardId() {
+  for (let i = 0; i < 12; i += 1) {
+    let ctx = null;
+    try { ctx = hana.surface?.getContext?.() || null; } catch (e) { ctx = null; }
+    const id = ctx && ctx.cardInstanceId ? String(ctx.cardInstanceId) : "";
+    if (id) return id;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return "";
+}
+
+(async function boot() {
+  const cardId = await selfCardId();
+  const qs = cardId ? `?card=${encodeURIComponent(cardId)}` : "";
+
+  let res;
+  try {
+    res = await api(`/api/show-files${qs}`);
+  } catch (e) {
+    showState("读取失败", e && e.message ? e.message : String(e));
+    return;
+  }
+
+  if (!res || !res.ok) {
+    showState("没取到数据", (res && res.message) || "");
+    return;
+  }
+
+  const data = res.data || {};
+  const files = Array.isArray(data.files) ? data.files : [];
+  if (!files.length) {
+    showState("没有文件", "");
+    return;
+  }
+
+  // per-file：这一张卡只负责一个文件（工具每次调用只画一张）。
+  // grouped：一张卡里纵向排全部文件。
+  const picked = data.mode === "grouped" ? files : files.slice(0, 1);
+
+  root.innerHTML = "";
+  for (const f of picked) root.appendChild(buildCard(f));
+
+  // 宽度要等宿主把 iframe 布好才准，所以先用 rAF 试一次，
+  // 再用一个短定时器装一次底（首帧常常仍是 0 宽）。
+  requestAnimationFrame(paintPaths);
+  setTimeout(paintPaths, 120);
+  setTimeout(paintPaths, 400);
+})();
+
+// 卡宽变了（窗口缩放 / 聊天列宽变化）就重算省略
+try {
+  window.addEventListener("resize", () => requestAnimationFrame(paintPaths));
+} catch (e) {}
 
 // 首帧骨架
 root.innerHTML = '<div class="sf-sk"></div><div class="sf-sk"></div>';
