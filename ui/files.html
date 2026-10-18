@@ -149,18 +149,24 @@
   .sf-btn.confirming:hover{background:var(--sf-del);filter:brightness(1.1)}
   .sf-btn:disabled{opacity:.4;cursor:default}
 
-  /* 展开的 diff */
+  /* 展开的 diff
+   *
+   * 横向滚动时背景条必须跟着文字走，所以结构是：外层负责滚，内层负责撑宽。
+   * 内层用 inline-block，宽度由最长那行决出，再用 min-width:100% 保证短行也铺满。
+   * 左右内边距放在行上而不是容器上：放在容器上的话，滚动后右侧那条背景会缺一块。
+   */
   .sf-diff{
-    margin:5px 0 0 0;padding:7px 9px;border-radius:9px;
+    margin:5px 0 0 0;padding:7px 0;border-radius:9px;
     background:var(--sf-diff-bg);
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
     font-size:11px;line-height:1.55;color:var(--sf-muted);
     max-height:280px;overflow:auto;
-    white-space:pre;overflow-x:auto;
+    white-space:pre;
   }
   .sf-diff::-webkit-scrollbar{width:6px;height:6px}
   .sf-diff::-webkit-scrollbar-thumb{background:var(--sf-card-bd);border-radius:3px}
-  .sf-diff .l{display:block}
+  .sf-diff-inner{display:inline-block;min-width:100%;vertical-align:top}
+  .sf-diff .l{display:block;padding:0 9px}
   .sf-diff .l.a{background:var(--sf-diff-add);color:var(--sf-add)}
   .sf-diff .l.d{background:var(--sf-diff-del);color:var(--sf-del)}
   .sf-diff .l.h{color:var(--sf-faint)}
@@ -317,14 +323,15 @@ function statusKey(s) {
 /* ── diff 渲染 ── */
 function renderDiff(text) {
   if (!text) return '<span class="l m">这个文件没有可显示的差异</span>';
-  return String(text).split("\n").map((line) => {
+  const lines = String(text).split("\n").map((line) => {
     let cls = "l";
-    if (line.startsWith("@@") || line.startsWith("---") || line.startsWith("+++") || line.startsWith("diff ") || line.startsWith("index ")) cls = "l h";
-    else if (line.startsWith("+++")) cls = "l h";
+    if (line.startsWith("@@") || line.startsWith("---") || line.startsWith("+++ ") || line.startsWith("diff ") || line.startsWith("index ")) cls = "l h";
     else if (line.startsWith("+")) cls = "l a";
     else if (line.startsWith("-")) cls = "l d";
     return `<span class="${cls}">${ESC(line) || " "}</span>`;
   }).join("");
+  // 内层包一层：横向滚动时由它撑出总宽，每行背景才能铺满整行。
+  return `<div class="sf-diff-inner">${lines}</div>`;
 }
 
 /* ── 建卡 ── */
