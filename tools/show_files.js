@@ -369,7 +369,7 @@ export async function execute(input = {}, ctx = {}) {
         aspectRatio: out.length === 1 ? "8:1" : "4:1",
         // 宿主会忽略 preferredWidthPx，真实宽度由页面 hana.ui.resize 上报（CARD_WIDTH）。
         // 这里保持一致，仅作为语义标注。
-        preferredWidthPx: 320,
+        preferredWidthPx: 360,
       },
     },
   };
