@@ -119,12 +119,8 @@
         "title": "Git Save/Load",
         "description": "Git 存档、读档、分支与远程仓库管理面板",
         "route": "/git.html",
-        "realization": "page",
         "cardForm": "flush",
         "titlebar": "solid",
-        "closable": false,
-        "siteNavEntry": false,
-        "fpFullPanel": true,
         "functionPanel": {
           "id": "git-save-load-panel",
           "label": "Git",
