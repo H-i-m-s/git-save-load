@@ -1,7 +1,7 @@
 // Remote push / pull / overwrite routes.
 import { withRepoLock } from "../lib/repo-lock.js";
 
-export function registerRemotePushRoutes(app, { ctx, repoPath, gitExecFile, gitExecFileAsync, commandErrorText, readConfig, readRemoteSettings, isValidRemoteName, validateBranchName, listRemoteBranches, chooseRemoteBranch, parseCommitList, parseNameStatus }) {
+export function registerRemotePushRoutes(app, { ctx, repoPath, gitExecFile, gitExecFileAsync, commandErrorText, readConfig, readRemoteSettings, isValidRemoteName, validateBranchName, listRemoteBranches, chooseRemoteBranch, parseCommitList, parseNameStatus, resolveRepoState }) {
   // ======== API: 拉取远程 ========
   app.post("/api/pull", async (c) => {
     const body = await c.req.json().catch(() => ({}));
@@ -137,7 +137,8 @@ export function registerRemotePushRoutes(app, { ctx, repoPath, gitExecFile, gitE
     if (requestedRemoteBranch && !validateBranchName(path, requestedRemoteBranch)) return c.json({ ok: false, message: "远程分支名无效" });
 
     try {
-      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      // 只接受仓库根本身，否则会用父仓库的远程与分支
+      if (!resolveRepoState(path).isRoot) throw new Error("当前目录不是 git 仓库根");
       const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
       if (!names.includes(remote)) return c.json({ ok: false, message: `远程 ${remote} 不存在` });
       const settings = await readRemoteSettings(ctx, path, names);

@@ -4,7 +4,7 @@
 // serve HTML 与资产，只保留 /api/* 业务路由。
 // 各功能路由已按职责拆分到 routes/*.js，本文件不再定义业务端点。
 
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -146,6 +146,43 @@ function gitExecFile(cwd, args, opts = {}) {
     // git log --numstat 输出可超 1MB（Node 默认 maxBuffer），不足时报 ENOBUFS。
     maxBuffer: opts.maxBuffer || 10 * 1024 * 1024,
   }).trim();
+}
+
+// 文件系统路径规范化：盘符大小写、分隔符、末尾斜杠、8.3 短名都不能影响比较。
+// realpathSync.native 取系统真实路径（能解开 8.3 短名与 junction），失败退回 path.resolve。
+function normalizeFsPath(p) {
+  const raw = String(p || "").trim();
+  if (!raw) return "";
+  let real = "";
+  try {
+    real = realpathSync.native(raw);
+  } catch {
+    try { real = resolve(raw); } catch { real = raw; }
+  }
+  return real.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+// 判断 path 自己是不是某个仓库的根。
+// git 的仓库发现天生向上查找：在父仓库的子目录里跑任何 git 命令都会落到父仓库，
+// 所以「命令能不能跑通」不能用来判断「这个目录自己是不是仓库」。
+// --show-toplevel 给出的是真实仓库根，只有它与规范化后的 path 相等，才算这个目录自己是仓库。
+// 不要用 --is-inside-work-tree：它答的是「在不在工作树里」，子目录同样是 true。
+// 返回 { inRepo, repoRoot, isRoot }
+//   inRepo   这个目录在不在某个仓库工作树里（可能只是父仓库的一部分）
+//   repoRoot 规范化后的真实仓库根，可能在上层；不在仓库里则为 ""
+//   isRoot   repoRoot 与 path 规范化后相等
+function resolveRepoState(path) {
+  const raw = String(path || "").trim();
+  if (!raw) return { inRepo: false, repoRoot: "", isRoot: false };
+  let topLevel = "";
+  try {
+    topLevel = gitExecFile(raw, ["rev-parse", "--show-toplevel"], { timeout: 10000 });
+  } catch {
+    return { inRepo: false, repoRoot: "", isRoot: false };
+  }
+  const repoRoot = normalizeFsPath(topLevel);
+  if (!repoRoot) return { inRepo: false, repoRoot: "", isRoot: false };
+  return { inRepo: true, repoRoot, isRoot: normalizeFsPath(raw) === repoRoot };
 }
 
 // 异步版本：与 gitExecFile 同参，但不阻塞事件循环，供热点读路径并行执行。
@@ -490,7 +527,7 @@ export default function (app, ctx) {
   }
 
   // ======== 模块注册 ========
-  registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, gitExecFileWithEnv, commandErrorText, tmpFile, getCommitSigning: () => resolveCommitSigning(dataDir, resolveGitPath()) });
+  registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, gitExecFileWithEnv, commandErrorText, tmpFile, resolveRepoState, getCommitSigning: () => resolveCommitSigning(dataDir, resolveGitPath()) });
   registerHistoryRoutes(app, { repoPath, gitExecFile, gitExecFileAsync });
   registerHistoryEditRoutes(app, { repoPath, gitExecFile, gitExecFileWithEnv, commandErrorText, getGitOperationState: gitOperationState, tmpFile, readTextFile });
   registerDiffConflictRoutes(app, { repoPath, gitExecFile, readTextFile, writeTextFile });
@@ -506,6 +543,7 @@ export default function (app, ctx) {
     parseOriginUrl,
     readRemoteSettings,
     writeTextFile,
+    resolveRepoState,
   });
   registerGitHubRoutes(app, {
     ctx,
@@ -520,6 +558,7 @@ export default function (app, ctx) {
     readRepoPath,
     writeTextFile,
     pathExists,
+    resolveRepoState,
   });
   // PR 面板端点。gh 的 spawn 由 routes/pr.js 直接复用 github.js 的
   // resolveGhPath/ghEnvironment，这里只喂它本作用域已有的依赖。
@@ -539,6 +578,7 @@ export default function (app, ctx) {
     sanitizeRemoteUrl,
     configuredRemoteUrls,
     getGitOperationState: gitOperationState,
+    resolveRepoState,
   });
   registerRemoteQueryRoutes(app, {
     ctx,
@@ -557,6 +597,7 @@ export default function (app, ctx) {
     sanitizeRemoteUrl,
     parseCommitList,
     parseNameStatus,
+    resolveRepoState,
   });
   registerRemoteSyncRoutes(app, {
     ctx,
@@ -573,6 +614,7 @@ export default function (app, ctx) {
     isValidRemoteName,
     getGitOperationState: gitOperationState,
     writeRemoteSettings,
+    resolveRepoState,
   });
   registerConfigRoutes(app, { ctx, readConfig, writeConfig, validateConfigPatch });
   registerBranchRoutes(app, { repoPath, gitExecFile, validateBranchName });
@@ -590,6 +632,7 @@ export default function (app, ctx) {
     chooseRemoteBranch,
     parseCommitList,
     parseNameStatus,
+    resolveRepoState,
   });
   registerStashRoutes(app, { repoPath, gitExecFile, commandErrorText });
   registerSettingsPageRoutes(app, { ctx, dataDir, resolveGitPath });

@@ -2,13 +2,25 @@
 import { writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
-export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, gitExecFileWithEnv, commandErrorText, tmpFile, getCommitSigning }) {
+export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFileAsync, gitExecFileWithEnv, commandErrorText, tmpFile, resolveRepoState, getCommitSigning }) {
   app.get("/api/status", async (c) => {
     const path = repoPath(c.req.query("path"));
 
     try {
+      // 先判定这个目录自己是不是仓库根，再决定要不要跑那些 git 命令。
+      // git 会向父目录查找仓库，在父仓库的子目录里拿到的 branch/status 属于父仓库；
+      // 直接把它当成本目录的仓库会误导：界面会显示成上层那个仓库，变更列表也是整个父仓库的。
+      const state = typeof resolveRepoState === "function"
+        ? resolveRepoState(path)
+        : { inRepo: false, repoRoot: "", isRoot: false };
+      // message 必须是空串：前端靠它区分「正常的新目录」与「意外读不出来」，
+      // 非空会被当成 git 报错写进初始化卡片。
+      if (!state.inRepo) return c.json({ ok: false, isRepo: false, path, message: "" });
+      if (!state.isRoot) return c.json({ ok: false, isRepo: false, path, parentRepoRoot: state.repoRoot, message: "" });
+
       // 只跑渲染这个接口真正需要的几条只读 git 调用，并行执行（异步不阻塞事件循环），
-      // 总耗时从串行累加降为最慢单项。branch/status 失败 = 不是仓库；diff/head 失败静默降级。
+      // 总耗时从串行累加降为最慢单项。已经到了这一分支就确定是本仓库根，
+      // branch/status 再报错只可能是仓库本身有问题（比如 .git 目录损坏）；diff/head 失败静默降级。
       //
       // 这里以前还顺带跑一条 `git log --numstat -n 5` 产出 recentCommits，但前端从未
       // 消费该字段（全仓库 grep 只在本文件命中），而它在大仓库上极贵：
@@ -65,6 +77,7 @@ export function registerLocalGitRoutes(app, { repoPath, gitExecFile, gitExecFile
         branch,
         path,
         isRepo: true,
+        repoRoot: state.repoRoot,
         hasChanges: changed.length > 0 || untracked.length > 0,
         changedFiles: changed,
         changedWithStats,

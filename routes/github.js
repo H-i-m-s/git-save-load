@@ -177,7 +177,7 @@ async function applyLicenseToLocalRepo(cwd, license, gitExecFile, ghExecAsync, w
   return { applied: true, existing: false, committed: false };
 }
 
-export function registerGitHubRoutes(app, { ctx, gitExecFile, gitExecFileAsync, commandErrorText, validateBranchName, isValidRemoteName, isValidRemoteUrl, sanitizeRemoteUrl, readRemoteSettings, readRepoPath, writeTextFile, pathExists }) {
+export function registerGitHubRoutes(app, { ctx, gitExecFile, gitExecFileAsync, commandErrorText, validateBranchName, isValidRemoteName, isValidRemoteUrl, sanitizeRemoteUrl, readRemoteSettings, readRepoPath, writeTextFile, pathExists, resolveRepoState }) {
   // ======== API: GitHub 管理 ========
   // gh 自己会读取 GitHub CLI 的登录配置。不要把 Git 的用户级代理强行注入 gh，
   // 否则可能与 gh 的网络实现或本机代理状态冲突，导致 GraphQL 返回 EOF。
@@ -220,7 +220,8 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, gitExecFileAsync, 
       let localLicense = { applied: false, existing: false, committed: false };
       let localHasCommit = false;
       if (localPath) {
-        gitExecFile(localPath, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+        // 只接受仓库根本身：子目录会向上找到父仓库，后续提交/推送会落到父仓库去
+        if (!resolveRepoState(localPath).isRoot) throw new Error("当前目录不是 git 仓库根");
         localHasCommit = hasHeadCommit(localPath, gitExecFile);
         if (license && localHasCommit) {
           localLicense = await applyLicenseToLocalRepo(localPath, license, gitExecFile, ghExecAsync, writeTextFile, pathExists);
@@ -411,7 +412,8 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, gitExecFileAsync, 
     if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
     if (!isValidRemoteUrl(newUrl)) return c.json({ ok: false, message: "远程地址格式不正确" });
     try {
-      gitExecFile(localPath, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      // 只接受仓库根本身，否则会改到上层仓库的远程地址
+      if (!resolveRepoState(localPath).isRoot) throw new Error("当前目录不是 git 仓库根");
       const names = gitExecFile(localPath, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
       const settings = await readRemoteSettings(ctx, localPath, names);
       const targetRemote = names.includes(remote) ? remote : (settings.fetchRemote || remote);
@@ -442,7 +444,8 @@ export function registerGitHubRoutes(app, { ctx, gitExecFile, gitExecFileAsync, 
     if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
 
     try {
-      gitExecFile(localPath, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      // 只接受仓库根本身，否则会改到上层仓库的远程配置
+      if (!resolveRepoState(localPath).isRoot) throw new Error("当前目录不是 git 仓库根");
       let previousUrl = "";
       try { previousUrl = gitExecFile(localPath, ["remote", "get-url", remote], { timeout: 10000 }); } catch {}
       if (previousUrl && !body.confirmed) {

@@ -86,7 +86,30 @@ function renderStatus(data) {
   if (!data.ok || data.isRepo === false) {
     document.getElementById("branch").textContent = "✕";
     updateRepoPathDisplay(data.path || currentPath || getSavedPath() || "");
-    resetFileListEl(document.getElementById("fileList"), '<li class="empty-hint">不是 git 仓库<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 点顶部「切换」选一个 Git 项目文件夹</span></li>');
+    // 上层已经有仓库时，这个目录仍然不是仓库，但不是「目录有问题」：
+    // git 会向上找到父仓库，所以换个说法，并说清在这里初始化会得到什么。
+    const parentRepoRoot = data.parentRepoRoot ? String(data.parentRepoRoot) : "";
+    if (parentRepoRoot) {
+      resetFileListEl(document.getElementById("fileList"), '<li class="empty-hint">这个目录还不是独立的 git 仓库<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 它位于上层仓库内部，可以在这里初始化成自己的仓库</span></li>');
+    } else {
+      resetFileListEl(document.getElementById("fileList"), '<li class="empty-hint">不是 git 仓库<br><span style="font-size:11px;color:var(--hana-fg-muted,#9ca3af)">💡 点顶部「切换」选一个 Git 项目文件夹</span></li>');
+    }
+    // 上层仓库提示：让用户明白为什么这里没有显示成仓库
+    const initNoticeEl = document.getElementById("initNotice");
+    if (initNoticeEl) {
+      if (parentRepoRoot) {
+        initNoticeEl.style.display = "block";
+        initNoticeEl.style.fontSize = "11px";
+        initNoticeEl.style.color = "var(--hana-fg-muted,#9ca3af)";
+        initNoticeEl.style.marginBottom = "10px";
+        initNoticeEl.style.wordBreak = "break-all";
+        initNoticeEl.innerHTML = "ℹ️ 这个目录位于上层仓库 <span style=\"font-family:monospace\">" + escapeHtml(parentRepoRoot) +
+          "</span> 内部。在这里点「初始化仓库」会得到一个独立的仓库，它和上层仓库互不影响。";
+      } else {
+        initNoticeEl.style.display = "none";
+        initNoticeEl.innerHTML = "";
+      }
+    }
     // 新目录还没 init 是正常工作流（git 说"not a git repository"），不再多说一句；
     // 只有"目录在、但 git 读不出来"这类非预期原因才把 git 原文摆到初始化卡片里。
     const initResultEl = document.getElementById("initResult");
@@ -108,6 +131,11 @@ function renderStatus(data) {
   // 是 git 仓库，隐藏初始化区域
   const initArea = document.getElementById("initArea");
   if (initArea) initArea.style.display = "none";
+  const initNoticeEl = document.getElementById("initNotice");
+  if (initNoticeEl) {
+    initNoticeEl.style.display = "none";
+    initNoticeEl.innerHTML = "";
+  }
   document.getElementById("fileCard").style.display = "";
   document.getElementById("commitCard").style.display = "";
   document.getElementById("logCard").style.display = "";

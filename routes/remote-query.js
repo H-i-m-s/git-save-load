@@ -1,6 +1,6 @@
 // Remote list and role routes.
 export function registerRemoteQueryRoutes(app, helpers) {
-  const { repoPath, gitExecFile, gitExecFileAsync, listRemoteDetails, readRemoteSettings, applyRemoteSettings, chooseRemoteBranch, getRemoteBranchSnapshot, validateBranchName, commandErrorText, writeRemoteSettings, isValidRemoteName, sanitizeRemoteUrl, parseCommitList, parseNameStatus } = helpers;
+  const { repoPath, gitExecFile, gitExecFileAsync, listRemoteDetails, readRemoteSettings, applyRemoteSettings, chooseRemoteBranch, getRemoteBranchSnapshot, validateBranchName, commandErrorText, writeRemoteSettings, isValidRemoteName, sanitizeRemoteUrl, parseCommitList, parseNameStatus, resolveRepoState } = helpers;
 
   // ======== /api/remotes 的异步并行实现 ========
   // 旧实现走同步 listRemoteDetails + getRemoteBranchSnapshot，每个远程串行
@@ -15,12 +15,14 @@ export function registerRemoteQueryRoutes(app, helpers) {
   }
 
   async function buildRemotesOverview(path, preferredRemote, preferredBranch) {
-    // 层 1：仓库有效性、当前分支、远程名列表 —— 全并行
-    const [branchRaw, namesRaw] = await Promise.all([
-      g(path, ["rev-parse", "--is-inside-work-tree"]),
+    // 只接受仓库根本身：子目录会向上找到父仓库，那样拿到的是整个父仓库的远程
+    if (!resolveRepoState(path).isRoot) throw new Error("当前目录不是 git 仓库根");
+    // 层 1：当前分支、远程名列表 —— 全并行
+    const [currentBranch, namesRaw] = await Promise.all([
+      g(path, ["branch", "--show-current"], ""),
       g(path, ["remote"]),
     ]);
-    const branch = await g(path, ["branch", "--show-current"], "");
+    const branch = String(currentBranch || "");
     const names = String(namesRaw || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
     // 层 2：每远程的地址/分支/HEAD 并行 + upstream（一次，与远程无关）+ 插件配置
@@ -135,7 +137,7 @@ export function registerRemoteQueryRoutes(app, helpers) {
     if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
     if (!["push-target", "update-source", "other"].includes(role)) return c.json({ ok: false, message: "远程角色不正确" });
     try {
-      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      if (!resolveRepoState(path).isRoot) throw new Error("当前目录不是 git 仓库根");
       const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
       if (!names.includes(remote)) return c.json({ ok: false, message: `远程 ${remote} 不存在` });
       const settings = await readRemoteSettings(helpers.ctx, path, names);

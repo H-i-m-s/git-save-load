@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { withRepoLock } from "../lib/repo-lock.js";
 
-export function registerRemoteEditRoutes(app, { ctx, repoPath, gitExecFile, gitExecFileAsync, commandErrorText, readConfig, writeConfig, readRemoteSettings, writeRemoteSettings, isValidRemoteName, isValidRemoteUrl, sanitizeRemoteUrl, configuredRemoteUrls, getGitOperationState }) {
+export function registerRemoteEditRoutes(app, { ctx, repoPath, gitExecFile, gitExecFileAsync, commandErrorText, readConfig, writeConfig, readRemoteSettings, writeRemoteSettings, isValidRemoteName, isValidRemoteUrl, sanitizeRemoteUrl, configuredRemoteUrls, getGitOperationState, resolveRepoState }) {
   async function restoreConfiguredRemoteUrls(cwd, remote, urls, push = false) {
     const key = `remote.${remote}.${push ? "pushurl" : "url"}`;
     try { await gitExecFileAsync(cwd, ["config", "--unset-all", key], { timeout: 10000 }); } catch {}
@@ -45,7 +45,8 @@ export function registerRemoteEditRoutes(app, { ctx, repoPath, gitExecFile, gitE
   }
 
   async function readRemoteEditState(ctx, path, remote) {
-    gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+    // 只接受仓库根本身：在子目录里放行会直接操作到上层仓库去
+    if (!resolveRepoState(path).isRoot) throw new Error("当前目录不是 git 仓库根");
     const names = gitExecFile(path, ["remote"], { timeout: 10000 }).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
     if (!names.includes(remote)) throw new Error(`远程 ${remote} 不存在`);
     const fetchUrls = configuredRemoteUrls(path, remote, false);
@@ -83,6 +84,10 @@ export function registerRemoteEditRoutes(app, { ctx, repoPath, gitExecFile, gitE
     let oldPushEffective = "";
     let settings = null;
     let revision = "";
+    // 先确认是本仓库根，再查操作状态。getGitOperationState 读的也是 --git-path，
+    // 在子目录里会落到父仓库的状态文件上，先判定才不会报出误导信息。
+    // 这里直接返回，不进下面的 catch：没有任何改动发生，不该说「已恢复原远程配置」。
+    if (!resolveRepoState(path).isRoot) return c.json({ ok: false, code: "NOT_REPO_ROOT", message: "当前目录不是 git 仓库根" });
     try {
       const operationState = await getGitOperationState(path);
       if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });

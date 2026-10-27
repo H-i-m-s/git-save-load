@@ -6,7 +6,7 @@ export function registerRemoteSyncRoutes(app, helpers) {
     ctx, repoPath, gitExecFile, gitExecFileAsync, listRemoteBranches, readRemoteSettings,
     chooseRemoteBranch, getRemoteBranchSnapshot, validateBranchName,
     sanitizeRemoteUrl, commandErrorText, isValidRemoteName, getGitOperationState,
-    writeRemoteSettings,
+    writeRemoteSettings, resolveRepoState,
   } = helpers;
 
   app.post("/api/sync-status", async (c) => {
@@ -37,7 +37,8 @@ export function registerRemoteSyncRoutes(app, helpers) {
     const requestedBranch = String(body.remoteBranch || body.branch || "").trim();
     if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
     try {
-      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      // 只接受仓库根本身，否则会操作到上层仓库去
+      if (!resolveRepoState(path).isRoot) throw new Error("当前目录不是 git 仓库根");
       const targetBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
       if (!targetBranch || !validateBranchName(path, targetBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
       const remoteUrl = gitExecFile(path, ["remote", "get-url", remote], { timeout: 10000 });
@@ -57,7 +58,8 @@ export function registerRemoteSyncRoutes(app, helpers) {
     const requestedBranch = String(body.remoteBranch || body.branch || "").trim();
     if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
     try {
-      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      // 只接受仓库根本身，否则会操作到上层仓库去
+      if (!resolveRepoState(path).isRoot) throw new Error("当前目录不是 git 仓库根");
       const targetBranch = gitExecFile(path, ["branch", "--show-current"], { timeout: 10000 });
       if (!targetBranch || !validateBranchName(path, targetBranch)) return c.json({ ok: false, code: "DETACHED_HEAD", message: "当前处于 detached HEAD 状态，请先切换到本地分支" });
       const operationState = await getGitOperationState(path);
@@ -89,7 +91,8 @@ export function registerRemoteSyncRoutes(app, helpers) {
     const remote = String(body.remote || "").trim();
     if (!isValidRemoteName(remote)) return c.json({ ok: false, message: "远程名称格式不正确" });
     try {
-      gitExecFile(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
+      // 只接受仓库根本身，否则会操作到上层仓库去
+      if (!resolveRepoState(path).isRoot) throw new Error("当前目录不是 git 仓库根");
       const operationState = await getGitOperationState(path);
       if (operationState) return c.json({ ok: false, code: "GIT_OPERATION_IN_PROGRESS", message: `当前 Git 正在进行 ${operationState} 操作，请先完成或终止它` });
       const currentUrl = gitExecFile(path, ["remote", "get-url", remote], { timeout: 10000 });

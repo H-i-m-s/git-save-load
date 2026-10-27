@@ -1,7 +1,7 @@
 // Repository path, metadata, init and version routes.
 import { join } from "node:path";
 
-export function registerRepositoryRoutes(app, { ctx, repoPath, readRepoPath, writeRepoPath, gitExecFile, gitExecFileAsync, extractBasename, extractParentTail, parseOriginUrl, readRemoteSettings, writeTextFile }) {
+export function registerRepositoryRoutes(app, { ctx, repoPath, readRepoPath, writeRepoPath, gitExecFile, gitExecFileAsync, extractBasename, extractParentTail, parseOriginUrl, readRemoteSettings, writeTextFile, resolveRepoState }) {
   // ======== API: 读写仓库路径配置 ========
   app.get("/api/repo", async (c) => {
     const configuredPath = await readRepoPath(ctx);
@@ -25,18 +25,24 @@ export function registerRepositoryRoutes(app, { ctx, repoPath, readRepoPath, wri
       basename: extractBasename(path),
       parentTail: extractParentTail(path),
       isGit: false,
+      repoRoot: "",
+      parentRepoRoot: "",
       origin: "",
       defaultBranch: ""
     };
     if (!path) return out;
 
-    // 判断是否为 git 仓库
-    try {
-      await gitExecFileAsync(path, ["rev-parse", "--is-inside-work-tree"], { timeout: 10000 });
-      out.isGit = true;
-    } catch {
-      return out; // 不是 git 仓库，basename 仍可用
-    }
+    // 判断这个目录自己是不是 git 仓库根。
+    // 不能用 --is-inside-work-tree：父仓库的子目录在那里也是 true，
+    // 结果就是子目录被当成了上层那个仓库。
+    const state = typeof resolveRepoState === "function"
+      ? resolveRepoState(path)
+      : { inRepo: false, repoRoot: "", isRoot: false };
+    out.repoRoot = state.isRoot ? state.repoRoot : "";
+    // 即使不是仓库根也要把上层仓库根带出去，前端靠它向用户解释为什么这里不能直接当仓库用。
+    if (state.inRepo && !state.isRoot) out.parentRepoRoot = state.repoRoot;
+    if (!state.isRoot) return out;
+    out.isGit = true;
 
     // 仓库名片仍保留兼容字段 origin，但优先读取默认推送远程的地址。
     // remote 列表与插件配置读取并行；拿到远程名后 get-url 与 symbolic-ref 并行。
@@ -109,8 +115,17 @@ export function registerRepositoryRoutes(app, { ctx, repoPath, readRepoPath, wri
         await writeTextFile(join(path, ".gitignore"), gitignore);
       }
 
+      // git init 之后复核：确实成了仓库根才算成功。
+      // 子目录 init 正常应该得到自己的 .git，若仍被上层仓库覆盖，就不能谎报成功。
+      const state = typeof resolveRepoState === "function"
+        ? resolveRepoState(path)
+        : { inRepo: true, repoRoot: "", isRoot: true };
+      if (!state.isRoot) {
+        return c.json({ ok: false, path, message: "初始化后该目录仍不是仓库根，可能被上层仓库覆盖" });
+      }
+
       const branch = gitExecFile(path, ["branch", "--show-current"]);
-      return c.json({ ok: true, path, branch: branch || "master" });
+      return c.json({ ok: true, path, branch: branch || "master", repoRoot: state.repoRoot });
     } catch (e) {
       return c.json({ ok: false, message: `初始化失败：${e.message}` });
     }
