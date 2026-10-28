@@ -10,6 +10,7 @@ import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname, isAbsolute, resolve, basename, extname } from "node:path";
 
+import { pruneSnapshots } from "../lib/snapshot-retention.js";
 import { resolvePath, resolveDataDir, gitExec, gitExecCapture } from "./_helpers.js";
 
 export const name = "show_diff";
@@ -343,6 +344,9 @@ export async function execute(input = {}, ctx = {}) {
     } catch {
       saved = false;
     }
+    // 两份都已经落盘之后再回收：清理绝不该影响本次快照的可用性，
+    // 也不能改变 saved 的取值。pruneSnapshots 自己吞错，这里不 try 也能安全。
+    if (saved) pruneSnapshots(dataDir);
   }
 
   const summary = out

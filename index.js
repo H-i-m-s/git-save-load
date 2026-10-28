@@ -6,6 +6,7 @@
 
 import { defineApp } from "./sdk/app-contract/server-client.js";
 import { secretBootstrap } from "./lib/secret.js";
+import { pruneSnapshots, pruneByAge, pruneLegacy } from "./lib/snapshot-retention.js";
 import * as toolStatus from "./tools/git_status.js";
 import * as toolCommit from "./tools/git_commit.js";
 import * as toolLog from "./tools/git_log.js";
@@ -37,6 +38,26 @@ export default defineApp(async (sdk) => {
   // 数据目录：路由侧（ctx.dataDir）与工具侧共用同一份。工具 execute 的上下文里
   // 宿主不带 dataDir，这里显式透传——提交签名（GNUPGHOME）、密钥环定位都依赖它。
   const dataDir = typeof sdk.dataDir === "string" ? sdk.dataDir : "";
+
+  // 启动清理快照：show_diff 每次调用写两份快照（最新一份 + 按卡实例一份），
+  // 按卡实例那份只写不读回，不清就无限堆积（改名前的 show-files.* 已经不读了）。
+  // 三步都在 lib/snapshot-retention.js 里各自吞错，这里再兜一层：清理失败只记一条日志，
+  // 不能让 App 起不来。
+  if (dataDir) {
+    try {
+      const legacy = pruneLegacy(dataDir);
+      const aged = pruneByAge(dataDir);
+      const capped = pruneSnapshots(dataDir);
+      const total = legacy.removed + aged.removed + capped.removed;
+      if (total > 0) {
+        await sdk.logger.info(
+          `git-save-load: 快照回收 旧前缀 ${legacy.removed} / 过期 ${aged.removed} / 超量 ${capped.removed}`,
+        );
+      }
+    } catch (error) {
+      await sdk.logger.info(`git-save-load: 快照回收跳过（${String(error && error.message ? error.message : error)}）`);
+    }
+  }
 
   // 启动即把加密存放的 GitHub 令牌解进进程缓存（ghEnvironment() 同步读它）。
   // 不阻塞加载：解不开只是 gh 不走 App 自持令牌，仍复用用户自己的 gh 登录态。
