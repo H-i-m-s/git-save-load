@@ -229,12 +229,6 @@
         <button type="button" class="hana-seg-btn" data-value="simple">精简</button>
       </div>
     </label>
-    <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0" title="展示变更文件时，是一个文件一张卡，还是全部合在一张卡里">变更文件卡
-      <div class="hana-seg" id="segFilesCard" style="float:none">
-        <button type="button" class="hana-seg-btn" data-value="per-file" title="一个文件一张卡">分开</button>
-        <button type="button" class="hana-seg-btn" data-value="grouped" title="所有文件合在一张卡里">合并</button>
-      </div>
-    </label>
     <label style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">自动刷新
       <select id="cfgAutoRefresh" onchange="saveSetting('autoRefreshSec',this.value);restartAutoRefresh(this.value)" style="font-size:11px">
         <option value="0">关闭</option>

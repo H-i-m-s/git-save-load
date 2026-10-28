@@ -1,6 +1,6 @@
 // tests/cases/02-entry-wiring.mjs
 // 覆盖：入口装配。
-//   a) 以桩上下文调用 index.js 的 default.apply，断言注册 8 个工具且名字集合完全一致，
+//   a) 以桩上下文调用 index.js 的 default.apply，断言注册 9 个工具且名字集合完全一致，
 //      并断言每个工具注册项都带 description / parameters / sessionPermission / execute。
 //      桩的 tools.register 必须返回 { ready: Promise } 回执，否则 SDK 抛 APP_SDK_HOST_UNSUPPORTED
 //      （apply 不抛错本身就是这条契约的证据）。
@@ -22,6 +22,7 @@ const EXPECTED_TOOLS = [
   "gh_exec",
   "git_push",
   "gh_pr",
+  "show_diff",
 ];
 const EXPECTED_ROUTES = [
   ["GET", "/api/gh/pr-list"],
@@ -60,7 +61,7 @@ await main("entry: index.js 工具注册 + routes/git.js 端点装配", async ()
   note(`注册工具数：${registered.length}`);
 
   const names = registered.map((definition) => definition?.name);
-  eq(registered.length, 8, "恰好注册 8 个工具");
+  eq(registered.length, 9, "恰好注册 9 个工具");
   deepEq([...names].sort(), [...EXPECTED_TOOLS].sort(), "注册的工具名字集合与清单完全一致");
   check(
     registered.every((definition) => typeof definition.execute === "function"),

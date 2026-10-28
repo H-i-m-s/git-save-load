@@ -1,9 +1,9 @@
-// git-tools / tools / show_files.js
+// git-tools / tools / show_diff.js
 // 只读展示：把一组文件的「改了哪些行」摊成一张两行小卡，取代宿主 stage_files
 // 那张只有文件名和 MIME 的句柄卡。
 //
-// 数据怎么到卡片：工具把结果写进 dataDir/show-files.json，卡片拿 iframe URL 上的
-// appSurfaceSession 调本 App 自己的 /api/show-files 读回来。宿主不会把工具参数
+// 数据怎么到卡片：工具把结果写进 dataDir/show-diff.json，卡片拿 iframe URL 上的
+// appSurfaceSession 调本 App 自己的 /api/show-diff 读回来。宿主不会把工具参数
 // 传进卡片 iframe，所以必须走这条侧路。
 
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -12,15 +12,15 @@ import { join, dirname, isAbsolute, resolve, basename, extname } from "node:path
 
 import { resolvePath, resolveDataDir, gitExec, gitExecCapture } from "./_helpers.js";
 
-export const name = "show_files";
+export const name = "show_diff";
 
 export const description =
-  "展示变更文件（左：增删数 / 路径；右：查看变更、回退）。" +
-  "返回值第一行会写明当前模式，先看它再决定怎么调用：" +
-  "「合并」一次传全部文件，出一张卡；" +
-  "「分开」一个文件一张卡，请在同一回合里并行发多次调用，每次 paths 只放一个文件，不要串行等待。" +
-  "不确定当前模式时，先只传一个文件探一次，返回值会告诉你。" +
-  "只读自身不改文件；回退按钮要点确认才会动。";
+  "展示 git 变更文件卡片：文件名、增删行数、可展开看 diff、可回退单个文件。" +
+  "凡是用户要看「改了哪些文件」「展示变更」「看某个文件的改动」「回退这个文件」，都用这个工具，" +
+  "不要自己写 HTML 卡片，也不要用文字罗列代替。" +
+  "一张卡只放一个文件。要展示 N 个文件，就在同一回合里并行发 N 次调用，每次 paths 只放一个路径，不要串行等上一次返回。" +
+  "例：展示 a.py、b.sh、c.sh 三个文件，一次发出三个调用：{paths:[\"...a.py\"]}、{paths:[\"...b.sh\"]}、{paths:[\"...c.sh\"]}。" +
+  "路径优先传绝对路径。";
 
 export const sessionPermission = { readOnly: true };
 
@@ -30,11 +30,11 @@ export const parameters = {
     paths: {
       type: "array",
       items: { type: "string" },
-      description: "要展示的文件路径数组，可为绝对路径，也可为相对仓库根的路径。合并模式一次传完；分开模式每次只放一个文件，并行多次调用。",
+      description: "只要展示一个文件时，数组里就只放一个路径；要展示多个文件请拆成多次并行调用，每次一个。优先绝对路径。",
     },
     path: {
       type: "string",
-      description: "仓库路径。不传则使用插件配置中保存的路径，或从文件所属目录反查。",
+      description: "仓库路径。不传时用插件设置里保存的仓库路径。",
     },
     title: {
       type: "string",
@@ -189,26 +189,17 @@ export async function execute(input = {}, ctx = {}) {
     return JSON.stringify({ error: true, message: "paths 不能为空" }, null, 2);
   }
 
-  // 布局由用户设置决定，一次调用能不能带多个文件也由它决定。
-  // 设置读不到时按 grouped（一次传完）处理。
-  let cardMode = "grouped";
-  try {
-    const v = await ctx.config?.get?.("filesCardMode");
-    if (v === "grouped" || v === "per-file") cardMode = v;
-  } catch {}
-
-  // 分开模式下，一次传多个文件就是错的：直接拒绝，并把正确做法说清。
-  // 否则会把一张合并卡画成 N 张单行卡，看起来像没照用户的设置做。
-  if (cardMode === "per-file" && wanted.length > 1) {
+  // 一张卡只放一个文件：一次传多个就拒绝，并把正确做法说清。
+  // 宿主 details.card 是单数，一张卡挂不了多个文件，所以这是硬约束，不是偏好。
+  if (wanted.length > 1) {
     return {
       content: [
         {
           type: "text",
           text:
-            `模式：分开（一个文件一张卡）\n` +
-            `没有出卡：这次传了 ${wanted.length} 个文件，分开模式一张卡只放一个。\n` +
-            `正确做法：在同一回合里并行发 ${wanted.length} 次调用，每次 paths 只放一个文件，不要串行等上一次返回。\n` +
-            `确实要一次出卡，就把设置改成「合并」。`,
+            `没有出卡：这次传了 ${wanted.length} 个文件，一张卡只放一个文件。\n` +
+            `正确做法：在同一回合里并行发 ${wanted.length} 次调用，每次 paths 只放一个路径，不要串行等上一次返回。\n` +
+            `例：三个文件就一次发出三个调用。`,
         },
       ],
       isError: true,
@@ -323,17 +314,12 @@ export async function execute(input = {}, ctx = {}) {
   const totalAdded = out.filter((f) => !f.binary).reduce((s, f) => s + f.added, 0);
   const totalDeleted = out.filter((f) => !f.binary).reduce((s, f) => s + f.deleted, 0);
 
-  // 布局偏好：一个文件一张小卡（默认），或全部合在一张里。
-  // cardMode 已在函数入口按用户设置读好，这里不再重读。
-
-  // 标题：单文件就用文件名（宿主标题栏已经显示它，卡内不再重复），
-  // 多文件才用「N 个文件」。
+  // 标题：用文件名（宿主标题栏已经显示它，卡内不再重复）。
   const autoTitle = out.length === 1 ? out[0].name : `${out.length} 个文件`;
 
   const payload = {
     title: String(input.title || "").trim() || autoTitle,
     at: Date.now(),
-    mode: cardMode,
     repo: groups.size === 1 ? [...groups.keys()][0] : "",
     files: out,
     totalAdded,
@@ -345,14 +331,14 @@ export async function execute(input = {}, ctx = {}) {
   //
   // 为什么必须按卡分开：一个文件一张卡时，同一次会话里会有 N 张卡同时加载，
   // 若共用一份文件，它们会全部读到最后一次写入的数据，前几张就显示成别人的文件了。
-  const cardInstanceId = stableCardId(`${payload.at}:${out.length}:${cardMode}`);
+  const cardInstanceId = stableCardId(`${payload.at}:${out.length}`);
   let saved = false;
   if (dataDir) {
     try {
       mkdirSync(dataDir, { recursive: true });
       const blob = JSON.stringify(payload);
-      writeFileSync(join(dataDir, "show-files.json"), blob, "utf8");
-      writeFileSync(join(dataDir, `show-files.${cardInstanceId}.json`), blob, "utf8");
+      writeFileSync(join(dataDir, "show-diff.json"), blob, "utf8");
+      writeFileSync(join(dataDir, `show-diff.${cardInstanceId}.json`), blob, "utf8");
       saved = true;
     } catch {
       saved = false;
@@ -368,17 +354,16 @@ export async function execute(input = {}, ctx = {}) {
       {
         type: "text",
         text:
-          `模式：${cardMode === "per-file" ? "分开（一个文件一张卡）" : "合并（一张卡放全部文件）"}\n` +
           `${payload.title}${saved ? "" : "（卡片数据没落盘，卡片会显示取不到数据）"}\n${summary}\n合计 +${totalAdded}/-${totalDeleted}`,
       },
     ],
     details: {
       // 必须自带 bridgedTool：v2 App 的工具名在宿主实时投影里会被泛化成 "tool_call"，
       // 归属解析只在泛化时改从 details.bridgedTool.name 取真实名。
-      bridgedTool: { name: "show_files", server: "git-save-load" },
+      bridgedTool: { name: "show_diff", server: "git-save-load" },
       card: {
         pluginId: "git-save-load",
-        cardId: "files",
+        cardId: "diff",
         // 本次调用的确定身份：同一次调用跨重载不换卡，各次调用各一张。
         cardInstanceId,
         route: "/files.html",

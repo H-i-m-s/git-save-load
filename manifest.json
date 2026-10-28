@@ -61,13 +61,6 @@
             "enum": ["detail", "simple"],
             "description": "默认 diff 显示模式"
           },
-          "filesCardMode": {
-            "type": "string",
-            "title": "变更文件卡片布局",
-            "default": "grouped",
-            "enum": ["per-file", "grouped"],
-            "description": "grouped：所有文件合在一张卡里；per-file：一个文件一张小卡"
-          },
           "theme": {
             "type": "string",
             "title": "主题",

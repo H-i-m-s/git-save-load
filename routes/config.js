@@ -17,14 +17,12 @@ async function readLegacyConfig(ctx) {
   }
 }
 
-const CONFIG_KEYS = new Set(["repoPath", "stashMode", "pushMode", "pullMode", "defaultDiffMode", "filesCardMode", "theme", "paperTexture", "ghOpenMode", "remoteSettings", "autoRefreshSec"]);
+const CONFIG_KEYS = new Set(["repoPath", "stashMode", "pushMode", "pullMode", "defaultDiffMode", "theme", "paperTexture", "ghOpenMode", "remoteSettings", "autoRefreshSec"]);
 const CONFIG_ENUMS = {
   stashMode: new Set(["normal", "untracked", "all"]),
   pushMode: new Set(["normal", "force-with-lease", "force"]),
   pullMode: new Set(["merge", "rebase", "ff-only"]),
   defaultDiffMode: new Set(["detail", "simple"]),
-  // 变更文件卡的布局：一个文件一张卡，或全部合在一张里。
-  filesCardMode: new Set(["per-file", "grouped"]),
   ghOpenMode: new Set(["internal", "external"]),
   // 变更文件卡的自动刷新周期（秒），"0" = 关闭。字符串是 HanaSeg 的 data-value。
   // 未设置时前端按 "5" 处理。

@@ -1,8 +1,8 @@
-// git-tools / routes / show-files.js
-// 给 show_files 那张卡用的两条接口：
-//   GET  /api/show-files       把上次工具落盘的结果吐回来（卡片 iframe 收不到工具参数）
-//   GET  /api/show-files/diff  单个文件的 unified diff
-//   POST /api/show-files/revert 回退单个文件的未提交改动
+// git-tools / routes / show-diff.js
+// 给 show_diff 那张卡用的三条接口：
+//   GET  /api/show-diff       把上次工具落盘的结果吐回来（卡片 iframe 收不到工具参数）
+//   GET  /api/show-diff/diff  单个文件的 unified diff
+//   POST /api/show-diff/revert 回退单个文件的未提交改动
 //
 // 回退只处理已跟踪文件：未跟踪文件的「回退」等于删掉它，那不是还原，是销毁，
 // 这里不做，卡片也不给这个按钮。
@@ -12,8 +12,8 @@ import { join } from "node:path";
 
 const MAX_DIFF_BYTES = 512 * 1024;
 
-export function registerShowFilesRoutes(app, { ctx, dataDir, gitExecFile, repoPath, commandErrorText }) {
-  app.get("/api/show-files", async (c) => {
+export function registerShowDiffRoutes(app, { ctx, dataDir, gitExecFile, repoPath, commandErrorText }) {
+  app.get("/api/show-diff", async (c) => {
     if (!dataDir) {
       return c.json({ ok: false, message: "App 数据目录不可用，卡片拿不到数据" });
     }
@@ -21,8 +21,8 @@ export function registerShowFilesRoutes(app, { ctx, dataDir, gitExecFile, repoPa
     // 否则同一次会话里多张卡会同时读到最新那一份，前几张就串了。
     const id = String(c.req.query("card") || "").trim();
     const safe = /^a_[A-Za-z0-9_-]{1,64}$/.test(id) ? id : "";
-    const latest = join(dataDir, "show-files.json");
-    const own = safe ? join(dataDir, `show-files.${safe}.json`) : "";
+    const latest = join(dataDir, "show-diff.json");
+    const own = safe ? join(dataDir, `show-diff.${safe}.json`) : "";
 
     try {
       if (own) {
@@ -38,14 +38,14 @@ export function registerShowFilesRoutes(app, { ctx, dataDir, gitExecFile, repoPa
       return c.json({ ok: true, data });
     } catch (e) {
       if (e && e.code === "ENOENT") {
-        return c.json({ ok: false, message: "还没有数据，先让我跑一次 show_files" });
+        return c.json({ ok: false, message: "还没有数据，先让我跑一次 show_diff" });
       }
       return c.json({ ok: false, message: `读取失败：${e && e.message ? e.message : e}` });
     }
   });
 
   // 单个文件的 diff。全新文件 git diff 看不到，用 --no-index 对着空文件比。
-  app.get("/api/show-files/diff", async (c) => {
+  app.get("/api/show-diff/diff", async (c) => {
     const repo = repoPath(c.req.query("repo"));
     const file = String(c.req.query("file") || "").trim();
     const untracked = c.req.query("untracked") === "1";
@@ -85,7 +85,7 @@ export function registerShowFilesRoutes(app, { ctx, dataDir, gitExecFile, repoPa
   });
 
   // 回退单个已跟踪文件的未提交改动。只动工作区，不碰暂存区，不碰提交。
-  app.post("/api/show-files/revert", async (c) => {
+  app.post("/api/show-diff/revert", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const repo = repoPath(body.repo);
     const file = String(body.file || "").trim();

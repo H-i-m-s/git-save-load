@@ -14,7 +14,7 @@ import * as toolGitExec from "./tools/git_exec.js";
 import * as toolGhExec from "./tools/gh_exec.js";
 import * as toolGitPush from "./tools/git_push.js";
 import * as toolGhPr from "./tools/gh_pr.js";
-import * as toolShowFiles from "./tools/show_files.js";
+import * as toolShowDiff from "./tools/show_diff.js";
 
 export const name = "git-save-load";
 
@@ -28,7 +28,7 @@ const TOOL_MODULES = [
   toolGhExec,
   toolGitPush,
   toolGhPr,
-  toolShowFiles,
+  toolShowDiff,
 ];
 
 export default defineApp(async (sdk) => {

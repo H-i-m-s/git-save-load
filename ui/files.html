@@ -20,11 +20,6 @@
     --sf-text:#16181d;
     --sf-muted:#4b5563;
     --sf-faint:#6b7280;
-    /* 合并模式的两层：外层聊天底、内层每个文件一张卡的卡底。
-       这两个值会被 JS 用宿主主题的 --bg / --bg-card 覆盖（见 syncTheme）。
-       先给一对浅色兼容色，只能在拿不到宿主变量时才会用到。 */
-    --sf-chat-bg:rgba(0,0,0,.045);
-    --sf-tile-bg:#ffffff;
     --sf-card-bg:rgba(0,0,0,.035);
     --sf-card-bd:rgba(0,0,0,.07);
     --sf-card-hover:rgba(0,0,0,.055);
@@ -41,12 +36,6 @@
     --sf-diff-text-del:var(--hana-diff-del-fg, #c62a2f);
     --sf-meta:rgba(0,0,0,.045);
     --sf-weak:#4b5563;
-    /* 小卡描边与向外那层淡影。
-       描边默认跟宿主的 --border 走（见 loadHostColors）：那是半透明色，
-       叠在卡片底色上才是宿主卡片边框真正的颜色。
-       拿不到时退回这里的兼容值。 */
-    --sf-tile-ring:var(--border, rgba(0,0,0,.12));
-    --sf-tile-glow:rgba(0,0,0,.06);
   }
   /* 深色板
      对比度全部按 WCAG AA（正文 4.5:1）挑，底色参照 hana-downloader 深色卡底 #445560。
@@ -55,9 +44,6 @@
     --sf-text:#e6eaf2;
     --sf-muted:#c8d4de;
     --sf-faint:#c8d4de;
-    /* 拿不到宿主主题时的深色兼容色：外层偏暗、内层略亮一档。 */
-    --sf-chat-bg:#3B4A54;
-    --sf-tile-bg:#445560;
     --sf-card-bg:rgba(255,255,255,.045);
     --sf-card-bd:rgba(255,255,255,.09);
     --sf-card-hover:rgba(255,255,255,.07);
@@ -73,9 +59,6 @@
     --sf-diff-text-del:var(--hana-diff-del-fg, #F9B0B3);
     --sf-meta:rgba(255,255,255,.05);
     --sf-weak:#bcc9d3;
-    /* 描边同样跟 --border 走，不在这里写死颜色。 */
-    --sf-tile-ring:var(--border, rgba(255,255,255,.14));
-    --sf-tile-glow:rgba(0,0,0,.10);
   }
 
   #sf-root{display:flex;flex-direction:column;gap:6px;width:100%}
@@ -83,52 +66,15 @@
      参考 hana-downloader 的 .dl：无背景、无边框、无圆角，只留左右内边距。
      宿主已经给了卡壳，再画一层就是「卡里套卡」。 */
   .sf-item{display:flex;flex-direction:column;width:100%}
-  /* 分开模式：一行就是整张卡的内容，不带自己的底色。 */
+  /* 一行就是整张卡的内容，不带自己的底色。 */
   .sf-card{
     display:flex;align-items:center;gap:10px;
     padding:2px 10px;
     min-width:0;
   }
 
-  /* 合并模式：整块铺聊天底色，每个文件单独一张小卡。
-     底色铺在 html/body 上而不是中间那个容器上：只给容器上色的话，
-     iframe 四周会露出宿主卡片的底色，看起来就是一圈浅边。
-     t-dark 同时加在 html 上（见 syncTheme），否则 html 只能拿到浅色兜底色，
-     body 没铺满的那一条就会露出浅灰。 */
-  html.sf-chat,html.sf-chat body{background:var(--sf-chat-bg)}
-  html.t-dark{--sf-chat-bg:#3B4A54;--sf-tile-bg:#445560}
-  #sf-root.sf-bare{
-    /* 上下内边距与卡片间距取同一个值，第一张卡到顶部就和卡与卡之间一样宽。 */
-    padding:13px 12px;
-    border-radius:0;
-    background:transparent;
-    gap:13px;
-  }
-  #sf-root.sf-bare .sf-item{
-    border-radius:9px;
-    background:var(--sf-tile-bg);
-    /* 展开收起时小卡自己长高：多余的差异内容由小卡露出来。
-       靠它自己的圆角裁切，裁切线就是小卡底边，圆角不会掉。 */
-    overflow:hidden;
-    /* 描边与淡影，都跟着圆角走：
-       inset 那圈是卡片内沿的 1px 描边，宽度与宿主卡片的 --border-width 一致，
-       颜色用宿主的 --border（半透明，叠在卡底上得出最终色）；
-       外圈是向下偏一点的淡影，向外轻微散开。
-       不用 border：border 会把内容区挤小，展开收起时尺寸会跳。 */
-    box-shadow:
-      inset 0 0 0 var(--border-width, 1px) var(--sf-tile-ring),
-      0 2px 9px var(--sf-tile-glow);
-  }
-  /* 合并模式下左侧三行，右侧按钮改为靠上居中。 */
-  #sf-root.sf-bare .sf-card{align-items:center;padding:11px 12px}
-  /* 字号只在合并模式里放大；分开模式仍用紧凑的 12/11.5。 */
-  #sf-root.sf-bare .sf-chg{font-size:12.5px}
-  #sf-root.sf-bare .sf-sub{font-size:12px}
-  #sf-root.sf-bare .sf-acts{align-self:center}
-
-  /* 左侧：增量计数 + 路径。合并模式下多一行文件名。 */
+  /* 左侧：增量计数 + 路径。 */
   .sf-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px}
-  .sf-info.tall{gap:4px}
   /* 增删数：无序列表，每一项一条状态色点 + 数字。 */
   .sf-chg{
     display:flex;align-items:center;gap:11px;
@@ -142,11 +88,6 @@
     min-width:0;overflow:hidden;white-space:nowrap;
     font-size:11.5px;line-height:1.25;color:var(--sf-faint);
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-  }
-  /* 文件名：只在合并模式下出现，独立一行、字号加大。 */
-  .sf-name{
-    min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-    font-size:13.5px;line-height:1.3;color:var(--sf-text);font-weight:600;
   }
   .sf-dot{flex:0 0 auto;width:5px;height:5px;border-radius:50%;background:var(--sf-faint)}
   .sf-dot.new{background:var(--sf-add)}
@@ -251,8 +192,7 @@ try { hana.ready(); } catch {}
 /* ── 主题 ──
  *
  * 深色/浅色判定靠 hana.theme 快照。
- * 另外拉一次宿主主题样式表，取出 --bg（聊天底）和 --bg-card（卡底），
- * 用于合并模式画「聊天底 + 每个文件一张卡」的两层。
+ * 另外拉一次宿主主题样式表，把宿主那套 diff 增删色取过来，换主题时深浅自动跟随。
  * 拉不到就退回样式表里写好的兼容色，不影响使用。
  */
 let hostThemeLoaded = false;
@@ -273,20 +213,11 @@ async function loadHostColors() {
     document.head.appendChild(st);
     if (snap.theme) document.documentElement.setAttribute("data-theme", snap.theme);
     const cs = getComputedStyle(document.documentElement);
-    const bg = cs.getPropertyValue("--bg").trim();
-    const bgCard = cs.getPropertyValue("--bg-card").trim();
-    // 宿主的边框色不是一个实色，而是一个半透明色，
-    // 它叠在卡片底色上才是屏幕上看到的那个颜色。
-    // 直接把它拿过来用，小卡的描边就和宿主卡片一致，换主题自动跟着走。
-    const border = cs.getPropertyValue("--border").trim();
     // diff 的增删色与宿主同源，换主题时深浅自动跟随。
     const diffAddBg = cs.getPropertyValue("--hana-diff-add-bg").trim();
     const diffAddFg = cs.getPropertyValue("--hana-diff-add-fg").trim();
     const diffDelBg = cs.getPropertyValue("--hana-diff-del-bg").trim();
     const diffDelFg = cs.getPropertyValue("--hana-diff-del-fg").trim();
-    if (bg) document.body.style.setProperty("--sf-chat-bg", bg);
-    if (bgCard) document.body.style.setProperty("--sf-tile-bg", bgCard);
-    if (border) document.body.style.setProperty("--sf-tile-ring", border);
     if (diffAddBg) document.body.style.setProperty("--hana-diff-add-bg", diffAddBg);
     if (diffAddFg) document.body.style.setProperty("--hana-diff-add-fg", diffAddFg);
     if (diffDelBg) document.body.style.setProperty("--hana-diff-del-bg", diffDelBg);
@@ -302,9 +233,7 @@ function syncTheme() {
   if (!snap?.appearance && (!label || label === "inherit")) {
     dark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   }
-  // t-dark 也要加在 html 上：底色变量同时被 html 和 body 用，
-  // 只加在 body 上的话 html 拿的是浅色兜底值，会露出一圈浅边。
-  document.documentElement.classList.toggle("t-dark", dark);
+  // t-dark 加在 body 上：文字色、按钮色都从 body.t-dark 那套变量取。
   document.body.classList.toggle("t-dark", dark);
 }
 syncTheme();
@@ -327,9 +256,6 @@ try {
  * 一旦展开变宽，收起后 iframe 会卡在宽的那个值上缩不回来。
  */
 var CARD_WIDTH = 350;
-// 合并模式的外框左右内边距（与 CSS 里 #sf-root.sf-bare 的 padding 保持一致）。
-// 子卡宽度 = 总宽 - 外框内边距×2，所以总宽要加上这一截，子卡才与分开模式同宽。
-var BARE_PAD_X = 12;
 
 var curWidth = CARD_WIDTH;
 
@@ -373,14 +299,7 @@ function easeS(p) {
  */
 /* 展开收起的高度过渡。
  *
- * 两层同时长高，看起来才是“里面的卡也在展开”：
- *   1) 宿主那一层：逐帧上报整卡高度，卡片下边缘往下让。
- *   2) 合并模式里的小卡：逐帧改它自己的高度，它的底边在走。
- *      小卡有圆角和底色，多余内容由它自己裁（overflow:hidden），
- *      裁切线就是它的底边，圆角不会掉。
- * 分开模式没有小卡底色，只有宿主的 iframe 在裁，不需要第二层。
- *
- * diff 自身高度始终不动，只是逐步被露出来。
+ * 逐帧上报整卡高度，卡片下边缘往下让；diff 自身高度始终不动，只是逐步被露出来。
  *
  * opening=true  从“不带 diff 的高度”涨到完整高度
  * opening=false 从完整高度收到底
@@ -398,36 +317,16 @@ function animateDiff(el, opening, done) {
   var totalFull = Math.ceil(root.getBoundingClientRect().height) || 0;
   var base = Math.max(1, totalFull - full);
 
-  runAnim(full, base, opening, isGroupedMode() ? el.parentElement : null, done);
-}
-
-/* 当前是不是合并模式。子卡有自己的底色和圆角时才需要第二层动画。 */
-function isGroupedMode() {
-  try {
-    return root.classList.contains("sf-bare");
-  } catch (e) {
-    return false;
-  }
+  runAnim(full, base, opening, done);
 }
 
 /* 真正跑补间。
- * full 是 diff 完整高度，base 是不带 diff 的底子高度，
- * tile 是合并模式里包住 diff 的那张子卡（分开模式没有，传 null）。
+ * full 是 diff 完整高度，base 是不带 diff 的底子高度。
  */
-function runAnim(full, base, opening, tile, done) {
-
-  // 子卡里除 diff 以外那部分（文字行、内边距）的高度。
-  // 子卡完整高度 = 这一截 + diff 完整高度。
-  var tileBase = 0;
-  if (tile) {
-    var th = Math.ceil(tile.getBoundingClientRect().height) || 0;
-    tileBase = Math.max(0, th - full);
-  }
+function runAnim(full, base, opening, done) {
 
   var to = opening ? base + full : base;
   var from = opening ? base : base + full;
-  var tileFrom = opening ? tileBase : tileBase + full;
-  var tileTo = opening ? tileBase + full : tileBase;
 
   if (Math.abs(to - from) < 1) {
     reportSize(true);
@@ -441,7 +340,6 @@ function runAnim(full, base, opening, tile, done) {
   // 元素刚 append 时页面已经是完整高度，若等到第一帧才推起始值，
   // 中间会先闪一帧完整高度，看起来就是“先弹开再收起再展开”。
   pushHeight(from);
-  if (tile) tile.style.height = tileFrom + "px";
   var started = 0;
   function step(ts) {
     if (!started) started = ts;
@@ -449,15 +347,11 @@ function runAnim(full, base, opening, tile, done) {
     var e = easeS(p);
     var h = Math.round(from + (to - from) * e);
     pushHeight(h);
-    // 子卡同步长高，它自己的底边在走，圆角和底色都跟着走。
-    if (tile) tile.style.height = Math.round(tileFrom + (tileTo - tileFrom) * e) + "px";
     if (p < 1) {
       heightAnim = requestAnimationFrame(step);
     } else {
       heightAnim = 0;
       animating = false;
-      // 子卡交回 auto，让它回到由内容撑开的自然高度。
-      if (tile) tile.style.height = "";
       reportSize(true);
       if (done) done();
     }
@@ -587,10 +481,8 @@ function fitPath(el, text) {
   el.textContent = best;
 }
 
-function buildCard(f, opts = {}) {
-  // 合并模式下宿主标题只写「N 个文件」，看不出具体是哪个文件，
-  // 所以每行自己带一遍文件名。分开模式下标题就是文件名，不再重复。
-  const showName = opts.showName === true;
+function buildCard(f) {
+  // 卡标题已经是文件名，卡内不再重复。
   const key = statusKey(f.status);
   const wrap = document.createElement("div");
   wrap.className = "sf-item";
@@ -600,14 +492,10 @@ function buildCard(f, opts = {}) {
   const addTxt = f.binary ? "二进制" : `+${f.added}`;
   const delTxt = f.binary ? "" : `-${f.deleted}`;
 
-  // 左边三行（合并模式）：文件名独立一行、增删各一项、路径一行。
-  // 分开模式下只保留后两行的紧凑形式：标题已经写了文件名。
+  // 左边两行：增删各一项、路径一行。
   wrap.innerHTML =
     '<div class="sf-card">'
-    +  '<div class="sf-info' + (showName ? " tall" : "") + '">'
-    +    (showName
-          ? `<div class="sf-name" title="${ESC(f.name)}">${ESC(f.name)}</div>`
-          : "")
+    +  '<div class="sf-info">'
     +    '<ul class="sf-chg">'
     +      `<li class="sf-stat">`
     +        (key ? `<span class="sf-dot ${key}"></span>` : '<span class="sf-dot"></span>')
@@ -640,7 +528,7 @@ function buildCard(f, opts = {}) {
       repo: f.repo || "",
       untracked: f.untracked ? "1" : "0",
     });
-    diffPromise = api("/api/show-files/diff?" + q.toString()).catch((e) => ({
+    diffPromise = api("/api/show-diff/diff?" + q.toString()).catch((e) => ({
       ok: false,
       message: e && e.message ? e.message : String(e),
     }));
@@ -724,7 +612,7 @@ function buildCard(f, opts = {}) {
       revertBtn.classList.remove("confirming");
       revertBtn.innerHTML = "…";
       try {
-        const res = await api("/api/show-files/revert", {
+        const res = await api("/api/show-diff/revert", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ file: f.relative || f.name, repo: f.repo || "" }),
@@ -805,7 +693,7 @@ reportSize(true);
 
   let res;
   try {
-    res = await api(`/api/show-files${qs}`);
+    res = await api(`/api/show-diff${qs}`);
   } catch (e) {
     showState("读取失败", e && e.message ? e.message : String(e));
     return;
@@ -823,38 +711,14 @@ reportSize(true);
     return;
   }
 
-  // grouped：一张卡里纵向排全部文件（默认）。
-  // per-file：这一张卡只负责一个文件。
-  // data.mode 由工具写入，总会有值；万一缺了就当合并处理。
-  //
-  // 设置在合并、但这次只有一张卡的内容时，不摆合并那套外框：
-  // 一张卡再套一层聊天底加子卡，外面看就是卡里套卡，多一圈多余的边。
-  // 这时候直接按分开模式渲染，看起来就和单文件卡一致。
-  const modeGrouped = data.mode !== "per-file";
-  const isGrouped = modeGrouped && files.length > 1;
-  const picked = modeGrouped ? files : files.slice(0, 1);
-  // 合并模式下每行要自带文件名，因为标题只有「N 个文件」。
-  const showName = isGrouped;
-
-  // 合并模式：整块铺聊天背景，每个文件单独一张小卡，观感接近分开展示。
-  // 分开模式：一行就是整张卡的正文，不加任何自己的底色。
-  const bare = isGrouped;
-  root.classList.toggle("sf-bare", bare);
-  // 底色要铺在 html 上，才能盖满整个 iframe，不留出宿主的卡底色。
-  document.documentElement.classList.toggle("sf-chat", bare);
-  // 合并模式多一圈外框，总宽要加上那圈，子卡宽度才与分开模式一致。
-  curWidth = isGrouped ? CARD_WIDTH + BARE_PAD_X * 2 : CARD_WIDTH;
-
-
+  // 一个文件一张卡：这张卡只渲染自己那一个文件。
+  const picked = files.slice(0, 1);
+  curWidth = CARD_WIDTH;
 
   reportSize(true);
 
-
-
-
-
   root.innerHTML = "";
-  for (const f of picked) root.appendChild(buildCard(f, { showName }));
+  for (const f of picked) root.appendChild(buildCard(f));
 
   // 宽度要等宿主把 iframe 布好才准，所以先用 rAF 试一次，
   // 再用一个短定时器装一次底（首帧常常仍是 0 宽）。

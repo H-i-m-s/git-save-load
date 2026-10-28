@@ -26,7 +26,7 @@ import { registerStashRoutes } from "./stash.js";
 import { registerMiscRoutes } from "./misc.js";
 import { registerSettingsPageRoutes, resolveCommitSigning } from "./settings-page.js";
 import { registerPrRoutes } from "./pr.js";
-import { registerShowFilesRoutes } from "./show-files.js";
+import { registerShowDiffRoutes } from "./show-diff.js";
 import { getUserProxy } from "../lib/user-proxy.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -637,5 +637,5 @@ export default function (app, ctx) {
   registerStashRoutes(app, { repoPath, gitExecFile, commandErrorText });
   registerSettingsPageRoutes(app, { ctx, dataDir, resolveGitPath });
   registerMiscRoutes(app, { pluginDir: PLUGIN_DIR });
-  registerShowFilesRoutes(app, { ctx, dataDir, gitExecFile, repoPath, commandErrorText });
+  registerShowDiffRoutes(app, { ctx, dataDir, gitExecFile, repoPath, commandErrorText });
 }
