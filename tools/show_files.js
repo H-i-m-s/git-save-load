@@ -16,8 +16,10 @@ export const name = "show_files";
 
 export const description =
   "展示变更文件（左：增删数 / 路径；右：查看变更、回退）。" +
-  "总是先把要展示的全部文件一次传进来：用户设置是「合并」就直接出卡；" +
-  "设置是「分开」时本工具会报错并告知，这时再改成每个文件调一次。" +
+  "返回值第一行会写明当前模式，先看它再决定怎么调用：" +
+  "「合并」一次传全部文件，出一张卡；" +
+  "「分开」一个文件一张卡，请在同一回合里并行发多次调用，每次 paths 只放一个文件，不要串行等待。" +
+  "不确定当前模式时，先只传一个文件探一次，返回值会告诉你。" +
   "只读自身不改文件；回退按钮要点确认才会动。";
 
 export const sessionPermission = { readOnly: true };
@@ -28,7 +30,7 @@ export const parameters = {
     paths: {
       type: "array",
       items: { type: "string" },
-      description: "要展示的文件路径数组，可为绝对路径，也可为相对仓库根的路径。一次传完全部要展示的文件。",
+      description: "要展示的文件路径数组，可为绝对路径，也可为相对仓库根的路径。合并模式一次传完；分开模式每次只放一个文件，并行多次调用。",
     },
     path: {
       type: "string",
@@ -203,8 +205,10 @@ export async function execute(input = {}, ctx = {}) {
         {
           type: "text",
           text:
-            `未出卡：用户在设置里选的是「分开」，一次只能展示一个文件，这次传了 ${wanted.length} 个。\n` +
-            "请改成每个文件调一次，每次 paths 只放一个路径。",
+            `模式：分开（一个文件一张卡）\n` +
+            `没有出卡：这次传了 ${wanted.length} 个文件，分开模式一张卡只放一个。\n` +
+            `正确做法：在同一回合里并行发 ${wanted.length} 次调用，每次 paths 只放一个文件，不要串行等上一次返回。\n` +
+            `确实要一次出卡，就把设置改成「合并」。`,
         },
       ],
       isError: true,
@@ -363,7 +367,9 @@ export async function execute(input = {}, ctx = {}) {
     content: [
       {
         type: "text",
-        text: `${payload.title}${saved ? "" : "（卡片数据没落盘，卡片会显示取不到数据）"}\n${summary}\n合计 +${totalAdded}/-${totalDeleted}`,
+        text:
+          `模式：${cardMode === "per-file" ? "分开（一个文件一张卡）" : "合并（一张卡放全部文件）"}\n` +
+          `${payload.title}${saved ? "" : "（卡片数据没落盘，卡片会显示取不到数据）"}\n${summary}\n合计 +${totalAdded}/-${totalDeleted}`,
       },
     ],
     details: {
